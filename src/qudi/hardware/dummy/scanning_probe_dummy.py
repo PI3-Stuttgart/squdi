@@ -70,7 +70,10 @@ class ScanningProbeDummy(ScanningProbeInterface):
     _spot_size_dist = ConfigOption(name='spot_size_dist', default=(100e-9, 15e-9))
     _spot_amplitude_dist = ConfigOption(name='spot_amplitude_dist', default=(2e5, 4e4))
     _require_square_pixels = ConfigOption(name='require_square_pixels', default=False)
+    _backwards_line_resolution = ConfigOption(name='backwards_line_resolution', default=100)
 
+    sigChangeTemperatureRegime = QtCore.Signal(bool)
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
