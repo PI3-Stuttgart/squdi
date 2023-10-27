@@ -123,7 +123,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         Deactivate the module
         """
        
-        self._triggered_ao.stop_scan()
+        self._triggered_ao().stop_scan()
 
     def get_constraints(self):
         """ Get hardware constraints/limitations.
