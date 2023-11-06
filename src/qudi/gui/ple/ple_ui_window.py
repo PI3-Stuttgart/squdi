@@ -43,20 +43,11 @@ class PLEScanMainWindow(QtWidgets.QMainWindow):
         self.ple_widget = ple_data_widget.PLEDataWidget(axes, channel)
         self.ple_data_dockWidget.setWidget(self.ple_widget)
 
-        self.ple_retrace_widget = ple_data_widget.PLEDataWidget(axes, channel)
-        self.ple_retrace_data_dockWidget.setWidget(self.ple_retrace_widget)
-
         self.ple_averaged_widget = ple_data_widget.PLEDataWidget(axes, channel)
         self.ple_averaged_dockWidget.setWidget(self.ple_averaged_widget)
 
         self.matrix_widget = matrix_widget.PLE2DWidget(axes, channel)
         self.ple_matrix_dockWidget.setWidget(self.matrix_widget) 
-
-        self.retrace_matrix_widget = matrix_widget.PLE2DWidget(axes, channel)
-        self.retrace_matrix_dockWidget.setWidget(self.retrace_matrix_widget) 
-
-        self.ple_retrace_averaged_widget = ple_data_widget.PLEDataWidget(axes, channel)
-        self.avg_retrace_dockWidget.setWidget(self.ple_retrace_averaged_widget)
 
     def add_dock_widget(self, name):
 
