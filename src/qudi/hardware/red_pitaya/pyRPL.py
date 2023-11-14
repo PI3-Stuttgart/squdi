@@ -10,8 +10,8 @@ from pyrpl import Pyrpl
 
 class PyRPL(Base):
     """ Gives an interface to the red pitaya. """
-    _hostname = ConfigOption('hostname', '192.168.202.72', missing='warn')
-    _config = ConfigOption('config')
+    _hostname = ConfigOption('hostname', '192.168.202.72', missing='nothing')
+    _config = ConfigOption('config', missing='warn')
     
     def on_activate(self):
         if self._config:
@@ -20,7 +20,7 @@ class PyRPL(Base):
             self.rpl = Pyrpl(self._hostname).redpitaya
 
     def on_deactivate(self):
-        self.ser.close()
+        self.rpl.close()
 
 
     def generate_signal(self, source = 0, waveform='dc', amplitude=1, frequency=0, output_direct='out2'):

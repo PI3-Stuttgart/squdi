@@ -89,7 +89,7 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         'max_channel_samples_buffer', default=25e6, missing='info')
 
     # TODO: check limits
-    _sample_rate_limits = ConfigOption(name='sample_rate_limits', default=(1, 1e6))
+    _sample_rate_limits = ConfigOption(name='sample_rate_limits', default=(1e-3, 1e6))
     _frame_size_limits = ConfigOption(name='frame_size_limits', default=(1, 1e9))
 
     _rw_timeout = ConfigOption('read_write_timeout', default=10, missing='nothing')
