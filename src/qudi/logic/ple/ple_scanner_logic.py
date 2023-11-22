@@ -354,7 +354,7 @@ class PLEScannerLogic(ScanningProbeLogic):
     def start_scan(self, scan_axes, caller_id=None):
         self._curr_caller_id = self.module_uuid if caller_id is None else caller_id
         self.display_repeated = self._repeated
-        self._scanner().lines_to_scan = self._number_of_repeats
+        
         with self._thread_lock:
 
             if self.module_state() != 'idle':
@@ -369,7 +369,8 @@ class PLEScannerLogic(ScanningProbeLogic):
             settings = {'axes': scan_axes,
                         'range': tuple(self._scan_ranges[ax] for ax in scan_axes),
                         'resolution': tuple(self._scan_resolution[ax] for ax in scan_axes),
-                        'frequency': self._scan_frequency[scan_axes[0]]}
+                        'frequency': self._scan_frequency[scan_axes[0]],
+                        'lines_to_scan': self._number_of_repeats}
             fail, new_settings = self._scanner().configure_scan(settings)
             if fail:
                 self.module_state.unlock()
@@ -453,7 +454,8 @@ class PLEScannerLogic(ScanningProbeLogic):
             
             if self.module_state() == 'idle':
                 return
-            
+            # if self._scanner().
+            # lines_to_scan = self._number_of_repeats
             if self._scanner().module_state() == 'idle':
                 
                 self.stop_scan()

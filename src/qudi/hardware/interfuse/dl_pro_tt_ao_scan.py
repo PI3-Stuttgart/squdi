@@ -167,7 +167,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             (min(r), max(r)) for r in scan_settings.get('range', self._current_scan_ranges)
         )
         resolution = scan_settings.get('resolution', self._current_scan_resolution)
-        lines_to_scan = scan_settings.get('lines_to_scan', 4)
+        lines_to_scan = scan_settings.get('lines_to_scan', 1)
         frequency = float(scan_settings.get('frequency', self._current_scan_frequency))
         if self._backwards_line_resolution is None:
             self._backwards_line_resolution = int(resolution[0])
@@ -239,7 +239,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                             next_channel = self._ao_trigger_channel,
                             binwidth=int(1e12/frequency),
                             n_bins=int(resolution[0]),
-                            n_histograms=self.lines_to_scan)
+                            n_histograms=lines_to_scan)
                 td_task.setMaxCounts(self._max_rollovers)
                 self._time_differences_tasks.append(td_task)
             
@@ -509,7 +509,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
     def _check_scan_end_reached(self):
         # not thread safe, call from thread_lock protected code only
         #FIx this shit
-       
+        # self._scanned_lines
         return self._time_differences_tasks[0].ready() if self._max_rollovers != 0 else False
 
     

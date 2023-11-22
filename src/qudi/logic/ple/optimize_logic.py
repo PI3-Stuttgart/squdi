@@ -308,6 +308,7 @@ class PLEOptimizeScannerLogic(LogicBase):
             optim_ranges = {ax: (pos - self._scan_range[ax] / 2, pos + self._scan_range[ax] / 2) for
                             ax, pos in curr_pos.items()}
             actual_setting = self._scan_logic().set_scan_range(optim_ranges)
+            self._scan_logic()._number_of_repeats = 1
             # FIXME: Comparing floats by inequality here
             if any(val != optim_ranges[ax] for ax, val in actual_setting.items()):
                 self.log.warning('Some optimize scan ranges have been changed by the scanner.')
@@ -317,7 +318,10 @@ class PLEOptimizeScannerLogic(LogicBase):
                 )
                 self.module_state.lock()
 
+            #Set scan times:
+            # self._scan_logic().lines_to_scan = 1
             # Set scan frequency
+            
             actual_setting = self._scan_logic().set_scan_frequency(self._scan_frequency)
             # FIXME: Comparing floats by inequality here
             if any(val != self._scan_frequency[ax] for ax, val in actual_setting.items()):
