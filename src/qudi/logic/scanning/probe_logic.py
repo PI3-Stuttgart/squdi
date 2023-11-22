@@ -237,7 +237,7 @@ class ScanningProbeLogic(LogicBase):
     def set_scan_range(self, ranges):
         with self._thread_lock:
             if self.module_state() != 'idle':
-                self.log.warning('Scan is running. Unable to change scan ranges.')
+                # self.log.warning('Scan is running. Unable to change scan ranges.')
                 new_ranges = self.scan_ranges
                 self.sigScanSettingsChanged.emit({'range': new_ranges})
                 return new_ranges
@@ -260,7 +260,7 @@ class ScanningProbeLogic(LogicBase):
     def set_scan_resolution(self, resolution):
         with self._thread_lock:
             if self.module_state() != 'idle':
-                self.log.warning('Scan is running. Unable to change scan resolution.')
+                # self.log.warning('Scan is running. Unable to change scan resolution.')
                 new_res = self.scan_resolution
                 self.sigScanSettingsChanged.emit({'resolution': new_res})
                 return new_res
@@ -294,7 +294,7 @@ class ScanningProbeLogic(LogicBase):
     def set_scan_frequency(self, frequency):
         with self._thread_lock:
             if self.module_state() != 'idle':
-                self.log.warning('Scan is running. Unable to change scan frequency.')
+                # self.log.warning('Scan is running. Unable to change scan frequency.')
                 new_freq = self.scan_frequency
                 self.sigScanSettingsChanged.emit({'frequency': new_freq})
                 return new_freq
@@ -316,9 +316,9 @@ class ScanningProbeLogic(LogicBase):
     def set_target_position(self, pos_dict, caller_id=None, move_blocking=False):
         with self._thread_lock:
             if self.module_state() != 'idle':
-                self.log.error('Unable to change scanner target position while a scan is running.')
+                # self.log.error('Unable to change scanner target position while a scan is running.')
                 new_pos = self._scanner().get_target()
-                self.sigScannerTargetChanged.emit(new_pos, self.module_uuid)
+                self.sigScannerTargetChanged.emit(new_pos, self.module_uuid) #TODO Check if this does not lead to any issues
                 return new_pos
 
             ax_constr = self.scanner_constraints.axes

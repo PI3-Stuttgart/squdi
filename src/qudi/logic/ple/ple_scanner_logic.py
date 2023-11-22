@@ -313,7 +313,7 @@ class PLEScannerLogic(ScanningProbeLogic):
     def set_target_position(self, pos_dict, caller_id=None, move_blocking=False):
         with self._thread_lock:
             if self.module_state() != 'idle':
-                self.log.error('Unable to change scanner target position while a scan is running.')
+                # self.log.error('Unable to change scanner target position while a scan is running.')
                 new_pos = self._scanner().get_target()
                 self.sigScannerTargetChanged.emit(new_pos, self.module_uuid)
                 return new_pos
