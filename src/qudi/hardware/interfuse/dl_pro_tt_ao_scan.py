@@ -735,27 +735,3 @@ class RawDataContainer:
     def is_full(self):
         return self.number_of_non_nan_values == self.frame_size
     
-
-    def __init_ao_timer(self):
-        self.__ao_write_timer = QtCore.QTimer(parent=self)
-
-        self.__ao_write_timer.setSingleShot(True)
-        self.__ao_write_timer.timeout.connect(self.__ao_cursor_write_loop, QtCore.Qt.QueuedConnection)
-        self.__ao_write_timer.setInterval(1e3*self._min_step_interval)  # (ms), dynamically calculated during write loop
-    def __start_ao_write_timer(self):
-        #self.log.debug(f"ao start write timer in thread {self.thread()}, QT.QThread {QtCore.QThread.currentThread()} ")
-        try:
-            if not self.is_move_running:
-                #self.log.debug("Starting AO write timer...")
-                if self.thread() is not QtCore.QThread.currentThread():
-                    QtCore.QMetaObject.invokeMethod(self.__ni_ao_write_timer,
-                                                    'start',
-                                                    QtCore.Qt.BlockingQueuedConnection)
-                else:
-                    self.__ni_ao_write_timer.start()
-            else:
-                pass
-                #self.log.debug("Dropping timer start, already running")
-
-        except:
-            self.log.exception("")
