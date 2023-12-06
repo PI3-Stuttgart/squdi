@@ -112,7 +112,7 @@ class waveform_generation:
         return voltages
 
 
-class ppg512(Base):
+class PPG512(Base):
     # How to write a waveform:
         # # instances so you know what they refer to
         # wg = waveform_generation()
@@ -123,7 +123,15 @@ class ppg512(Base):
         # wg.plot_waveform_from_file('waveform.txt')
         # # take the wavform from the file and send it to the device
         # ans = ppg.write_waveform(fname='waveform.txt')
-    
+    """
+        picoquant_ppg512:
+        module.Class: 'picoquant.ppg512.PPG512'
+        options:
+            port: 'COM10'
+            vccrf : 15000
+            vref : 400
+        
+    """
     _port = ConfigOption(name='port', missing='warn')
     _vccrf = ConfigOption(name='vccrf', missing='warn')
     _vref = ConfigOption(name='vref', missing='warn')
