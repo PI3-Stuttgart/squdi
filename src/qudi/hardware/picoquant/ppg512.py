@@ -60,6 +60,40 @@ class waveform_generation:
         voltages = np.around(voltages)
         return voltages
 
+    def create_pulses(self, num_pulses, width, spacing, amp=255, pulse_shape='square', initial_delay=0):
+    
+        voltages = np.zeros((512,))
+        if amp > 255: raise Exception('amp needs to be 255 or less.')
+        if num_pulses*(width+spacing) - spacing > 512: raise Exception('length of pulsetrain needs to be 512 bits or less.')
+
+        # start point of puls is here the rising flank of the square pulse (not the middle)    
+        if pulse_shape == 'square':    
+            pos = initial_delay 
+            for i in range(num_pulses):
+                voltages[pos:pos+width]=np.ones(width)*amp
+                pos+=width+spacing
+        # start point of the pulse is here the maximum (middle) of the gaussian peak   
+        elif pulse_shape == 'gauss': 
+            sigma = width / (2 * np.sqrt(2 * np.log(2)))
+            if initial_delay == 0:
+                initial_delay = width
+                
+            # Generate pulses
+            for i in range(num_pulses):
+                # Calculate the center of each pulse
+                center = i * spacing + initial_delay
+        
+                # Generate the Gaussian pulse
+                x = np.arange(512)
+                pulse = amp*np.exp(-(x - center)**2 / (2 * sigma**2))
+        
+                # Add the pulse to the output array
+                voltages += pulse
+
+        else:
+            raise Exception('Typo or pulse shape not (yet) availible.')
+
+        return np.around(voltages)
 
     def create_ramp(self, len, amp=255):
         if len > 512:
