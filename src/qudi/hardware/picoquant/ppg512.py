@@ -60,7 +60,7 @@ class waveform_generation:
         voltages = np.around(voltages)
         return voltages
 
-    def create_pulses(self, num_pulses, width, spacing, amp=255, pulse_shape='square', initial_delay=0):
+       def create_pulses(self, num_pulses, width, spacing, amp=255, pulse_shape='square', initial_delay=0):
     
         voltages = np.zeros((512,))
         if amp > 255: raise Exception('amp needs to be 255 or less.')
