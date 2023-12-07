@@ -18,8 +18,7 @@ import warnings
 class NI_IO_TT_Interfuse(FiniteSamplingIOInterface):
     _timetagger = Connector(name='tt', interface = "TT")
     _ni_finite_sampling_io = Connector(name='scan_hardware', interface='FiniteSamplingIOInterface')
-   
-    _timetagger = Connector(name='tt', interface = "TT")
+
     _device_name = ConfigOption(name='device_name', default='Dev1', missing='warn')
     
     _rw_timeout = ConfigOption('read_write_timeout', default=10, missing='nothing')

@@ -13,7 +13,7 @@ class TT(Base):
     _counter = ConfigOption('counter', dict(), missing='warn')
     _combiner = ConfigOption('combiner', dict(), missing='warn')
     _channels_params = ConfigOption('channels_params', dict(), missing='info')
-    set_conditional_filter = False
+    set_conditional_filter = True
 
     """
     Example config.
@@ -75,6 +75,10 @@ class TT(Base):
                 self.delay_channel(delay=params['delay'], channel = channel)
             if 'trigger_level' in params.keys():
                 self.tagger.setTriggerLevel(channel, params['trigger_level'])
+            
+        # if self.set_conditional_filter:
+        #     self.tagger.setConditionalFilter(trigger=self._hist["channels"], 
+        #                                     filtered=self._hist["trigger_channel"])
 
         self._combined_channels = self.combiner(self._combiner["channels"])
         
@@ -93,9 +97,7 @@ class TT(Base):
 
         get data by hist.getData()
         """
-        if self.set_conditional_filter:
-            self.tagger.setConditionalFilter(trigger=self._hist["channels"], 
-                                             filtered=self._hist["trigger_channel"])
+        
         return Histogram(self.tagger,
                             kwargs['channel'],
                             kwargs['trigger_channel'],
