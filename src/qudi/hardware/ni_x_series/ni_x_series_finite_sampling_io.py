@@ -477,7 +477,7 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
 
         if data is not None:
             # assure dict keys are striped from device name and are lower case
-            data = {self._extract_terminal(ch): value for ch, value in data.items()}
+            data = {self._extract_terminal(ch): value for ch, value in data.items() if "tt" not in ch or "sum" not in ch}
             # Check for invalid keys
             assert not set(data).difference(active_output_channels_set), \
                 f'Invalid keys in data {*set(data).difference(active_output_channels_set),} '
