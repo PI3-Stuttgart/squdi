@@ -13,11 +13,13 @@ from qudi.util.enums import SamplingOutputMode
 from qudi.util.helpers import in_range
 
 class DLProTTPLEScanner(ScanningProbeInterface):
+    """
+    The interfuse to connect a time tagger and an analog scanning device.
+
+    """
     _timetagger = Connector(name='tt', interface = "TT")
     _triggered_ao = Connector(name='triggered_ao', interface='TriggeredAOInterface')
-
     _channel_mapping = ConfigOption(name='channel_mapping', missing='error')
-
     _sum_channels = ConfigOption(name='sum_channels', default=[], missing='nothing')
     _position_ranges = ConfigOption(name='position_ranges', missing='error')
     _frequency_ranges = ConfigOption(name='frequency_ranges', missing='error')
@@ -59,14 +61,11 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         self._thread_lock_data = Mutex()
 
     def on_activate(self):
-        # Sanity checks for ni_ao and ni finite sampling io
-        # TODO check that config values within fsio range?
         assert set(self._position_ranges) == set(self._frequency_ranges) == set(self._resolution_ranges), \
             f'Channels in position ranges, frequency ranges and resolution ranges do not coincide'
 
         assert set(self._input_channel_units).union(self._position_ranges) == set(self._channel_mapping), \
-            f'Not all specified channels are mapped to an ni card physical channel'
-
+            f'Not all specified channels are mapped to the physical channel'
 
         mapped_channels = set([val.lower() for val in self._channel_mapping.values()])
 
@@ -89,6 +88,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             channels.append(ScannerChannel(name=channel,
                                            unit=unit,
                                            dtype=np.float64))
+        #TODO: 
         self.__active_channels = {}
         self.__active_channels['di_channels'] = [value for key, value in self._channel_mapping.items() if "APD" in key]
         self._constraints = ScanConstraints(axes=axes,
@@ -103,6 +103,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         self.__t_last_follow = None
         self.sigNextDataChunk.connect(self._fetch_data_chunk, QtCore.Qt.QueuedConnection)
         self.sigStartScanner.connect(lambda: self._triggered_ao().start_scan(), QtCore.Qt.QueuedConnection)
+    
     def _toggle_ao_setpoint_channels(self, enable: bool) -> None:
         triggered_ao = self._triggered_ao()
         for channel in triggered_ao.constraints.setpoint_channels:
@@ -123,7 +124,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         Deactivate the module
         """
        
-        self._triggered_ao.stop_scan()
+        self._triggered_ao().stop_scan()
 
     def get_constraints(self):
         """ Get hardware constraints/limitations.
@@ -238,7 +239,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                             start_channel = self._ao_trigger_channel,
                             next_channel = self._ao_trigger_channel,
                             binwidth=int(1e12/frequency),
-                            n_bins=int(resolution[0]) * 2,
+                            n_bins=int(resolution[0]),
                             n_histograms=self.lines_to_scan)
                 td_task.setMaxCounts(self._max_rollovers)
                 self._time_differences_tasks.append(td_task)
@@ -248,7 +249,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                             channel = channel, 
                             trigger_channel = self._ao_trigger_channel,
                             bin_width=int(1e12/frequency),
-                            number_of_bins=int(resolution[0]) * 2,
+                            number_of_bins=int(resolution[0]),
                            ) for channel in channels_tt]
 
             self.sample_rate = frequency
@@ -262,7 +263,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             self._triggered_ao().set_scan_parameters(
                 voltage_start = float(voltage_start),
                 voltage_stop = float(voltage_stop),
-                sweep_duration = sweep_duration * 2
+                sweep_duration = sweep_duration
             )
          
 
@@ -372,9 +373,6 @@ class DLProTTPLEScanner(ScanningProbeInterface):
     def start_scan(self):
         
         try:
-
-            #self.log.debug(f"Start scan in thread {self.thread()}, QT.QThread {QtCore.QThread.currentThread()}... ")
-
             if self.thread() is not QtCore.QThread.currentThread():
                 QtCore.QMetaObject.invokeMethod(self, '_start_scan',
                                                 QtCore.Qt.BlockingQueuedConnection)
