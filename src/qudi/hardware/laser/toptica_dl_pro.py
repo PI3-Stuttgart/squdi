@@ -16,11 +16,12 @@ _Real = Union[int, float]
 def connect_laser(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # loop = asyncio.new_event_loop()
+        # asyncio.set_event_loop(loop)
         with DLCpro(NetworkConnection(self.tcp_address)) as self.dlc:
             res = func(self, *args, **kwargs)
         return res
+
     return wrapper
 
 def get_key_by_value(dictionary, target_value):

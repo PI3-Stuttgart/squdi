@@ -74,6 +74,7 @@ class MicrowaveSmiq(MicrowaveInterface):
         self._scan_power = -20
         self._scan_powers = None 
         self._scan_frequencies = None
+        self._scan_powers = None 
         self._scan_mode = None
         self._scan_sample_rate = 0.
 
@@ -138,6 +139,7 @@ class MicrowaveSmiq(MicrowaveInterface):
         self._scan_frequencies = None
         self._scan_powers = None
         self._scan_power = self._constraints.min_power
+        self._scan_powers = None
         self._cw_power = self._constraints.min_power
         self._cw_frequency = 2870.0e6
         self._scan_mode = SamplingOutputMode.JUMP_LIST
@@ -431,7 +433,13 @@ class MicrowaveSmiq(MicrowaveInterface):
         self._device.write('*WAI')
 
         # Set list power
-        self._device.write(f':LIST:POW {self._scan_power:f}')
+        if self._scan_powers is not None:
+            # Set list powers
+            power_str = f'{self._scan_powers[0]:f}, '
+            power_str += ', '.join(f'{power:f}' for power in self._scan_powers)
+            self._device.write(f':LIST:POW {power_str}')
+        else:
+            self._device.write(f':LIST:POW {self._scan_power:f}')
         self._device.write('*WAI')
 
         self._command_wait(':TRIG1:LIST:SOUR EXT')

@@ -60,6 +60,41 @@ class waveform_generation:
         voltages = np.around(voltages)
         return voltages
 
+    def create_pulses(self, num_pulses, width, spacing, amp=255, pulse_shape='square', initial_delay=0):
+    
+        voltages = np.zeros((512,))
+        if amp > 255: raise Exception('amp needs to be 255 or less.')
+        if num_pulses*(width+spacing) - spacing > 512: raise Exception('length of pulsetrain needs to be 512 bits or less.')
+
+        # start point of puls is here the rising flank of the square pulse (not the middle)    
+        if pulse_shape == 'square':    
+            pos = initial_delay 
+            for i in range(num_pulses):
+                voltages[pos:pos+width]=np.ones(width)*amp
+                pos+=width+spacing
+        # start point of the pulse is here the maximum (middle) of the gaussian peak   
+        elif pulse_shape == 'gauss': 
+            sigma = width / (2 * np.sqrt(2 * np.log(2)))
+            if initial_delay == 0:
+                initial_delay = width
+                
+            # Generate pulses
+            for i in range(num_pulses):
+                # Calculate the center of each pulse
+                center = i * spacing + initial_delay
+        
+                # Generate the Gaussian pulse
+                x = np.arange(512)
+                
+                pulse = amp*np.exp(-(x - center)**2 / (2 * sigma**2))
+        
+                # Add the pulse to the output array
+                voltages += pulse
+
+        else:
+            raise Exception('Typo or pulse shape not (yet) availible.')
+
+        return np.around(voltages)
 
     def create_ramp(self, len, amp=255):
         if len > 512:
@@ -112,7 +147,7 @@ class waveform_generation:
         return voltages
 
 
-class ppg512(Base):
+class PPG512(Base):
     # How to write a waveform:
         # # instances so you know what they refer to
         # wg = waveform_generation()
@@ -123,7 +158,15 @@ class ppg512(Base):
         # wg.plot_waveform_from_file('waveform.txt')
         # # take the wavform from the file and send it to the device
         # ans = ppg.write_waveform(fname='waveform.txt')
-    
+    """
+        picoquant_ppg512:
+        module.Class: 'picoquant.ppg512.PPG512'
+        options:
+            port: 'COM10'
+            vccrf : 15000
+            vref : 400
+        
+    """
     _port = ConfigOption(name='port', missing='warn')
     _vccrf = ConfigOption(name='vccrf', missing='warn')
     _vref = ConfigOption(name='vref', missing='warn')
@@ -263,4 +306,4 @@ class ppg512(Base):
     def constant_output(self):
         self.wg.create_a_waveform_file(self.wg.create_zero(),fname='temp.txt')
         ans = self.write_waveform(fname='temp.txt')
-        return ans
+  

@@ -168,7 +168,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             (min(r), max(r)) for r in scan_settings.get('range', self._current_scan_ranges)
         )
         resolution = scan_settings.get('resolution', self._current_scan_resolution)
-        lines_to_scan = scan_settings.get('lines_to_scan', 4)
+        lines_to_scan = scan_settings.get('lines_to_scan', 1)
         frequency = float(scan_settings.get('frequency', self._current_scan_frequency))
         if self._backwards_line_resolution is None:
             self._backwards_line_resolution = int(resolution[0])
@@ -240,7 +240,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                             next_channel = self._ao_trigger_channel,
                             binwidth=int(1e12/frequency),
                             n_bins=int(resolution[0]),
-                            n_histograms=self.lines_to_scan)
+                            n_histograms=lines_to_scan)
                 td_task.setMaxCounts(self._max_rollovers)
                 self._time_differences_tasks.append(td_task)
             
@@ -507,7 +507,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
     def _check_scan_end_reached(self):
         # not thread safe, call from thread_lock protected code only
         #FIx this shit
-       
+        # self._scanned_lines
         return self._time_differences_tasks[0].ready() if self._max_rollovers != 0 else False
 
     
@@ -522,24 +522,24 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             for num, di_channel in enumerate(self.__active_channels['di_channels']):
                 td_data = self._time_differences_tasks[num].getData()
                 idx = self._time_differences_tasks[num].getHistogramIndex() #current histogram
-                data_td_forward[di_channel] = td_data[:,:self._current_scan_resolution[0]] * self.sample_rate#
-                data_td_backwards[di_channel] =td_data[:,self._current_scan_resolution[0]:] * self.sample_rate#
+                data_td_forward[di_channel] = td_data * self.sample_rate#
+                # data_td_backwards[di_channel] =td_data * self.sample_rate#
                 
-                data_hist_forward[di_channel] = td_data[idx, :self._current_scan_resolution[0]] * self.sample_rate
-                data_hist_backwards[di_channel] = td_data[idx, self._current_scan_resolution[0]:] * self.sample_rate
+                data_hist_forward[di_channel] = td_data[idx, :] * self.sample_rate
+                # data_hist_backwards[di_channel] = td_data[idx, :] * self.sample_rate
                 # data_td_forward[di_channel] = self._time_differences_tasks[num].getData() * self.sample_rate #np.vstack((data_td_forward[di_channel], data_hist_forward[di_channel])) if self._scanned_lines > 0 else data_hist_forward[di_channel]
 
             reverse_routing = {val.lower(): key for key, val in self._channel_mapping.items()}
 
             new_data_forward = {reverse_routing[key]: samples for key, samples in data_hist_forward.items()}
-            new_data_backwards = {reverse_routing[key]: samples for key, samples in data_hist_backwards.items()}
+            # new_data_backwards = {reverse_routing[key]: samples for key, samples in data_hist_backwards.items()}
             new_data_cum_forward = {reverse_routing[key]: samples for key, samples in data_td_forward.items()}
-            new_data_cum_backwards = {reverse_routing[key]: samples for key, samples in data_td_backwards.items()}
+            # new_data_cum_backwards = {reverse_routing[key]: samples for key, samples in data_td_backwards.items()}
             if len(self._sum_channels) > 1:
                 new_data_forward["sum"] = np.sum([samples for key, samples in data_hist_forward.items() if key in self._sum_channels], axis=0)
-                new_data_backwards["sum"] = np.sum([samples for key, samples in data_hist_backwards.items() if key in self._sum_channels], axis=0)
+                # new_data_backwards["sum"] = np.sum([samples for key, samples in data_hist_backwards.items() if key in self._sum_channels], axis=0)
                 new_data_cum_forward["sum"] = np.sum([samples for key, samples in data_td_forward.items() if key in self._sum_channels], axis=0)
-                new_data_cum_backwards["sum"] = np.sum([samples for key, samples in data_td_backwards.items() if key in self._sum_channels], axis=0)
+                # new_data_cum_backwards["sum"] = np.sum([samples for key, samples in data_td_backwards.items() if key in self._sum_channels], axis=0)
             # self.log.debug(f'new data: {new_data}')
             
             with self._thread_lock_data:
@@ -547,19 +547,19 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                 self._scan_data.data = new_data_forward
                 # self.raw_data_container.fill_container(new_data_backwards)
                 # if self._backwards_line_resolution == len(self.raw_data_container.backwards_data()):
-                self._scan_data.retrace_data = new_data_backwards#self.raw_data_container.backwards_data()
+                # self._scan_data.retrace_data = new_data_backwards#self.raw_data_container.backwards_data()
                 self._scan_data.accumulated = new_data_cum_forward
-                self._scan_data._retrace_accumulated = new_data_cum_backwards
+                # self._scan_data._retrace_accumulated = new_data_cum_backwards
                 
 
                 if self._check_scan_end_reached():
                     
-                    # if self._scan_data.accumulated is None:
-                    #     self._scan_data.accumulated = self._scan_data.data
-                    # else:
-                    #     self._scan_data.accumulated = {channel : 
-                    #             np.vstack((self._scan_data.accumulated[channel], data_i)) \
-                    #             for channel, data_i in self._scan_data.data.items() if len(data_i) > 0}
+                    if self._scan_data.accumulated is None:
+                        self._scan_data.accumulated = self._scan_data.data
+                    else:
+                        self._scan_data.accumulated = {channel : 
+                                np.vstack((self._scan_data.accumulated[channel], data_i)) \
+                                for channel, data_i in self._scan_data.data.items() if len(data_i) > 0}
                         
                     # if self._scan_data.retrace_accumulated is None:
                     #     self._scan_data.retrace_accumulated = self._scan_data.retrace_data
@@ -733,27 +733,3 @@ class RawDataContainer:
     def is_full(self):
         return self.number_of_non_nan_values == self.frame_size
     
-
-    def __init_ao_timer(self):
-        self.__ao_write_timer = QtCore.QTimer(parent=self)
-
-        self.__ao_write_timer.setSingleShot(True)
-        self.__ao_write_timer.timeout.connect(self.__ao_cursor_write_loop, QtCore.Qt.QueuedConnection)
-        self.__ao_write_timer.setInterval(1e3*self._min_step_interval)  # (ms), dynamically calculated during write loop
-    def __start_ao_write_timer(self):
-        #self.log.debug(f"ao start write timer in thread {self.thread()}, QT.QThread {QtCore.QThread.currentThread()} ")
-        try:
-            if not self.is_move_running:
-                #self.log.debug("Starting AO write timer...")
-                if self.thread() is not QtCore.QThread.currentThread():
-                    QtCore.QMetaObject.invokeMethod(self.__ni_ao_write_timer,
-                                                    'start',
-                                                    QtCore.Qt.BlockingQueuedConnection)
-                else:
-                    self.__ni_ao_write_timer.start()
-            else:
-                pass
-                #self.log.debug("Dropping timer start, already running")
-
-        except:
-            self.log.exception("")
