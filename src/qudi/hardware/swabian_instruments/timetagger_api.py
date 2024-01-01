@@ -1,9 +1,22 @@
 
 from os.path import join, getsize, isfile
 import numpy as np
-from TimeTagger import createTimeTagger, Dump, Correlation, Histogram, Counter, CountBetweenMarkers, FileWriter, Countrate, Combiner, TimeDifferences
+from TimeTagger import createTimeTagger,createTimeTaggerNetwork, Dump, Correlation, Histogram, Counter, CountBetweenMarkers, FileWriter, Countrate, Combiner, TimeDifferences
 from qudi.core.configoption import ConfigOption
 from qudi.core.module import Base
+import functools
+
+def remote_tagger(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Check if 'remote_tagger' is None in the keyword arguments
+        if kwargs.get('is_remote') is True:
+            # Assuming createTimeTaggerNetwork is a function you've defined elsewhere
+            tagger = createTimeTaggerNetwork(f'{self._remote_tagger_ip}:{self._remote_tagger_port}')
+            kwargs['tagger'] = tagger
+        # Call the original function with the modified arguments
+        return func(self, *args, **kwargs)
+    return wrapper
 
 
 class TT(Base):
@@ -13,6 +26,9 @@ class TT(Base):
     _counter = ConfigOption('counter', dict(), missing='warn')
     _combiner = ConfigOption('combiner', dict(), missing='warn')
     _channels_params = ConfigOption('channels_params', dict(), missing='info')
+    _remote_tagger_ip = ConfigOption('remote_tagger_ip', None, missing='info')
+    _remote_tagger_port = ConfigOption('remote_tagger_port', None, missing='info')
+    _remote_channel = ConfigOption('remote_tagger_port', None, missing='info')
     set_conditional_filter = True
 
     """
@@ -86,8 +102,8 @@ class TT(Base):
     def on_deactivate(self):
         pass
         
-
-    def histogram(self, **kwargs):  
+    @remote_tagger
+    def histogram(self, tagger=None, **kwargs):  
         """
         The histogram takes default values from the params.yaml
 
@@ -97,14 +113,15 @@ class TT(Base):
 
         get data by hist.getData()
         """
-        
-        return Histogram(self.tagger,
+        tagger = tagger if tagger is not None else self.tagger
+
+        return Histogram(tagger,
                             kwargs['channel'],
                             kwargs['trigger_channel'],
                             kwargs['bin_width'],
                             kwargs['number_of_bins'])
-    
-    def correlation(self, **kwargs):  
+    @remote_tagger
+    def correlation(self, tagger=None, **kwargs):  
         """
         The correlation takes default values from the params.yaml
 
@@ -114,13 +131,16 @@ class TT(Base):
 
         get data by corr.getData()
         """
-        return Correlation(self.tagger,
+        tagger = tagger if tagger is not None else self.tagger
+
+        return Correlation(tagger,
                             kwargs['channel_start'],
                             kwargs['channel_stop'],
                             kwargs['bin_width'],
                             kwargs['number_of_bins'])
 
-
+    #FIX!
+    @remote_tagger
     def delay_channel(self, channel, delay):
         self.tagger.setInputDelay(delay=delay, channel=channel)
 
@@ -130,42 +150,54 @@ class TT(Base):
             self.tagger.setConditionalFilter(filtered=[filtered_channels], trigger=self.apdChans)
         return Dump(self.tagger, dumpPath, self.maxDumps,\
                                     self.allChans)
-        
-    def countrate(self, channels=None):
+    
+    @remote_tagger
+    def countrate(self, tagger=None, channels=None):
         """
         The countrate takes default values from the params.yaml
         get data by ctrate.getData()
         """
         if channels == None:
             channels = self._counter['channels']
-        
-        return Countrate(self.tagger,
+
+        tagger = tagger if tagger is not None else self.tagger
+
+            
+        return Countrate(tagger,
                                 channels)
 
-    def counter(self, **kwargs):
+    @remote_tagger
+    def counter(self, tagger=None, **kwargs):
         """
         refresh_rate - number of samples per second:
 
         """
-        return Counter(self.tagger,
-                                kwargs['channels'],
-                                kwargs['bin_width'],
-                                kwargs['n_values'])
+        tagger = tagger if tagger is not None else self.tagger
 
+        return Counter(tagger,
+                        kwargs['channels'],
+                        kwargs['bin_width'],
+                        kwargs['n_values'])
 
+    #!FIX
+    @remote_tagger
     def combiner(self, channels):
         return Combiner(self.tagger, channels)
 
-    def count_between_markers(self, click_channel, begin_channel, end_channel, n_values):
-        return CountBetweenMarkers(self.tagger,
+    @remote_tagger
+    def count_between_markers(self, click_channel, begin_channel, end_channel, n_values, tagger=None):
+        tagger = tagger if tagger is not None else self.tagger
+
+        return CountBetweenMarkers(tagger,
                                 click_channel,
                                 begin_channel,
                                 end_channel,
                                 n_values)     
 
-
-    def time_differences(self, click_channel, start_channel, next_channel, binwidth,n_bins, n_histograms):
-        return TimeDifferences(self.tagger, 
+    @remote_tagger
+    def time_differences(self, click_channel, start_channel, next_channel, binwidth,n_bins, n_histograms, tagger=None):
+        tagger = tagger if tagger is not None else self.tagger
+        return TimeDifferences(tagger, 
                             click_channel=click_channel,
                             start_channel=start_channel,
                             next_channel=next_channel,
