@@ -442,7 +442,9 @@ class NI_IO_TT_Interfuse(FiniteSamplingIOInterface):
         @return int: error code (0:OK, -1:error)
         """
         
-        channels_tt =[int(ch[2:]) for ch in self.__active_channels['di_channels'] if "tt" in ch]
+        # channels_tt =[int(ch[2:]) for ch in self.__active_channels['di_channels'] if "tt" in ch]
+        channels_tt = [int(ch[2:]) for ch in self.__active_channels['di_channels'] if "tt" in ch and "remote" not in ch]
+        remote_channels_tt = [int(ch[2:].split("_remote")[0]) for ch in self.__active_channels['di_channels'] if "tt" in ch and "remote" in ch]
         clock_tt = int(self._tt_ni_clock_input[2:])
         #Workaround for the old time tagger version at the praktikum
         if self._tt_falling_edge_clock_input:
@@ -454,6 +456,18 @@ class NI_IO_TT_Interfuse(FiniteSamplingIOInterface):
                                         end_channel = clock_tt,#clock_fall_tt, 
                                         n_values=self.frame_size) 
                                         for channel in channels_tt]
+        
+        for ch in remote_channels_tt:
+            self._timetagger_cbm_tasks.append(
+                self._tt.count_between_markers(
+                    is_remote=True,
+                    click_channel = ch, 
+                    begin_channel = clock_tt,
+                    end_channel = clock_tt,#clock_fall_tt, 
+                    n_values=self.frame_size
+                    )
+            )
+
         return 0
 
     def reset_hardware(self):
