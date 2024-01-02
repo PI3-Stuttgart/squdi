@@ -33,7 +33,7 @@
      <x>0</x>
      <y>0</y>
      <width>1440</width>
-     <height>30</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -76,6 +76,12 @@
    <property name="allowedAreas">
     <set>Qt::LeftToolBarArea|Qt::RightToolBarArea|Qt::TopToolBarArea</set>
    </property>
+   <property name="iconSize">
+    <size>
+     <width>20</width>
+     <height>20</height>
+    </size>
+   </property>
    <property name="toolButtonStyle">
     <enum>Qt::ToolButtonTextUnderIcon</enum>
    </property>
@@ -94,11 +100,13 @@
    <addaction name="separator"/>
    <addaction name="action_history_back"/>
    <addaction name="action_history_forward"/>
+   <addaction name="separator"/>
+   <addaction name="actionRT_LT"/>
   </widget>
   <action name="action_scanner_settings">
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</iconset>
    </property>
    <property name="text">
     <string>Scan Settings</string>
@@ -107,7 +115,7 @@
   <action name="action_close_window">
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/application-exit.svg</normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/application-exit.svg</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/application-exit.svg</normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/application-exit.svg</iconset>
    </property>
    <property name="text">
     <string>Close window</string>
@@ -119,7 +127,7 @@
   <action name="action_optimizer_settings">
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</iconset>
    </property>
    <property name="text">
     <string>Optimizer Settings</string>
@@ -131,8 +139,8 @@
    </property>
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-select.svgz</normaloff>
-     <normalon>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/search_active.svg</normalon>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-select.svgz</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-select.svgz</normaloff>
+     <normalon>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/search_active.svg</normalon>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-select.svgz</iconset>
    </property>
    <property name="text">
     <string>Zoom</string>
@@ -217,7 +225,7 @@ Shortcut:Ctrl+Alt+X</string>
    </property>
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-next.svgz</normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-next.svgz</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-next.svgz</normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-next.svgz</iconset>
    </property>
    <property name="text">
     <string>Forward</string>
@@ -236,7 +244,7 @@ Shortcut:Ctrl+R</string>
    </property>
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-previous.svgz</normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-previous.svgz</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-previous.svgz</normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/go-previous.svgz</iconset>
    </property>
    <property name="text">
     <string>Backward</string>
@@ -266,7 +274,7 @@ Shortcut:Ctrl+Z</string>
   <action name="action_utility_full_range">
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-fit-best.svg</normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-fit-best.svg</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-fit-best.svg</normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/zoom-fit-best.svg</iconset>
    </property>
    <property name="text">
     <string>Full range</string>
@@ -297,7 +305,7 @@ Shortcut: Shift+R</string>
   <action name="action_display_settings">
    <property name="icon">
     <iconset>
-     <normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</normaloff>../../../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</iconset>
+     <normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</normaloff>../../../../../../Software/qudivenv/src/qudi/qudi/core/artwork/icons/configure.svg</iconset>
    </property>
    <property name="text">
     <string>Display Settings</string>
@@ -328,6 +336,28 @@ Shortcut:Alt+T</string>
    </property>
    <property name="text">
     <string>Save all</string>
+   </property>
+  </action>
+  <action name="actionRT_LT">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../../../../../qudi-core/src/qudi/artwork/icons/temp_hot.svg</normaloff>
+     <normalon>../../../../../qudi-core/src/qudi/artwork/icons/temp_cold.svg</normalon>../../../../../qudi-core/src/qudi/artwork/icons/temp_hot.svg</iconset>
+   </property>
+   <property name="text">
+    <string>RT/LT</string>
+   </property>
+   <property name="iconText">
+    <string>RT/LT</string>
+   </property>
+   <property name="toolTip">
+    <string>Toggle the voltage limits for the scanner for RT and LT. </string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::TextHeuristicRole</enum>
    </property>
   </action>
  </widget>
