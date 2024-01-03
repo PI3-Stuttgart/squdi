@@ -6,17 +6,17 @@ from qudi.core.configoption import ConfigOption
 from qudi.core.module import Base
 import functools
 
-def remote_tagger(func):
-    @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        # Check if 'remote_tagger' is None in the keyword arguments
-        if kwargs.get('is_remote') is True:
-            # Assuming createTimeTaggerNetwork is a function you've defined elsewhere
-            tagger = createTimeTaggerNetwork(f'{self._remote_tagger_ip}:{self._remote_tagger_port}')
-            kwargs['tagger'] = tagger
-        # Call the original function with the modified arguments
-        return func(self, *args, **kwargs)
-    return wrapper
+#def remote_tagger(func):
+#    @functools.wraps(func)
+#    def wrapper(self, *args, **kwargs):
+#        # Check if 'remote_tagger' is None in the keyword arguments
+#        if self._remote_tagger_ip is not None:
+#           # Assuming createTimeTaggerNetwork is a function you've defined elsewhere
+#            tagger = createTimeTaggerNetwork(f'{self._remote_tagger_ip}:{self._remote_tagger_port}')
+#            kwargs['tagger'] = tagger
+#       # Call the original function with the modified arguments
+#        return func(self, *args, **kwargs)
+#    return wrapper
 
 
 class TT(Base):
@@ -70,13 +70,16 @@ class TT(Base):
 
     def on_activate(self):
         try:
-            if self._serial is not None:
-                self.tagger = createTimeTagger(self._serial)
+            if self._remote_tagger_ip is not None:
+                self.tagger = createTimeTaggerNetwork(f'{self._remote_tagger_ip}:{self._remote_tagger_port}')
             else:
-                self.tagger = createTimeTagger()
-            self.log.info(f"Tagger initialization successful: {self.tagger.getSerial()}")
+                if self._serial is not None:
+                    self.tagger = createTimeTagger(self._serial)
+                else:
+                    self.tagger = createTimeTagger()
+                self.log.info(f"Tagger initialization successful: {self.tagger.getSerial()}")
 
-            
+                
         except:
             self.log.error(f"\nCheck if the TimeTagger device is being used by another instance.")
             Exception(f"\nCheck if the TimeTagger device is being used by another instance.")
@@ -95,14 +98,14 @@ class TT(Base):
         # if self.set_conditional_filter:
         #     self.tagger.setConditionalFilter(trigger=self._hist["channels"], 
         #                                     filtered=self._hist["trigger_channel"])
-
-        self._combined_channels = self.combiner(self._combiner["channels"])
+        #if self._combiner["channels"] is not None:
+        #    self._combined_channels = self.combiner(self._combiner["channels"])
         
 
     def on_deactivate(self):
         pass
         
-    @remote_tagger
+    #@remote_tagger
     def histogram(self, tagger=None, **kwargs):  
         """
         The histogram takes default values from the params.yaml
@@ -120,7 +123,7 @@ class TT(Base):
                             kwargs['trigger_channel'],
                             kwargs['bin_width'],
                             kwargs['number_of_bins'])
-    @remote_tagger
+    #@remote_tagger
     def correlation(self, tagger=None, **kwargs):  
         """
         The correlation takes default values from the params.yaml
@@ -140,7 +143,7 @@ class TT(Base):
                             kwargs['number_of_bins'])
 
     #FIX!
-    @remote_tagger
+    #@remote_tagger
     def delay_channel(self, channel, delay):
         self.tagger.setInputDelay(delay=delay, channel=channel)
 
@@ -151,7 +154,7 @@ class TT(Base):
         return Dump(self.tagger, dumpPath, self.maxDumps,\
                                     self.allChans)
     
-    @remote_tagger
+    #@remote_tagger
     def countrate(self, tagger=None, channels=None):
         """
         The countrate takes default values from the params.yaml
@@ -166,7 +169,7 @@ class TT(Base):
         return Countrate(tagger,
                                 channels)
 
-    @remote_tagger
+    #@remote_tagger
     def counter(self, tagger=None, **kwargs):
         """
         refresh_rate - number of samples per second:
@@ -180,11 +183,11 @@ class TT(Base):
                         kwargs['n_values'])
 
     #!FIX
-    @remote_tagger
+    #@remote_tagger
     def combiner(self, channels):
         return Combiner(self.tagger, channels)
 
-    @remote_tagger
+    #@remote_tagger
     def count_between_markers(self, click_channel, begin_channel, end_channel, n_values, tagger=None):
         tagger = tagger if tagger is not None else self.tagger
 
@@ -194,7 +197,7 @@ class TT(Base):
                                 end_channel,
                                 n_values)     
 
-    @remote_tagger
+    #@remote_tagger
     def time_differences(self, click_channel, start_channel, next_channel, binwidth,n_bins, n_histograms, tagger=None):
         tagger = tagger if tagger is not None else self.tagger
         return TimeDifferences(tagger, 

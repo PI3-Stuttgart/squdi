@@ -81,6 +81,7 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
 
     # config options
     _timetagger = Connector(name='tt', interface = "TT")
+    _timetagger_remote = Connector(name='tt_remote', interface = "TT")
     _device_name = ConfigOption(name='device_name', default='Dev1', missing='warn')
     
     _device_handle = Connector(name='device_handle', interface = "NI_DeviceHandle", optional = True)
@@ -108,6 +109,7 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
     _tt_falling_edge_clock_input = ConfigOption(name = "tt_falling_edge_clock_input",
                                                 default=None)
     _sum_channels = ConfigOption(name='sum_channels', default=[], missing='nothing')
+
     _adc_voltage_ranges = ConfigOption(name='adc_voltage_ranges',
                                        default={'ai{}'.format(channel_index): [-10, 10]
                                                 for channel_index in range(0, 10)},  # TODO max 10 some what arbitrary
@@ -182,6 +184,7 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
 
         # Check if device is connected and set device to use
         self._tt = self._timetagger()
+        self._tt_remote = self._timetagger_remote()
         dev_names = ni.system.System().devices.device_names
         if self._device_name.lower() not in set(dev.lower() for dev in dev_names):
             raise ValueError(
@@ -296,7 +299,7 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
                                  for key in digital_sources})  # TODO Real HW constraint?
         if len(self._sum_channels) > 1:
             input_limits["sum"] = [0, int(1e8)]
-            
+
         if analog_sources:
             adc_voltage_ranges = {self._extract_terminal(key): value
                                   for key, value in self._adc_voltage_ranges.items()}
@@ -845,7 +848,10 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
         cbm stnads for count between markers
         @return int: error code (0:OK, -1:error)
         """
-        channels_tt = [int(ch[2:]) for ch in self.__active_channels['di_channels'] if "tt" in ch]
+        
+        channels_tt = [int(ch.split("_")[-1]) for ch in self.__active_channels['di_channels'] if "tt" == ch.split("_")[0]]
+        channels_tt_remote = [int(ch.split("_")[-1]) for ch in self.__active_channels['di_channels'] if "ttR".lower() == ch.split("_")[0]]
+        
         clock_tt = int(self._tt_ni_clock_input[2:])
         #Workaround for the old time tagger version at the praktikum
         if self._tt_falling_edge_clock_input:
@@ -855,12 +861,16 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
         self._timetagger_cbm_tasks = [self._tt.count_between_markers(click_channel = channel, 
                                         begin_channel = clock_tt,
                                         end_channel = clock_fall_tt, 
-                                        n_values=self.frame_size) if channel != 111 else self._tt.count_between_markers(
-                                                        click_channel = self._tt._combined_channels.getChannel(), 
-                                                        begin_channel = clock_tt,
-                                                        end_channel = clock_fall_tt, 
-                                                        n_values=self.frame_size) 
+                                        n_values=self.frame_size) 
                                         for channel in channels_tt]
+        for channel in channels_tt_remote:
+            self._timetagger_cbm_tasks.append(
+                self._tt_remote.count_between_markers(click_channel = channel, 
+                                        begin_channel = clock_tt,
+                                        end_channel = clock_fall_tt, 
+                                        n_values=self.frame_size)
+            )
+
         return 0
 
     def _init_analog_in_task(self):
