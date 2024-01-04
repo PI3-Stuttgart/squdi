@@ -28,6 +28,7 @@ class TT(Base):
     _channels_params = ConfigOption('channels_params', dict(), missing='info')
     _remote_tagger_ip = ConfigOption('remote_tagger_ip', None, missing='info')
     _remote_tagger_port = ConfigOption('remote_tagger_port', None, missing='info')
+    _port = ConfigOption('port', 12233, missing='info')
     _remote_channel = ConfigOption('remote_tagger_port', None, missing='info')
     set_conditional_filter = True
 
@@ -77,8 +78,9 @@ class TT(Base):
                     self.tagger = createTimeTagger(self._serial)
                 else:
                     self.tagger = createTimeTagger()
+                self.tagger.startServer(access_mode = AccessMode.Control,port=self._port)
                 self.log.info(f"Tagger initialization successful: {self.tagger.getSerial()}")
-
+                
                 
         except:
             self.log.error(f"\nCheck if the TimeTagger device is being used by another instance.")
