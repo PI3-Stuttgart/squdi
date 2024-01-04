@@ -159,7 +159,7 @@ class TT(Base):
         refresh_rate - number of samples per second:
 
         """
-        return Counter(tagger,
+        return Counter(self.tagger,
                         kwargs['channels'],
                         kwargs['bin_width'],
                         kwargs['n_values'])
