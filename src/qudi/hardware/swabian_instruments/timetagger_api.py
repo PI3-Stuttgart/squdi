@@ -4,19 +4,6 @@ import numpy as np
 from TimeTagger import createTimeTagger,createTimeTaggerNetwork,AccessMode, Dump, Correlation, Histogram, Counter, CountBetweenMarkers, FileWriter, Countrate, Combiner, TimeDifferences
 from qudi.core.configoption import ConfigOption
 from qudi.core.module import Base
-import functools
-
-#def remote_tagger(func):
-#    @functools.wraps(func)
-#    def wrapper(self, *args, **kwargs):
-#        # Check if 'remote_tagger' is None in the keyword arguments
-#        if self._remote_tagger_ip is not None:
-#           # Assuming createTimeTaggerNetwork is a function you've defined elsewhere
-#            tagger = createTimeTaggerNetwork(f'{self._remote_tagger_ip}:{self._remote_tagger_port}')
-#            kwargs['tagger'] = tagger
-#       # Call the original function with the modified arguments
-#        return func(self, *args, **kwargs)
-#    return wrapper
 
 
 class TT(Base):
