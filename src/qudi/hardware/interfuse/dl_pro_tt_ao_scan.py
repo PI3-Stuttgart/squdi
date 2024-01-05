@@ -228,7 +228,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                 return True, self.scan_settings
 
             channels_tt = [int(ch[2:]) for ch in self.__active_channels['di_channels'] if "tt" in ch and "remote" not in ch]
-            remote_channels_tt = [int(ch[2:].split("_remote")[0]) for ch in self.__active_channels['di_channels'] if "tt" in ch and "remote" in ch]
+            #remote_channels_tt = [int(ch[2:].split("_remote")[0]) for ch in self.__active_channels['di_channels'] if "tt" in ch and "remote" in ch]
             #Workaround for the old time tagger version at the praktikum
 
             #configure the time tagger
@@ -244,17 +244,6 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                 td_task.setMaxCounts(self._max_rollovers)
                 self._time_differences_tasks.append(td_task)
             
-            for channel in remote_channels_tt:
-                td_task = self._timetagger().time_differences(
-                            click_channel = channel, 
-                            start_channel = self._ao_trigger_channel,
-                            next_channel = self._ao_trigger_channel,
-                            binwidth=int(1e12/frequency),
-                            n_bins=int(resolution[0]),
-                            n_histograms=lines_to_scan
-                            is_remote=True)
-                td_task.setMaxCounts(self._max_rollovers)
-                self._time_differences_tasks.append(td_task)
 
             #configure the time tagger
             self._histogram_tasks = [self._timetagger().histogram(
@@ -263,14 +252,6 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                             bin_width=int(1e12/frequency),
                             number_of_bins=int(resolution[0]),
                            ) for channel in channels_tt]
-            
-            self._histogram_tasks = [self._timetagger().histogram(
-                            channel = channel, 
-                            trigger_channel = self._ao_trigger_channel,
-                            bin_width=int(1e12/frequency),
-                            number_of_bins=int(resolution[0]),
-                            is_remote=True
-                           ) for channel in remote_channels_tt]
 
             self.sample_rate = frequency
 
