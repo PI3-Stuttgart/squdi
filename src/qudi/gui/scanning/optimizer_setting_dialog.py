@@ -26,20 +26,19 @@ import copy as cp
 from PySide2 import QtCore, QtGui, QtWidgets
 
 from qudi.util.widgets.scientific_spinbox import ScienDSpinBox
-from qudi.logic.scanning_optimize_logic import OptimizerScanSequence
+from qudi.logic.scanning.optimize_logic import OptimizerScanSequence
 
 class OptimizerSettingDialog(QtWidgets.QDialog):
     """ User configurable settings for the scanner optimizer logic
     """
 
-    def __init__(self, scanner_axes, scanner_channels, optimizer_dim=[2,1]):
+    def __init__(self, scanner_axes, scanner_channels):
         super().__init__()
         self.setObjectName('optimizer_settings_dialog')
         self.setWindowTitle('Optimizer Settings')
 
         self.settings_widget = OptimizerSettingWidget(scanner_axes=scanner_axes,
-                                                      scanner_channels=scanner_channels,
-                                                      optimizer_dim=optimizer_dim)
+                                                      scanner_channels=scanner_channels)
 
         self.button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok |
                                                      QtWidgets.QDialogButtonBox.Cancel |
@@ -67,15 +66,13 @@ class OptimizerSettingWidget(QtWidgets.QWidget):
     """ User configurable settings for the scanner optimizer logic
     """
 
-    def __init__(self, scanner_axes, scanner_channels, optimizer_dim=[2,1]):
+    def __init__(self, scanner_axes, scanner_channels):
         super().__init__()
         self.setObjectName('optimizer_settings_widget')
 
         self._avail_axes = sorted([ax.name for ax in scanner_axes])
-        self._optimizer_dim = optimizer_dim
 
-        dummy_seq = OptimizerScanSequence(self._avail_axes,
-                                          self._optimizer_dim)
+        dummy_seq = OptimizerScanSequence(self._avail_axes)
         self._available_opt_sequences = cp.copy(dummy_seq.available_opt_sequences)
 
         font = QtGui.QFont()

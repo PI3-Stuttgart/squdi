@@ -18,6 +18,13 @@ See the GNU Lesser General Public License for more details.
 
 You should have received a copy of the GNU Lesser General Public License along with qudi.
 If not, see <https://www.gnu.org/licenses/>.
+
+Example config:
+
+    camlogic:
+        module.Class: 'camera_logic.CameraLogic'
+        connect:
+            camera: 'camera'
 """
 
 import datetime
@@ -190,3 +197,6 @@ class CameraLogic(LogicBase):
         cbar = plt.colorbar(cfimage, shrink=0.8)
         cbar.ax.tick_params(which=u'both', length=0)
         return fig
+
+
+    

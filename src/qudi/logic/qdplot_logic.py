@@ -381,6 +381,37 @@ class QDPlotLogic(LogicBase):
     def _get_data(self, plot_index: int) -> QDPlotDataSet:
         return self._get_plot_data_set(plot_index)
 
+    def set_data_from_file(self,
+                 file_name: str,
+                 plot_index: int,
+                 name: Optional[str] = None,
+                 clear_old: Optional[bool] = False,
+                 adjust_scale: Optional[bool] = True
+                 ) -> Union[None, str]:
+        """ Set the data to plot """
+        data = np.genfromtxt(file_name)
+        
+        with self._thread_lock:
+            data_set = self._get_plot_data_set(plot_index)
+            if clear_old:
+                data_set.clear()
+                # reset fits for this plot
+                self._do_fit(plot_index, 'No Fit')
+            # Either accept single data array and name argument OR
+            # dict with array values and name keys
+            try:
+                for arr_name, arr in data.items():
+                    data_set.set_data(arr, name=arr_name)
+            except (TypeError, AttributeError):
+                name = data_set.set_data(data, name=name)
+
+            self.sigPlotDataChanged.emit(plot_index, data_set.copy())
+
+            # automatically set the correct range if requested
+            if adjust_scale:
+                self._set_auto_limits(plot_index, True, True)
+            return name
+        
     def set_data(self,
                  plot_index: int,
                  data: Union[Tuple[np.ndarray, np.ndarray], Mapping[str, Tuple[np.ndarray, np.ndarray]]],

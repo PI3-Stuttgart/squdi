@@ -38,7 +38,7 @@ class OdmrCwControlDockWidget(AdvancedDockWidget):
     def __init__(self, *args, power_range=None, frequency_range=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.setWindowTitle('ODMR CW Control')
-
+        self.setObjectName('ODMR CW Control')
         # Determine minimal spinbox width from current default metrics
         self._min_spinbox_width = QtGui.QFontMetrics(ScienDSpinBox().font()).width(
             '   -000.000000 GHz   '
@@ -116,6 +116,7 @@ class OdmrScanControlDockWidget(AdvancedDockWidget):
     def __init__(self, *args, power_range=None, frequency_range=None, data_channels=None, points_range=None,  **kwargs):
         super().__init__(*args, **kwargs)
         self.setWindowTitle('ODMR Scan Control')
+        self.setObjectName('ODMR Scan Control')
         self.setFeatures(self.DockWidgetFloatable | self.DockWidgetMovable)
 
         # Determine minimal spinbox width from current default metrics
@@ -209,6 +210,7 @@ class OdmrScanControlDockWidget(AdvancedDockWidget):
         self.average_scans_spinbox = QtWidgets.QSpinBox()
         self.average_scans_spinbox.setMinimumWidth(self._min_spinbox_width)
         self.average_scans_spinbox.setMinimum(0)
+        self.average_scans_spinbox.setMaximum(1000000)
         self.average_scans_spinbox.valueChanged.connect(self.sigAveragedScansChanged)
         layout.addWidget(self.average_scans_spinbox, 0, 3)
         layout.addWidget(self.runtime_spinbox, 0, 1)

@@ -107,12 +107,12 @@ class SpectrometerDataWidget(QtWidgets.QWidget):
         self.fit_curve = self.plot_widget.plot()
         self.fit_curve.setPen(palette.c2, width=2)
 
-        self.fit_region = pg.LinearRegionItem(values=(0, 1),
+        self.fit_region = pg.LinearRegionItem(
                                               brush=pg.mkBrush(122, 122, 122, 30),
                                               hoverBrush=pg.mkBrush(196, 196, 196, 30))
         self.plot_widget.addItem(self.fit_region)
 
-        self.target_point = pg.InfiniteLine(pos=0,
+        self.target_point = pg.InfiniteLine(
                                             angle=90,
                                             movable=True,
                                             pen=pg.mkPen(color='green', width=2))

@@ -51,7 +51,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.max_repetitions_spinbox = ScienSpinBox()
         self.max_repetitions_spinbox.setMinimumWidth(150)
         self.max_repetitions_spinbox.setMinimum(0)
-        max_repetitions_label = QtWidgets.QLabel('Maximum Repetitions:')
+        max_repetitions_label = QtWidgets.QLabel('Repetitions:')
         max_repetitions_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         layout.addWidget(max_repetitions_label, 1, 0)
         layout.addWidget(self.max_repetitions_spinbox, 1, 1)

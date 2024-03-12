@@ -48,8 +48,6 @@ class OdmrLogic(LogicBase):
         connect:
             microwave: <microwave_name>
             data_scanner: <data_scanner_name>
-        options:
-            default_scan_mode: 'JUMP_LIST'  # optional
     """
 
     # declare connectors
@@ -119,11 +117,11 @@ class OdmrLogic(LogicBase):
         self._start_time = 0.0
         self._fit_container = None
         self._fit_config_model = None
-
+        
         self._raw_data = None
         self._signal_data = None
         self._frequency_data = None
-        self._fit_results = None
+        
 
     def on_activate(self):
         """
@@ -689,23 +687,33 @@ class OdmrLogic(LogicBase):
             self._fit_results[channel][range_index] = None
         self.sigFitUpdated.emit(self._fit_results[channel][range_index], channel, range_index)
 
+# try:
+#             config, result = container.fit_data(fit_config, data[0], data[1])
+#             if result:
+#                 result.result_str = container.formatted_result(result)
+#             if use_alternative_data:
+#                 self._fit_result_alt = result
+#             else:
+#                 self._fit_result = result
+
+#         except:
+#             config, result = '', None
+#             self.log.exception('Something went wrong while trying to perform data fit.')
+
+#         self.sigFitUpdated.emit(config, result, use_alternative_data)
+
+
     def _get_metadata(self):
-        metadata = {'Microwave CW Power (dBm)': self._cw_power,
-                    'Microwave Scan Power (dBm)': self._scan_power,
-                    'Approx. Run Time (s)': self._elapsed_time,
-                    'Number of Frequency Sweeps (#)': self._elapsed_sweeps,
-                    'Start Frequencies (Hz)': tuple(rng[0] for rng in self._scan_frequency_ranges),
-                    'Stop Frequencies (Hz)': tuple(rng[1] for rng in self._scan_frequency_ranges),
-                    'Step sizes (Hz)': tuple(rng[2] for rng in self._scan_frequency_ranges),
-                    'Data Rate (Hz)': self._data_rate,
-                    'Oversampling factor (Hz)': self._oversampling_factor,
-                    'Channel Name': ''}
-        for fit_channel in self._fit_results:
-            for ii, fit_result in enumerate(self._fit_results[fit_channel]):
-                if fit_result:
-                    export_dict = FitContainer.dict_result(fit_result[1])
-                    metadata[f'fit result (channel "{fit_channel}" range {ii})'] = export_dict
-        return metadata
+        return {'Microwave CW Power (dBm)': self._cw_power,
+                'Microwave Scan Power (dBm)': self._scan_power,
+                'Approx. Run Time (s)': self._elapsed_time,
+                'Number of Frequency Sweeps (#)': self._elapsed_sweeps,
+                'Start Frequencies (Hz)': tuple(rng[0] for rng in self._scan_frequency_ranges),
+                'Stop Frequencies (Hz)': tuple(rng[1] for rng in self._scan_frequency_ranges),
+                'Step sizes (Hz)': tuple(rng[2] for rng in self._scan_frequency_ranges),
+                'Data Rate (Hz)': self._data_rate,
+                'Oversampling factor (Hz)': self._oversampling_factor,
+                'Channel Name': ''}
 
     def _get_raw_column_headers(self, data_channel):
         channel_unit = self.data_constraints.channel_units[data_channel]
@@ -739,17 +747,30 @@ class OdmrLogic(LogicBase):
         # Join everything in one big array
         return np.column_stack(joined_data)
 
-    @QtCore.Slot(str)
-    def save_odmr_data(self, tag=None):
+    @QtCore.Slot(str, str)
+    def save_odmr_data(self, tag = None, folder_path = None):
+
         """ Saves the current ODMR data to a file."""
+        if folder_path is None:
+           folder_path = self.module_default_data_dir
         with self._threadlock:
             # Create and configure storage helper instance
             timestamp = datetime.datetime.now()
             metadata = self._get_metadata()
+
+            
+            for channel in self._data_scanner().constraints.channel_names:
+                for fit_info in self._fit_results[channel]:
+                    if fit_info is None:
+                        continue
+                    fit_params_meta = {key: value for key, value in dict(fit_info[1].params).items()}
+                    fit_params_meta["Fit function name"] = fit_info[0]
+                    metadata.update(fit_params_meta)
+
             tag = tag + '_' if tag else ''
 
             # Save raw data in a separate file per data channel
-            data_storage = TextDataStorage(root_dir=self.module_default_data_dir,
+            data_storage = TextDataStorage(root_dir=folder_path,
                                            column_formats='.15e')
             for channel, range_data in self._raw_data.items():
                 metadata['Channel Name'] = channel
@@ -830,12 +851,18 @@ class OdmrLogic(LogicBase):
         fig, (ax_signal, ax_raw) = plt.subplots(nrows=2, ncols=1)
 
         # plot signal data
-        ax_signal.plot(freq_data, signal_data, linestyle=':', linewidth=0.5, marker='o')
+        ax_signal.plot(freq_data, signal_data, linestyle='-', linewidth=0.5, marker='o')
         # Include fit curve if there is one
         if fit_result is not None:
             ax_signal.plot(fit_x, fit_y, marker='None')
+            self.add_fit_params_to_figure(ax_signal, fit_result[1])
+                
         ax_signal.set_ylabel(f'{channel} ({signal_unit_prefix}{unit})')
         ax_signal.set_xlim(min(freq_data), max(freq_data))
+
+
+
+
 
         # plot raw data
         raw_data_plot = ax_raw.imshow(raw_data.transpose(),
@@ -855,7 +882,8 @@ class OdmrLogic(LogicBase):
         # Adjust subplots to make room for colorbar
         fig.subplots_adjust(right=0.8)
         # Add colorbar axis to figure
-        colorbar_ax = fig.add_axes([0.85, 0.15, 0.02, 0.7])
+        l, b, w, h = 0.85, 0.1, 0.02, 0.37
+        colorbar_ax = fig.add_axes([l, b, w, h])
         # Draw colorbar
         colorbar = fig.colorbar(raw_data_plot, cax=colorbar_ax)
         colorbar.set_label(f'{channel} ({signal_unit_prefix}{unit})')
@@ -882,3 +910,54 @@ class OdmrLogic(LogicBase):
         #                          verticalalignment='center',
         #                          rotation=90)
         return fig
+
+    def add_fit_params_to_figure(self, ax, fit_result):
+        """
+        ax -- the 1D subplot with the fit
+        fit_result -- the fit results from the fit container (the lmfit object)
+        """
+        # add then the fit result to the plot:
+
+        # Parameters for the text plot:
+        # The position of the text annotation is controlled with the
+        # relative offset in x direction and the relative length factor
+        # rel_len_fac of the longest entry in one column
+        rel_offset = 0.02
+        rel_len_fac = 0.011
+        entries_per_col = 24
+        result_str = self._fit_container.formatted_result(fit_result)
+
+        # do reverse processing to get each entry in a list
+        entry_list = result_str.split('\n')
+        # slice the entry_list in entries_per_col
+        chunks = [entry_list[x:x + entries_per_col] for x in range(0, len(entry_list), entries_per_col)]
+
+        is_first_column = True  # first entry should contain header or \n
+
+        for column in chunks:
+
+            max_length = max(column, key=len)  # get the longest entry
+            column_text = ''
+
+            for entry in column:
+                column_text += entry + '\n'
+
+            column_text = column_text[:-1]  # remove the last new line
+
+            heading = ''
+            if is_first_column:
+                heading = 'Fit results:'
+
+            column_text = heading + '\n' + column_text
+
+            ax.text(1.00 + rel_offset, 0.99, column_text,
+                        verticalalignment='top',
+                        horizontalalignment='left',
+                        transform=ax.transAxes,
+                        fontsize=12)
+
+            # the rel_offset in position of the text is a linear function
+            # which depends on the longest entry in the column
+            rel_offset += rel_len_fac * len(max_length)
+
+            is_first_column = False

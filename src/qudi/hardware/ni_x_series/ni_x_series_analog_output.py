@@ -215,6 +215,15 @@ class NIXSeriesAnalogOutput(ProcessControlSwitchMixin, ProcessSetpointInterface)
                 raise RuntimeError(f'Please activate channel "{channel}" before getting setpoint')
             return self._setpoints[channel]
 
+    def set_new_ao_limits(self, is_LT_regime):
+        #lim = {'ao2': [0, lim], 'ao1': [0, lim], 'ao3': [0, lim]}
+        if is_LT_regime:
+            limits = {ch_name:ch_params["limits_LT"]  for ch_name, ch_params in self._channels_config.items()}
+        else:
+            limits = {ch_name:ch_params["limits"]  for ch_name, ch_params in self._channels_config.items()}
+        if self._constraints:
+            self._constraints._channel_limits = limits
+
     def _terminate_ao_task(self, channel: str) -> None:
         """ Reset analog output to 0 if keep_values flag is not set """
         try:

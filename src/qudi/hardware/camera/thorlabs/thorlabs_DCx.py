@@ -26,6 +26,7 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from ctypes import *
+import ctypes
 import numpy as np
 
 from qudi.core.configoption import ConfigOption

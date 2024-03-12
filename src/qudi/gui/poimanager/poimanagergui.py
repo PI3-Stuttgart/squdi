@@ -35,7 +35,7 @@ from qudi.util.colordefs import QudiPalettePale as palette
 from PySide2 import QtCore, QtGui, QtWidgets
 from qudi.util import uic
 from qudi.util.widgets.plotting.image_widget import MouseTrackingImageWidget
-
+from qudi.util.colordefs import ColorScaleRdBuRev as ColorScale
 
 class PoiMarker(pg.EllipseROI):
     """
@@ -234,7 +234,7 @@ class PoiManagerMainWindow(QtWidgets.QMainWindow):
         uic.loadUi(ui_file, self)
 
         # Create central widget
-        self.roi_image = MouseTrackingImageWidget()
+        self.roi_image = MouseTrackingImageWidget(colorscale=ColorScale)
         self.roi_image.image_item.setOpts(False)
         self.roi_image.set_axis_label('bottom', label='Position', unit='m')
         self.roi_image.set_axis_label('left', label='Position', unit='m')
@@ -326,7 +326,8 @@ class PoiManagerGui(GuiBase):
         self.__connect_update_signals_from_logic()
         self.__connect_control_signals_to_logic()
 
-        self._mw.show()
+        # self._mw.show()
+        self._restore_window_geometry(self._mw)
         return
 
     def on_deactivate(self):
@@ -337,6 +338,7 @@ class PoiManagerGui(GuiBase):
         self.__disconnect_control_signals_to_logic()
         self.__disconnect_update_signals_from_logic()
         self.__disconnect_internal_signals()
+        self._save_window_geometry(self._mw)
         self._mw.close()
 
     @QtCore.Slot()
@@ -614,8 +616,13 @@ class PoiManagerGui(GuiBase):
         if button.button() != QtCore.Qt.MouseButton.LeftButton:
             return
         # Z position from ROI origin, X and Y positions from click event
+        # Getting Z from ROI origin is wrong. The ROI origin is initialized as [0,0,0].
+        # Therefore, the pois would have a z coordinate of 0 eventhoough you might be somewhere else.
+        # Fix: we send None as z and check in the logic what the scanner position in z is and take that one
+        # (similar to adding a poi from the scanner posi).
         new_pos = self._poi_manager_logic().roi_origin
         new_pos[0], new_pos[1] = (pos[0], pos[1])
+        new_pos[2] = 99999999999 # I would like to have put None but qudi wants a number
         self.sigAddPoiByClick.emit(new_pos)
         return
 

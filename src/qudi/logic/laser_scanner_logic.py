@@ -23,17 +23,15 @@ You should have received a copy of the GNU Lesser General Public License along w
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from collections import OrderedDict
-import datetime
-import matplotlib.pyplot as plt
-import numpy as np
-import time
+from PySide2 import QtCore
+import copy as cp
 
-from qudi.core.connector import Connector
-from qudi.core.statusvariable import StatusVar
-from qudi.util.mutex import RecursiveMutex
 from qudi.core.module import LogicBase
-from qtpy import QtCore
+from qudi.util.mutex import RecursiveMutex
+from qudi.core.connector import Connector
+from qudi.core.configoption import ConfigOption
+from qudi.core.statusvariable import StatusVar
+
 
 
 class LaserScannerLogic(LogicBase):

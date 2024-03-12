@@ -39,6 +39,7 @@ class OdmrMainWindow(QtWidgets.QMainWindow):
         super().__init__(*args, **kwargs)
 
         self.setWindowTitle('qudi: ODMR')
+        self.setObjectName('qudi: ODMR')
         # Create central plot widgets
         self.setCentralWidget(OdmrPlotWidget())
         # Create status bar
@@ -109,21 +110,22 @@ class OdmrMainWindow(QtWidgets.QMainWindow):
         self.save_nametag_lineedit.setToolTip('Enter a nametag to include in saved file name')
 
         # Create toolbar and add actions and QLineEdit
-        toolbar = QtWidgets.QToolBar()
+        toolbar = QtWidgets.QToolBar(objectName='ToolBar')
+        # toolbar.setObjectName("ToolBar")
         toolbar.addAction(self.action_toggle_measurement)
         toolbar.addAction(self.action_resume_measurement)
         toolbar.addSeparator()
         toolbar.addAction(self.action_save_measurement)
-        toolbar.addWidget(self.save_nametag_lineedit)
+        # toolbar.addWidget(self.save_nametag_lineedit)
         toolbar.addSeparator()
-        tool_button = QtWidgets.QToolButton()
+        tool_button = QtWidgets.QToolButton(objectName='QToolButton')
         tool_button.setDefaultAction(self.action_toggle_cw)
         tool_button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         toolbar.addWidget(tool_button)
         self.addToolBar(QtCore.Qt.TopToolBarArea, toolbar)
 
         # Create menu bar and add actions
-        menu_bar = QtWidgets.QMenuBar()
+        menu_bar = QtWidgets.QMenuBar(objectName='MenuBar')
         menu = menu_bar.addMenu('File')
         menu.addAction(self.action_save_measurement)
         menu.addSeparator()

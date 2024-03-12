@@ -132,6 +132,7 @@ class QDPlotterGui(GuiBase):
         self._mw.action_restore_arced_view.triggered.connect(self.restore_arc_view)
         self._mw.action_save_all.triggered.connect(self._save_all_clicked)
         self._mw.action_new_plot.triggered.connect(logic.add_plot, QtCore.Qt.QueuedConnection)
+        self._mw.action_plot_from_file.triggered.connect(logic.add_plot, QtCore.Qt.QueuedConnection)
 
         # Initialize dock widgets
         self._plot_dockwidgets = list()
@@ -169,6 +170,7 @@ class QDPlotterGui(GuiBase):
 
         # Connect the main window restore view actions
         self._mw.action_new_plot.triggered.disconnect()
+        self._mw.action_plot_from_file.triggered.disconnect()
         self._mw.action_restore_tabbed_view.triggered.disconnect()
         self._mw.action_restore_side_by_side_view.triggered.disconnect()
         self._mw.action_restore_arced_view.triggered.disconnect()

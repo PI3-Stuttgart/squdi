@@ -22,7 +22,7 @@ If not, see <https://www.gnu.org/licenses/>.
 import os
 import time
 import numpy as np
-import okfrontpanel as ok
+import qudi.hardware.fpga_pulser.ok as ok
 
 from qudi.core.configoption import ConfigOption
 from qudi.core.statusvariable import StatusVar
@@ -54,7 +54,7 @@ class OkFpgaPulser(PulserInterface):
 
     """
     _fpga_serial = ConfigOption(name='fpga_serial', missing='error')
-    _path_to_bitfiles_dir = ConfigOption('path_to_bitfiles_dir', missing='error')
+    _path_to_bitfile = ConfigOption('path_to_bitfile', missing='error')
     _fpga_type = ConfigOption(name='fpga_type', default='XEM6310_LX150', missing='warn')
 
     __current_waveform = StatusVar(name='current_waveform', default=np.zeros(32, dtype='uint8'))
@@ -356,12 +356,10 @@ class OkFpgaPulser(PulserInterface):
             self.__sample_rate = 950e6
             bitfile_name = 'pulsegen_8chnl_950MHz_{0}.bit'.format(self._fpga_type.split('_')[1])
 
-        bitfile_path = os.path.join(self._path_to_bitfiles_dir, bitfile_name)
+        assert os.path.isfile(self._path_to_bitfile), f'Could not find bitfile {self._path_to_bitfile} in {self._path_to_bitfile}'
 
-        assert os.path.isfile(bitfile_path), f'Could not find bitfile {bitfile_name} in {bitfile_path}'
-
-        self.fpga.ConfigureFPGA(bitfile_path)
-        self.log.info('FPGA pulse generator configured with {0}'.format(bitfile_path))
+        self.fpga.ConfigureFPGA(self._path_to_bitfile)
+        self.log.info('FPGA pulse generator configured with {0}'.format(self._path_to_bitfile))
 
         if self.fpga.IsFrontPanel3Supported():
             self._fp3support = True

@@ -219,7 +219,7 @@ class FastCounterDummy(FastCounterInterface):
         """
 
         # include an artificial waiting time
-        time.sleep(0.5)
+        # time.sleep(0.1)
         info_dict = {'elapsed_sweeps': None, 'elapsed_time': None}
         return self._count_data, info_dict
 

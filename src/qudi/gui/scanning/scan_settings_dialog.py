@@ -59,6 +59,7 @@ class ScannerSettingsWidget(QtWidgets.QWidget):
     """
 
     sigFrequencyChanged = QtCore.Signal(str, float, float)
+    sigShiftChanged = QtCore.Signal(str, float)
     # TODO sigRangeChanged does not exist
 
     def __init__(self, *args, scanner_axes, scanner_constraints, **kwargs):
@@ -141,6 +142,37 @@ class ScannerSettingsWidget(QtWidgets.QWidget):
 
         self.setLayout(QtWidgets.QVBoxLayout())
         self.layout().addWidget(frequency_groupbox)
+        
+        layout_shift = QtWidgets.QGridLayout()
+
+        for index, axis in enumerate(scanner_axes):
+
+            label = QtWidgets.QLabel(axis.name.title())
+            label.setFont(font)
+            label.setAlignment(QtCore.Qt.AlignCenter)
+            layout_shift.addWidget(label, index, 0)
+
+            shift_spinbox = ScienDSpinBox()
+            shift_spinbox.setObjectName('{0}_shift_scienDSpinBox'.format(axis.name))
+            shift_spinbox.setRange(*axis.value_range)
+            shift_spinbox.setValue(0)
+            shift_spinbox.setSuffix('m')
+            shift_spinbox.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+            shift_spinbox.setMinimumSize(75, 0)
+            shift_spinbox.setSizePolicy(QtWidgets.QSizePolicy.Preferred,
+                                            QtWidgets.QSizePolicy.Preferred)
+            layout_shift.addWidget(shift_spinbox, index, 1)
+
+            # Remember widgets references for later access
+            self.axes_widgets[axis.name]['shift_spinbox'] = shift_spinbox
+            
+
+        shift_groupbox = QtWidgets.QGroupBox('Shift')
+        shift_groupbox.setFont(font)
+        shift_groupbox.setLayout(layout_shift)
+
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.layout().addWidget(shift_groupbox)
 
     @property
     def axes(self):
@@ -156,6 +188,35 @@ class ScannerSettingsWidget(QtWidgets.QWidget):
                 if self._backscan_configurable else None)
             for ax, widgets in self.axes_widgets.items()
         }
+    
+    @property
+    def shift(self):
+        """
+        :return: dict with
+        """
+        return {
+            ax: widgets['shift_spinbox'].value() for ax, widgets in self.axes_widgets.items()
+        }
+
+    @QtCore.Slot(dict)
+    @QtCore.Slot(object, str)
+    def set_shift(self, value, axis=None):
+        if axis is None or isinstance(value, dict):
+            for ax, shift in value.items():
+                shift_spinbox = self.axes_widgets[ax]['shift_spinbox']
+                
+                shift_spinbox.blockSignals(True)
+                shift_spinbox.setValue(shift)
+                shift_spinbox.blockSignals(False)
+               
+
+        else:
+            shift_spinbox = self.axes_widgets[axis]['shift_spinbox']
+            shift_spinbox.blockSignals(True)
+            shift_spinbox.setValue(value)
+            shift_spinbox.blockSignals(False)
+           
+
 
     @QtCore.Slot(dict)
     @QtCore.Slot(object, str)
@@ -181,14 +242,20 @@ class ScannerSettingsWidget(QtWidgets.QWidget):
             backward_spinbox.setValue(backwards) if self._backscan_configurable else None
             backward_spinbox.blockSignals(False)
 
-    def __get_axis_forward_callback(self, axis, spinbox):
+    def __get_axis_backward_callback(self, axis, spinbox):
         def callback():
             backward_spinbox = self.axes_widgets[axis]['backward_freq_spinbox']
             self.sigFrequencyChanged.emit(axis, spinbox.value(), backward_spinbox.value())
         return callback
 
-    def __get_axis_backward_callback(self, axis, spinbox):
+    def __get_axis_forward_callback(self, axis, spinbox):
         def callback():
             forward_spinbox = self.axes_widgets[axis]['forward_freq_spinbox']
-            self.sigFrequencyChanged.emit(axis, spinbox.value(), backward_spinbox.value())
+            self.sigFrequencyChanged.emit(axis, spinbox.value(), forward_spinbox.value())
+        return callback
+
+    def __get_axis_shift_callback(self, axis, spinbox):
+        def callback():
+            shift_spinbox = self.axes_widgets[axis]['shift_spinbox']
+            self.sigShiftChanged.emit(axis, shift_spinbox.value())
         return callback

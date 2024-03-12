@@ -26,7 +26,9 @@ from PySide2 import QtCore, QtWidgets, QtGui
 
 from qudi.core.connector import Connector
 from qudi.core.statusvariable import StatusVar
+from qudi.core.configoption import ConfigOption
 from qudi.util import units
+import qudi.util.uic as uic
 from qudi.core.module import GuiBase
 from qudi.util.widgets.fitting import FitConfigurationDialog
 from qudi.util.widgets.scientific_spinbox import ScienDSpinBox
@@ -52,14 +54,16 @@ class OdmrGui(GuiBase):
 
     # declare connectors
     _odmr_logic = Connector(name='odmr_logic', interface='OdmrLogic')
-
+    _save_folderpath = StatusVar('save_folderpath', default=None)
+    _save_display_view = StatusVar(name='save_display_view', default=None)
+    _mw_source_name = ConfigOption(name='mw_source_name', default=None)
     # declare status variables
     _max_shown_scans = StatusVar(name='max_shown_scans', default=50)
 
     sigToggleScan = QtCore.Signal(bool, bool)
     sigToggleCw = QtCore.Signal(bool)
     sigDoFit = QtCore.Signal(str, str, int)  # fit_config, channel, range_index
-    sigSaveData = QtCore.Signal(str)
+    sigSaveData = QtCore.Signal(str, str)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -81,7 +85,10 @@ class OdmrGui(GuiBase):
         mw_constraints = logic.microwave_constraints
         self.__cw_control_available = True
         self._mw = OdmrMainWindow()
+        
         self._plot_widget = self._mw.centralWidget()
+        if self._mw_source_name:
+            self._mw.setWindowTitle(self._mw_source_name)
         # ToDo: Get constraints from scanner
         self._scan_control_dockwidget = OdmrScanControlDockWidget(
             parent=self._mw,
@@ -102,7 +109,7 @@ class OdmrGui(GuiBase):
         self._fit_config_dialog = FitConfigurationDialog(parent=self._mw,
                                                          fit_config_model=logic.fit_config_model)
         self._odmr_settings_dialog = OdmrSettingsDialog(parent=self._mw)
-
+        # self.centralwidget.hide()
         # Initialize widget contents
         self._data_selection_changed()
         self._update_scan_parameters()
@@ -110,7 +117,7 @@ class OdmrGui(GuiBase):
         self._update_cw_parameters()
         self._update_cw_state()
         self._restore_odmr_settings()
-
+        self._init_save_widget()
         # Connect signals
         self.__connect_main_window_actions()
         self.__connect_fit_control_signals()
@@ -124,11 +131,15 @@ class OdmrGui(GuiBase):
             self._mw.action_toggle_cw.setVisible(False)
             self._mw.action_show_cw_controls.setEnabled(False)
 
-        self.restore_default_view()
+        # self.restore_default_view()
+        self._restore_window_geometry(self._mw)
+        self.load_view()
         self.show()
 
     def on_deactivate(self):
         # Disconnect signals
+        self._save_window_geometry(self._mw)
+        self.save_view()
         self.__disconnect_main_window_actions()
         self.__disconnect_fit_control_signals()
         self.__disconnect_cw_control_signals()
@@ -140,11 +151,43 @@ class OdmrGui(GuiBase):
         self._fit_config_dialog.close()
         self._mw.close()
 
+    def save_view(self):
+        """Saves the current GUI state as a QbyteArray.
+           The .data() function will transform it to a bytearray, 
+           which can be saved as a StatusVar and read by the load_view method. 
+        """
+        self._save_display_view = self._mw.saveState().data() 
+    def load_view(self):
+        """Loads the saved state from the GUI and can read a QbyteArray
+            or a simple byteArray aswell.
+        """
+        if self._save_display_view is None:
+            pass
+        else:
+            self._mw.restoreState(self._save_display_view)
+
     def show(self):
         """Make window visible and put it above all other windows. """
         self._mw.show()
         self._mw.activateWindow()
         self._mw.raise_()
+
+    def _init_save_widget(self):
+        this_dir = os.path.dirname(__file__)
+        ui_file = os.path.join(this_dir, 'save_path_widget.ui')
+        self.save_path_widget = QtWidgets.QDockWidget()
+        uic.loadUi(ui_file, self.save_path_widget)
+        
+        self._mw.addDockWidget(QtCore.Qt.TopDockWidgetArea, self.save_path_widget)
+
+        self.save_path_widget.currPathLabel.setText('Default' if self._save_folderpath is None else self._save_folderpath)
+        self.save_path_widget.DailyPathCheckBox.clicked.connect(lambda: self.save_path_widget.newPathCheckBox.setEnabled(not self.save_path_widget.DailyPathCheckBox.isChecked()))
+        
+        if self._save_folderpath is None:
+            self.save_path_widget.DailyPathCheckBox.setChecked(True)
+            self.save_path_widget.DailyPathCheckBox.clicked.emit()
+
+        # self._mw.action_Save.triggered.connect(lambda x: self.save_data())
 
     def __connect_main_window_actions(self):
         self._mw.action_toggle_measurement.triggered[bool].connect(self.run_stop_odmr)
@@ -271,6 +314,9 @@ class OdmrGui(GuiBase):
         self._mw.splitDockWidget(self._cw_control_dockwidget,
                                  self._scan_control_dockwidget,
                                  QtCore.Qt.Vertical)
+        # self._mw.splitDockWidget(self._fit_dockwidget,
+        #                         self.save_path_widget,
+        #                          QtCore.Qt.Vertical)
         self._mw.addDockWidget(QtCore.Qt.TopDockWidgetArea, self._fit_dockwidget)
 
     @QtCore.Slot(bool)
@@ -445,6 +491,28 @@ class OdmrGui(GuiBase):
         range_index = self._scan_control_dockwidget.selected_range
         self.sigDoFit.emit(fit_config, channel, range_index)
 
+    @QtCore.Slot(tuple)
     def save_data(self):
-        """ Save the sum plot, the scan marix plot and the scan data """
-        self.sigSaveData.emit(self._mw.save_nametag_lineedit.text())
+        """
+        Save data for a given (or all) scan axis.
+        @param tuple: Axis to save. Save all currently displayed if None.
+        """
+        
+        name_tag = self.save_path_widget.saveTagLineEdit.text()
+        if self.save_path_widget.newPathCheckBox.isChecked() and self.save_path_widget.newPathCheckBox.isEnabled():
+            new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
+            if new_path:
+                self._save_folderpath = new_path
+                self.save_path_widget.currPathLabel.setText(self._save_folderpath)
+                self.save_path_widget.newPathCheckBox.setChecked(False)
+            else:
+                return
+
+        # self.sigShowSaveDialog.emit(True)
+
+        if self.save_path_widget.DailyPathCheckBox.isChecked():
+            self._save_folderpath = None
+            self.save_path_widget.currPathLabel.setText('Default')
+
+        self.sigSaveData.emit(name_tag, self._save_folderpath)
+     

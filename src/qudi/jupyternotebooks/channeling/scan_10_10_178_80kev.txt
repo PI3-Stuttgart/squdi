@@ -1,0 +1,12 @@
+{
+    "-21.56377724321601": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_0_-21.56GHz",
+    "-17.8589138011489": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_1_-17.86GHz",
+    "-12.688918954211204": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_2_-12.69GHz",
+    "-7.182300370402572": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_3_-7.18GHz",
+    "-1.4739233549789788": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_4_-1.47GHz",
+    "4.396028292887877": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_5_4.40GHz",
+    "10.197644689469598": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_6_10.20GHz",
+    "15.915704032863687": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_7_15.92GHz",
+    "21.694223620329467": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_8_21.69GHz",
+    "27.549362320939963": "Z:\\Vlad\\Daily_data\\attodry\\2024\\02\\2024-02-22\\scanning_data_logic\\scan_10_10_178_80kev_9_27.55GHz"
+}

@@ -21,6 +21,9 @@ If not, see <https://www.gnu.org/licenses/>.
 
 __all__ = ['SpectrometerControlWidget']
 
+from qtpy import uic
+import os
+
 from PySide2 import QtCore
 from PySide2 import QtWidgets
 
@@ -35,7 +38,7 @@ class SpectrometerControlWidget(QtWidgets.QWidget):
 
         main_layout = QtWidgets.QGridLayout()
         self.setLayout(main_layout)
-        # main_layout.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        main_layout.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         # main_layout.setContentsMargins(1, 1, 1, 1)
         # main_layout.setSpacing(5)
 
@@ -70,10 +73,17 @@ class SpectrometerControlWidget(QtWidgets.QWidget):
                                                   QtWidgets.QSizePolicy.Fixed)
         main_layout.addWidget(self.save_background_button, 1, 2)
 
+        this_dir = os.path.dirname(__file__)
+        ui_file = os.path.join(this_dir, 'save_path_widget.ui')
+        self.save_path_widget = QtWidgets.QDockWidget()
+        uic.loadUi(ui_file, self.save_path_widget)
+        
+        main_layout.addWidget(self.save_path_widget, 4, 0, 1, 3)
+
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        main_layout.addWidget(self.progress_bar, 2, 0, 1, 3)
+        main_layout.addWidget(self.progress_bar, 3, 0, 1, 5)
 
         # Add separator
         separator = QtWidgets.QFrame()
@@ -105,12 +115,18 @@ class SpectrometerControlWidget(QtWidgets.QWidget):
         switch_layout.addWidget(differential_spectrum_label, 2, 0)
         switch_layout.addWidget(self.differential_spectrum_switch, 2, 1)
 
-        switch_layout.setColumnStretch(2, 1)
+        flipper_label = QtWidgets.QLabel('Automatic flip:')
+        flipper_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.flipper_switch = ToggleSwitch(state_names=('Off', 'On'))
+        switch_layout.addWidget(flipper_label, 3, 0)
+        switch_layout.addWidget(self.flipper_switch, 3, 1)
+
+        # switch_layout.setColumnStretch(3, 1)
 
         main_layout.addLayout(switch_layout, 0, 4, 3, 1)
 
-        main_layout.setRowStretch(3, 1)
-        main_layout.setColumnStretch(4, 1)
+        # main_layout.setRowStretch(3, 1)
+        main_layout.setColumnStretch(4, 2)
 
         self.acquire_button.setFixedWidth(self.background_button.sizeHint().width())
         self.background_button.setFixedWidth(self.background_button.sizeHint().width())

@@ -19,12 +19,13 @@ You should have received a copy of the GNU Lesser General Public License along w
 If not, see <https://www.gnu.org/licenses/>.
 """
 
+from pyrsistent import optional
 from PySide2 import QtCore
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 import traceback
-
+import time
 from qudi.core.connector import Connector
 from qudi.core.statusvariable import StatusVar
 from qudi.util.mutex import Mutex
@@ -32,7 +33,7 @@ from qudi.util.network import netobtain
 from qudi.core.module import LogicBase
 from qudi.util.datastorage import TextDataStorage
 from qudi.util.datafitting import FitContainer, FitConfigurationsModel
-
+from qudi.util.plot_style import plot_style
 
 class SpectrometerLogic(LogicBase):
     """This logic module gathers data from the spectrometer.
@@ -49,7 +50,7 @@ class SpectrometerLogic(LogicBase):
     # declare connectors
     spectrometer = Connector(interface='SpectrometerInterface')
     modulation_device = Connector(interface='ModulationInterface', optional=True)
-
+    flip_mirror = Connector(interface = 'DigitalSwitchNI', optional=True)
     # declare status variables
     _spectrum = StatusVar(name='spectrum', default=[None, None])
     _background = StatusVar(name='background', default=None)
@@ -60,7 +61,8 @@ class SpectrometerLogic(LogicBase):
     _fit_region = StatusVar(name='fit_region', default=[0, 1])
     _axis_type_frequency = StatusVar(name='axis_type_frequency', default=False)
     max_repetitions = StatusVar(name='max_repetitions', default=0)
-
+    # _repeat_times = StatusVar(name='repeat_times', default=3)
+    do_flip = StatusVar(name='do_flip', default=False)
     _fit_config = StatusVar(name='fit_config', default=dict())
 
     # Internal signals
@@ -71,7 +73,25 @@ class SpectrometerLogic(LogicBase):
     sig_data_updated = QtCore.Signal()
     sig_state_updated = QtCore.Signal()
     sig_fit_updated = QtCore.Signal(str, object)
+    sigSpectrumDone = QtCore.Signal()
 
+    _default_fit_configs = (
+        {'name'             : 'Lorentzian',
+        'model'            : 'Lorentzian',
+        'estimator'        : 'Peak',
+        'custom_parameters': None},
+        
+        {'name'             : 'DoubleLorentzian',
+        'model'            : 'DoubleLorentzian',
+        'estimator'        : 'Peaks',
+        'custom_parameters': None},
+
+        {'name'             : 'Gaussian',
+        'model'            : 'Gaussian',
+        'estimator'        : 'Peak',
+        'custom_parameters': None}
+        
+    )
     def __init__(self, **kwargs):
         """ Create SpectrometerLogic object with connectors.
 
@@ -95,12 +115,15 @@ class SpectrometerLogic(LogicBase):
         self._acquisition_running = False
         self._fit_results = None
         self._fit_method = ''
+        self.last_saved_path = None
+        
+
 
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
         self._fit_config_model = FitConfigurationsModel(parent=self)
-        self._fit_config_model.load_configs(self._fit_config)
+        self._fit_config_model.load_configs(self._default_fit_configs)
         self._fit_container = FitContainer(parent=self, config_model=self._fit_config_model)
         self.fit_region = self._fit_region
 
@@ -125,6 +148,14 @@ class SpectrometerLogic(LogicBase):
         self._sig_get_spectrum.emit(self._constant_acquisition, self._differential_spectrum, reset)
 
     def get_spectrum(self, constant_acquisition=None, differential_spectrum=None, reset=True):
+        #with self._threadlock:
+        #    if self.module_state() != 'idle':
+        #        self.log.error('Can not start spectrometer aquisition. Measurement is already running.')
+        #        self.sig_data_updated.emit()
+        #        return
+        #    
+        #    self.module_state.lock()
+
         if constant_acquisition is not None:
             self.constant_acquisition = bool(constant_acquisition)
         if differential_spectrum is not None:
@@ -142,8 +173,14 @@ class SpectrometerLogic(LogicBase):
         if self.differential_spectrum_available and self._differential_spectrum:
             self.modulation_device().modulation_on()
 
+        if self.flip_mirror() and self.do_flip:
+            #key = self.flip_mirror().available_states.keys()[0]
+            #state = self.flip_mirror().get_state(key)
+            self.spectrometer().clearBuffer()
+            self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'On')
+            time.sleep(1)
         # get data from the spectrometer
-        data = np.array(netobtain(self.spectrometer().record_spectrum()))
+        data = np.array(self.spectrometer().record_spectrum())
         with self._lock:
             if self._spectrum[0] is None:
                 self._spectrum[0] = data[1, :]
@@ -152,10 +189,12 @@ class SpectrometerLogic(LogicBase):
 
             self._wavelength = data[0, :]
             self._repetitions_spectrum += 1
+            
 
         if self.differential_spectrum_available and self._differential_spectrum:
             self.modulation_device().modulation_off()
             data = np.array(netobtain(self.spectrometer().record_spectrum()))
+            
             with self._lock:
                 if self._spectrum[1] is None:
                     self._spectrum[1] = data[1, :]
@@ -168,10 +207,21 @@ class SpectrometerLogic(LogicBase):
 
         if self._constant_acquisition and not self._stop_acquisition \
                 and (not self.max_repetitions or self._repetitions_spectrum < self.max_repetitions):
+            return self.run_get_spectrum(reset=True)
+        
+        if self._repetitions_spectrum < self.max_repetitions and not self._stop_acquisition:
             return self.run_get_spectrum(reset=False)
+
         self._acquisition_running = False
         self.fit_region = self._fit_region
         self.sig_state_updated.emit()
+        
+        if self.flip_mirror() and self.do_flip:
+            
+            self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'Off')
+
+        self.sigSpectrumDone.emit()
+        #self.module_state.unlock()
         return self.spectrum
 
     def run_get_background(self, constant_acquisition=None, reset=True):
@@ -207,6 +257,10 @@ class SpectrometerLogic(LogicBase):
         if self._constant_acquisition and not self._stop_acquisition\
                 and (not self.max_repetitions or self._repetitions_background < self.max_repetitions):
             return self.run_get_background(reset=False)
+                
+        if self._repetitions_background < self.max_repetitions and not self._stop_acquisition:
+            return self.run_get_background(reset=False)
+        
         self._acquisition_running = False
         self.sig_state_updated.emit()
         return self.background
@@ -335,13 +389,13 @@ class SpectrometerLogic(LogicBase):
                 self.log.error('No spectrum to save.')
                 return
             data.append(self.spectrum)
-            file_label = 'spectrum' + name_tag
+            file_label = 'spectrum' + f'_{name_tag}' if name_tag else 'spectrum'
         else:
             if self.background is None or self.spectrum is None:
                 self.log.error('No background to save.')
                 return
             data.append(self.background)
-            file_label = 'background' + name_tag
+            file_label = 'background' + f'_{name_tag}' if name_tag else 'background'
 
         header.append('Signal')
 
@@ -359,22 +413,22 @@ class SpectrometerLogic(LogicBase):
                 header.append('Signal ON')
                 data.append(self._spectrum[1])
                 header.append('Signal OFF')
-
+        plt.style.use(plot_style)
         # save the date to file
         ds = TextDataStorage(root_dir=self.module_default_data_dir if root_dir is None else root_dir)
-
         file_path, _, _ = ds.save_data(np.array(data).T,
                                        column_headers=header,
                                        metadata=parameters,
                                        nametag=file_label,
                                        timestamp=timestamp,
                                        column_dtypes=[float] * len(header))
-
+        self.last_saved_path = file_path
         # save the figure into a file
         figure, ax1 = plt.subplots()
+        
         rescale_factor, prefix = self._get_si_scaling(np.max(data[1]))
 
-        ax1.plot(data[0],
+        ax1.plot(data[0] / 1e9,
                  data[1] / rescale_factor,
                  linestyle=':',
                  linewidth=0.5
@@ -382,9 +436,9 @@ class SpectrometerLogic(LogicBase):
 
         if self.fit_method != 'No Fit' and self.fit_results is not None:
             if self._axis_type_frequency:
-                x_data = self.fit_results.high_res_best_fit[0] * 1e-12
+                x_data = self.fit_results.high_res_best_fit[0]
             else:
-                x_data = self.fit_results.high_res_best_fit[0] * 1e9
+                x_data = self.fit_results.high_res_best_fit[0]
 
             ax1.plot(x_data,
                      self.fit_results.high_res_best_fit[1] / rescale_factor,

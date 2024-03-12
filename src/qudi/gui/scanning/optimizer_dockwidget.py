@@ -30,13 +30,13 @@ import copy as cp
 from qudi.util.widgets.plotting.plot_widget import DataSelectionPlotWidget
 from qudi.util.widgets.plotting.plot_item import DataImageItem, XYPlotItem
 from qudi.util.colordefs import QudiPalette
-
+from qudi.util.colordefs import ColorScaleRdBuRev as ColorScale
 
 class OptimizerDockWidget(QtWidgets.QDockWidget):
     """
     """
 
-    def __init__(self, axes, plot_dims, sequence, *args, **kwargs):
+    def __init__(self, axes, sequence, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setWindowTitle('Optimizer')
         self.setObjectName('optimizer_dockWidget')
@@ -44,12 +44,17 @@ class OptimizerDockWidget(QtWidgets.QDockWidget):
         self._last_optimal_pos = {}
         self._last_optimal_sigma = {}
         self._scanner_sequence = sequence
-        self._plot_widgets = []
+        
 
         self.pos_ax_label = QtWidgets.QLabel(f'({", ".join(axes)}):')
         self.pos_ax_label.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self.result_label = QtWidgets.QLabel(f'({", ".join(["?"]*len(axes))}):')
         self.result_label.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        optimizer_plot_dims = [len(i) for i in sequence]
+        self.layout_the_plot(optimizer_plot_dims)
+
+    def layout_the_plot(self, plot_dims):
+        self._plot_widgets = []
         label_layout = QtWidgets.QHBoxLayout()
         label_layout.addWidget(self.pos_ax_label)
         label_layout.addWidget(self.result_label)
@@ -79,7 +84,7 @@ class OptimizerDockWidget(QtWidgets.QDockWidget):
                 plot2d_widget.set_selection_mutable(False)
                 plot2d_widget.add_marker_selection((0, 0),
                                                    mode=DataSelectionPlotWidget.SelectionMode.XY)
-                image_item = DataImageItem()
+                image_item = DataImageItem(colorscale=ColorScale)
                 plot2d_widget.addItem(image_item)
                 self._plot_widgets.append({'widget': plot2d_widget,
                                            'image_2d': image_item,
@@ -102,6 +107,10 @@ class OptimizerDockWidget(QtWidgets.QDockWidget):
 
     @scan_sequence.setter
     def scan_sequence(self, sequence):
+        
+        optimizer_plot_dims = [len(i) for i in sequence]
+        self.layout_the_plot(optimizer_plot_dims)
+
         self._scanner_sequence = sequence
 
     def _get_all_widgets_part(self, part='widget', dim=None):

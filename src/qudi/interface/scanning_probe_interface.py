@@ -22,6 +22,7 @@ If not, see <https://www.gnu.org/licenses/>.
 
 import datetime
 import numpy as np
+import copy as cp
 from abc import abstractmethod
 from qudi.core.module import Base
 
@@ -31,27 +32,6 @@ class ScanningProbeInterface(Base):
 
     A scanner device is hardware that can move multiple axes.
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._coordinate_transform = None
-        self._coordinate_transform_matrix = None
-
-    def coordinate_transform(self, val, inverse=False):
-        if self._coordinate_transform is None:
-            return val
-        return self._coordinate_transform(val, inverse)
-
-    def set_coordinate_transform(self, transform_func, transform_matrix=None):
-        if transform_func is not None:
-            raise ValueError('Coordinate transformation not supported by scanning hardware.')
-
-    @property
-    def coordinate_transform_enabled(self):
-        return self._coordinate_transform is not None
-
-    @property
-    def supports_coordinate_transform(self):
-        return self.get_constraints().allow_coordinate_transform
 
     @abstractmethod
     def get_constraints(self):
@@ -155,30 +135,6 @@ class ScanningProbeInterface(Base):
         """
         pass
 
-    def _expand_coordinate(self, coord):
-        """
-        Expand coord dict to all scanner dimensions, setting missing axes to current scanner target.
-        """
-
-        scanner_axes = self.get_constraints().axes
-        current_target = self.get_target()
-        len_coord = 0
-        axes_unused = scanner_axes.keys()
-
-        if coord:
-            len_coord = np.asarray((list(coord.values())[0])).size
-            axes_unused = [ax for ax in scanner_axes.keys() if ax not in coord.keys()]
-        coord_unused = {}
-
-        for ax in axes_unused:
-            target_coord = current_target[ax]
-            coords = np.ones(len_coord)*target_coord if len_coord > 1 else target_coord
-            coord_unused[ax] = coords
-
-        coord.update(coord_unused)
-
-        return coord
-
 
 class ScanData:
     """
@@ -188,7 +144,7 @@ class ScanData:
     def __init__(self, channels, scan_axes, scan_range, scan_resolution, scan_frequency,
                  target_at_start=None, position_feedback_axes=None):
         """
-
+        
         @param ScannerChannel[] channels: ScannerChannel objects involved in this scan
         @param ScannerAxis[] scan_axes: ScannerAxis instances involved in the scan
         @param float[][2] scan_range: inclusive range for each scan axis
@@ -239,9 +195,13 @@ class ScanData:
 
         self._timestamp = None
         self._data = None
+        self._retrace_data = None
+        self._retrace_accumulated = None
+        self._accumulated = None
+        self._averaged_data = None
         self._position_data = None
         self._target_at_start = target_at_start
-        self._coord_transform_info = {'enabled': False}
+
         # TODO: Automatic interpolation onto rectangular grid needs to be implemented (for position feedback HW)
         return
 
@@ -255,8 +215,15 @@ class ScanData:
         new_inst._timestamp = self._timestamp
         if self._data is not None:
             new_inst._data = self._data.copy()
+        if self._retrace_data is not None:
+            new_inst._retrace_data = self._retrace_data.copy()
+            
         if self._position_data is not None:
             new_inst._position_data = self._position_data.copy()
+        if self._accumulated is not None:
+            new_inst._accumulated = self._accumulated.copy()
+        if self._retrace_accumulated is not None:
+            new_inst._retrace_accumulated = self._retrace_accumulated.copy()
         return new_inst
 
     def __deepcopy__(self, memodict={}):
@@ -267,7 +234,7 @@ class ScanData:
             raise NotImplemented
 
         attrs = ('_timestamp', '_scan_frequency', '_scan_axes', '_scan_range', '_scan_resolution',
-                 '_channels', '_position_feedback_axes', '_data', '_position_data', '_timestamp')
+                 '_channels', '_position_feedback_axes', '_data','_retrace_data', '_accumulated','_retrace_accumulated', '_position_data', '_timestamp')
         return all(getattr(self, a) == getattr(other, a) for a in attrs)
 
     @property
@@ -320,6 +287,34 @@ class ScanData:
         self._data = data_dict
 
     @property
+    def retrace_data(self):
+        return self._retrace_data
+
+    @retrace_data.setter
+    def retrace_data(self, retrace_data_dict):
+        assert tuple(retrace_data_dict.keys()) == self.channels
+        # assert all([val.shape == self.scan_resolution for val in retrace_data_dict.values()])
+        self._retrace_data = retrace_data_dict
+
+    @property
+    def accumulated(self):
+        return self._accumulated
+    
+    @accumulated.setter
+    def accumulated(self, accumulated_dict):
+        assert tuple(accumulated_dict.keys()) == self.channels
+        self._accumulated = accumulated_dict
+
+    @property
+    def retrace_accumulated(self):
+        return self._retrace_accumulated
+    
+    @accumulated.setter
+    def retrace_accumulated(self, retrace_accumulated_dict):
+        assert tuple(retrace_accumulated_dict.keys()) == self.channels
+        self._retrace_accumulated = retrace_accumulated_dict
+
+    @property
     def position_data(self):
         return self._position_data
 
@@ -364,6 +359,12 @@ class ScanData:
         new_inst._timestamp = self._timestamp
         if self._data is not None:
             new_inst._data = {ch: arr.copy() for ch, arr in self._data.items()}
+        if self._retrace_data is not None:
+            new_inst._retrace_data = {ch: arr.copy() for ch, arr in self._retrace_data.items()}
+        if self._accumulated is not None:
+            new_inst._accumulated = {ch: arr.copy() for ch, arr in self._accumulated.items()}
+        if self._retrace_accumulated is not None:
+            new_inst._retrace_accumulated = {ch: arr.copy() for ch, arr in self._retrace_accumulated.items()}
         if self._position_data is not None:
             new_inst._position_data = {ch: arr.copy() for ch, arr in self._position_data.items()}
         return new_inst
@@ -380,8 +381,7 @@ class ScanData:
             'timestamp': None if self._timestamp is None else self._timestamp.timestamp(),
             'data': None if self._data is None else {ch: d.copy() for ch, d in self._data.items()},
             'position_data': None if self._position_data is None else {ax: d.copy() for ax, d in
-                                                                       self._position_data.items()},
-            'coord_transform_info': self.coord_transform_info
+                                                                       self._position_data.items()}
         }
         return dict_repr
 
@@ -405,18 +405,7 @@ class ScanData:
         new_inst._position_data = dict_repr['position_data']
         if dict_repr['timestamp'] is not None:
             new_inst._timestamp = datetime.datetime.fromtimestamp(dict_repr['timestamp'])
-        if dict_repr['coord_transform_info'] is not None:
-            new_inst.coord_transform_info = dict_repr['coord_transform_info']
-
         return new_inst
-
-    @property
-    def coord_transform_info(self):
-        return self._coord_transform_info
-
-    @coord_transform_info.setter
-    def coord_transform_info(self, info_dict):
-        self._coord_transform_info = info_dict
 
 
 class ScannerChannel:
@@ -481,6 +470,7 @@ class ScannerAxis:
 
         self._name = name
         self._unit = unit
+        self._shift = 0
         self._resolution_range = (int(min(resolution_range)), int(max(resolution_range))) #TODO np.inf cannot be casted as an int
         self._step_range = (float(min(step_range)), float(max(step_range)))
         self._value_range = (float(min(value_range)), float(max(value_range)))
@@ -553,6 +543,17 @@ class ScannerAxis:
     def max_frequency(self):
         return self._frequency_range[1]
 
+    @property
+    def axis_shift(self):
+        return cp.copy(self._shift)
+
+    @axis_shift.setter
+    def axis_shift(self, shift):
+        # shifted_range = (self.clip_value(self._value_range[0] + shift), 
+        #                         self.clip_value(self._value_range[1] + shift))
+        # self._value_range = shifted_range
+        self._shift = shift
+
     def clip_value(self, value):
         if value < self.min_value:
             return self.min_value
@@ -606,13 +607,11 @@ class ScanConstraints:
             raise TypeError('Parameter "has_position_feedback" must be of type bool.')
         if not isinstance(square_px_only, bool):
             raise TypeError('Parameter "square_px_only" must be of type bool.')
-
         self._axes = {ax.name: ax for ax in axes}
         self._channels = {ch.name: ch for ch in channels}
         self._backscan_configurable = bool(backscan_configurable)
         self._has_position_feedback = bool(has_position_feedback)
         self._square_px_only = bool(square_px_only)
-        self._allow_coordinate_transform = False  # overwritten in CoordinateTransformMixin
 
     @property
     def axes(self):
@@ -633,74 +632,3 @@ class ScanConstraints:
     @property
     def square_px_only(self):  # TODO Incorporate in gui/logic toolchain?
         return self._square_px_only
-
-    @property
-    def allow_coordinate_transform(self):
-        return self._allow_coordinate_transform
-
-
-class CoordinateTransformMixin:
-    """ Can be used by concrete hardware modules to facilitate coordinate transformation, except
-    for performing scans.
-    The transformation for scanning can be either implemented in the base or in the mixed hardware
-    module.
-
-    Usage:
-        MyTransformationScanner(CoordinateTransformMixin, MyScanner):
-            pass
-    """
-
-    def get_constraints(self):
-        constr = super().get_constraints()
-        constr._allow_coordinate_transform = True
-
-        return constr
-
-    def set_coordinate_transform(self, transform_func, transform_matrix=None):
-        # ToDo: Proper sanity checking here, e.g. function signature etc.
-        if transform_func is not None and not callable(transform_func):
-            raise ValueError('Coordinate transformation function must be callable with '
-                             'signature "coordinate_transform(value, inverse=False)"')
-        self._coordinate_transform = transform_func
-        self._coordinate_transform_matrix = transform_matrix
-
-    def move_absolute(self, position, velocity=None, blocking=False):
-        new_pos_bare = super().move_absolute(self.coordinate_transform(position), velocity, blocking)
-        return self.coordinate_transform(new_pos_bare, inverse=True)
-
-    def move_relative(self, distance, velocity=None, blocking=False):
-        new_pos_bare =  super().move_relative(self.coordinate_transform(distance), velocity, blocking)
-        return self.coordinate_transform(new_pos_bare, inverse=True)
-
-    def get_target(self):
-        return self.coordinate_transform(super().get_target(), inverse=True)
-
-    def get_position(self):
-        return self.coordinate_transform(super().get_position(), inverse=True)
-
-    def _calc_matr_2_tiltangle(self):
-        """
-        Calculates the tilt angle in radians of a given rotation matrix.
-        Formula from https://en.wikipedia.org/wiki/Rotation_matrix
-        """
-
-        rotation_matrix = self._coordinate_transform_matrix.matrix[0:3,0:3]
-        trace = np.trace(rotation_matrix)
-        tilt_angle_abs = np.arccos((trace-1)/2)
-        return tilt_angle_abs
-
-    def get_scan_data(self):
-
-        scan_data = super().get_scan_data()
-        if scan_data:
-            tilt_info = {'enabled': self.coordinate_transform_enabled}
-            if self.coordinate_transform_enabled:
-                rad_2_deg = lambda phi: phi/np.pi * 180
-                transform_info = {'transform_matrix': self._coordinate_transform_matrix.matrix,
-                                  'tilt_angle (deg)': rad_2_deg(self._calc_matr_2_tiltangle()),
-                                  'translation': self._coordinate_transform_matrix.matrix[0:3,-1]}
-                tilt_info.update(transform_info)
-
-            scan_data.coord_transform_info = tilt_info
-
-        return scan_data

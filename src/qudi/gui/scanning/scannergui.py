@@ -26,23 +26,20 @@ import copy as cp
 from typing import Union, Tuple
 from functools import partial
 from PySide2 import QtCore, QtGui, QtWidgets
-from PySide2.QtWidgets import QAction
-#from PyQt5.QtWidgets import  QAction
+
 import qudi.util.uic as uic
 from qudi.core.connector import Connector
 from qudi.core.statusvariable import StatusVar
 from qudi.core.configoption import ConfigOption
 from qudi.interface.scanning_probe_interface import ScanData
 from qudi.core.module import GuiBase
-from qudi.logic.scanning_optimize_logic import OptimizerScanSequence
-from qudi.gui.scanning.tilt_correction_dockwidget import TiltCorrectionDockWidget
+from qudi.logic.scanning.optimize_logic import OptimizerScanSequence
+
 from qudi.gui.scanning.axes_control_dockwidget import AxesControlDockWidget
 from qudi.gui.scanning.optimizer_setting_dialog import OptimizerSettingDialog
 from qudi.gui.scanning.scan_settings_dialog import ScannerSettingDialog
 from qudi.gui.scanning.scan_dockwidget import ScanDockWidget
 from qudi.gui.scanning.optimizer_dockwidget import OptimizerDockWidget
-from qudi.util.widgets.toggle_switch import ToggleSwitch
-from qudi.gui.switch.switch_state_widgets import SwitchRadioButtonWidget
 
 
 class ConfocalMainWindow(QtWidgets.QMainWindow):
@@ -56,11 +53,6 @@ class ConfocalMainWindow(QtWidgets.QMainWindow):
         # Load it
         super().__init__()
         uic.loadUi(ui_file, self)
-
-        self.action_toggle_tilt_correction = ToggleIconsQAction(self, 'Tilt correction',
-                                              "./artwork/icons/correct-tilt_toggle.svg",
-                                              "./artwork/icons/correct-tilt_toggle_off.svg")
-        self.util_toolBar.addAction(self.action_toggle_tilt_correction)
         return
 
     def mouseDoubleClickEvent(self, event):
@@ -87,6 +79,31 @@ class SaveDialog(QtWidgets.QDialog):
         self.hbox.addWidget(self.text)
         self.hbox.addSpacerItem(QtWidgets.QSpacerItem(50, 0))
         self.setLayout(self.hbox)
+
+class RT_LT_Dialog(QtWidgets.QDialog):
+    """ Dialog to provide feedback and block GUI while saving """
+    def __init__(self, parent, title="Please confirm", text="Switch to the Low Temperature regime"):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setWindowModality(QtCore.Qt.WindowModal)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+
+        self.button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok |
+                                                     QtWidgets.QDialogButtonBox.Cancel |
+                                                     QtWidgets.QDialogButtonBox.Apply,
+                                                     QtCore.Qt.Horizontal,
+                                                     self)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+
+        # Dialog layout
+        self.text = QtWidgets.QLabel("<font size='16'>" + text + "</font>")
+        self.vbox = QtWidgets.QVBoxLayout()
+        self.vbox.addSpacerItem(QtWidgets.QSpacerItem(50, 0))
+        self.vbox.addWidget(self.text)
+        self.vbox.addSpacerItem(QtWidgets.QSpacerItem(50, 0))
+        self.vbox.addWidget(self.button_box)
+        self.setLayout(self.vbox)
 
 
 class ScannerGui(GuiBase):
@@ -117,12 +134,11 @@ class ScannerGui(GuiBase):
     _default_position_unit_prefix = ConfigOption(name='default_position_unit_prefix', default=None)
     # for all optimizer sub widgets, (2= xy, 1=z)
     _optimizer_plot_dims = ConfigOption(name='optimizer_plot_dimensions', default=[2,1])
-    # minimum crosshair size as fraction of the displayed scan range
     _min_crosshair_size_fraction = ConfigOption(name='min_crosshair_size_fraction', default=1/50, missing='nothing')
-
     # status vars
     _window_state = StatusVar(name='window_state', default=None)
     _window_geometry = StatusVar(name='window_geometry', default=None)
+    _save_folderpath = StatusVar('save_folderpath', default=None)
 
     # signals
     sigScannerTargetChanged = QtCore.Signal(dict, object)
@@ -130,7 +146,7 @@ class ScannerGui(GuiBase):
     sigToggleScan = QtCore.Signal(bool, tuple, object)
     sigOptimizerSettingsChanged = QtCore.Signal(dict)
     sigToggleOptimize = QtCore.Signal(bool)
-    sigSaveScan = QtCore.Signal(object, object)
+    sigSaveScan = QtCore.Signal(object, object, object, object)
     sigSaveFinished = QtCore.Signal()
     sigShowSaveDialog = QtCore.Signal(bool)
 
@@ -174,14 +190,31 @@ class ScannerGui(GuiBase):
         # Initialize main window
         self._mw = ConfocalMainWindow()
         self._mw.setDockNestingEnabled(True)
-
+        self._save_dialog = SaveDialog(self._mw)
+        self._rt_lt_dialog = RT_LT_Dialog(self._mw)
+        self._rt_lt_dialog.accepted.connect(
+            lambda: self.change_temperature_regime(True)
+            )
+        self._rt_lt_dialog.rejected.connect(
+            lambda: self.change_temperature_regime(False)
+            )
+       
+       #Always start with the RT limits
+        self.change_temperature_regime(False)
+        self._mw.actionRT_LT.triggered.connect(
+            self.RT_LT_toggled, QtCore.Qt.DirectConnection
+        )   
+        
+        # self._rt_lt_dialog.button_box.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(
+        #     self.apply_scanner_settings
+        # )
         # Initialize fixed dockwidgets
         self._init_static_dockwidgets()
 
         # Initialize dialog windows
         self._init_optimizer_settings()
         self._init_scanner_settings()
-        self._save_dialog = SaveDialog(self._mw)
+        
 
         # Automatically generate scanning widgets for desired scans
         scans = list()
@@ -193,6 +226,8 @@ class ScannerGui(GuiBase):
                 scans.append((first_ax, second_ax))
         for scan in scans:
             self._add_scan_dockwidget(scan)
+
+        self._shifts = {ax : 0 for ax in axes}
 
         # Initialize widget data
         self.scanner_settings_updated()
@@ -226,8 +261,10 @@ class ScannerGui(GuiBase):
         )
         self._mw.action_history_back.triggered.connect(
             self._data_logic().history_previous, QtCore.Qt.QueuedConnection
-        )
+        )   
 
+        
+        
         self._scanning_logic().sigScannerTargetChanged.connect(
             self.scanner_target_updated, QtCore.Qt.QueuedConnection
         )
@@ -248,34 +285,26 @@ class ScannerGui(GuiBase):
 
         self.sigShowSaveDialog.connect(lambda x: self._save_dialog.show() if x else self._save_dialog.hide(),
                                        QtCore.Qt.DirectConnection)
-
-        # tilt correction signals
-        tilt_widget = self.tilt_correction_dockwidget
-        tilt_widget.tilt_set_01_pushButton.clicked.connect(lambda: self.tilt_corr_set_support_vector(0),
-                                                                       QtCore.Qt.QueuedConnection)
-        tilt_widget.tilt_set_02_pushButton.clicked.connect(lambda: self.tilt_corr_set_support_vector(1),
-                                                                       QtCore.Qt.QueuedConnection)
-        tilt_widget.tilt_set_03_pushButton.clicked.connect(lambda: self.tilt_corr_set_support_vector(2),
-                                                                       QtCore.Qt.QueuedConnection)
-        tilt_widget.tilt_set_04_pushButton.clicked.connect(lambda: self.tilt_corr_set_support_vector(3),
-                                                                       QtCore.Qt.QueuedConnection)
-        tilt_widget.auto_origin_switch.toggle_switch.sigStateChanged.connect(self.apply_tilt_corr_support_vectors,
-                                                                       QtCore.Qt.QueuedConnection)
-        self._mw.action_toggle_tilt_correction.triggered.connect(self.toggle_tilt_correction,
-                                                                QtCore.Qt.QueuedConnection)
-        [box.valueChanged.connect(self.apply_tilt_corr_support_vectors, QtCore.Qt.QueuedConnection)
-                                  for box_row in tilt_widget.support_vecs_box for box in box_row]
-        self._scanning_logic().sigTiltCorrSettingsChanged.connect(
-            self.tilt_corr_support_vector_updated, QtCore.Qt.QueuedConnection)
+        self.save_path_widget.DailyPathPushButton.setCheckable(True)
+        self.save_path_widget.newPathPushButton.setCheckable(True)
+        self.save_path_widget.currPathLabel.setText('Default' if self._save_folderpath is None else self._save_folderpath)
+        self.save_path_widget.DailyPathPushButton.clicked.connect(lambda: self.save_path_widget.newPathPushButton.setEnabled(not self.save_path_widget.DailyPathPushButton.isChecked()))
+        if self._save_folderpath is None:
+            self.save_path_widget.DailyPathPushButton.setChecked(True)
+            self.save_path_widget.DailyPathPushButton.clicked.emit()
 
         # Initialize dockwidgets to default view
-        self.restore_default_view()
-        self.show()
+        # self.restore_default_view()
+        
 
         self.restore_history()
 
         self._restore_window_geometry(self._mw)
-        self._restore_tilt_correction()
+        self.show()
+        # self._send_pop_up_message('We would appreciate your contribution',
+        #                           'The scanning probe toolchain is still in active development. '
+        #                           'Please report bugs and issues in the qudi-iqo-modules repository '
+        #                           'or even fix them and contribute your pull request. Your help is highly appreciated.')
 
         return
 
@@ -313,15 +342,6 @@ class ScannerGui(GuiBase):
         for scan in tuple(self.scan_2d_dockwidgets):
             self._remove_scan_dockwidget(scan)
 
-        tilt_widget = self.tilt_correction_dockwidget
-        tilt_widget.tilt_set_01_pushButton.clicked.disconnect()
-        tilt_widget.tilt_set_02_pushButton.clicked.disconnect()
-        tilt_widget.tilt_set_03_pushButton.clicked.disconnect()
-        tilt_widget.tilt_set_04_pushButton.clicked.disconnect()
-        tilt_widget.auto_origin_switch.toggle_switch.sigStateChanged.disconnect()
-        self._scanning_logic().sigTiltCorrSettingsChanged.disconnect()
-        self._mw.action_toggle_tilt_correction.triggered.disconnect()
-
     def show(self):
         """Make main window visible and put it above all other windows. """
         # Show the Main Confocal GUI:
@@ -329,13 +349,27 @@ class ScannerGui(GuiBase):
         self._mw.activateWindow()
         self._mw.raise_()
 
+    def change_temperature_regime(self, regime_LT=None):
+        # change the scanner contraints for the LT regime
+        if regime_LT:
+            regime_LT = self._mw.actionRT_LT.isChecked()
+        self._mw.actionRT_LT.setChecked(regime_LT)
+        self._scanning_logic().change_temperature_regime(regime_LT)
+
+    def RT_LT_toggled(self, is_toggled):
+        if is_toggled:
+            self._rt_lt_dialog.show() 
+        else:
+            self.change_temperature_regime(regime_LT=False)
+            self._rt_lt_dialog.hide()
+        #self.apply_scanner_settings()
+
     def _init_optimizer_settings(self):
         """ Configuration and initialisation of the optimizer settings dialog.
         """
         # Create the Settings window
         self._osd = OptimizerSettingDialog(tuple(self._scanning_logic().scanner_axes.values()),
-                                           tuple(self._scanning_logic().scanner_channels.values()),
-                                           self._optimizer_plot_dims)
+                                           tuple(self._scanning_logic().scanner_channels.values()),)
 
         # Connect MainWindow actions
         self._mw.action_optimizer_settings.triggered.connect(lambda x: self._osd.exec_())
@@ -380,7 +414,6 @@ class ScannerGui(GuiBase):
             self._mw.action_view_scanner_control.setChecked)
         self._mw.action_view_scanner_control.triggered[bool].connect(
             self.scanner_control_dockwidget.setVisible)
-
         self._mw.action_view_line_scan.triggered[bool].connect(
             lambda is_vis: [wid.setVisible(is_vis) for wid in self.scan_1d_dockwidgets.values()]
         )
@@ -404,25 +437,24 @@ class ScannerGui(GuiBase):
         )
 
         self.optimizer_dockwidget = OptimizerDockWidget(axes=self._scanning_logic().scanner_axes,
-                                                        plot_dims=self._optimizer_plot_dims,
                                                         sequence=self._optimize_logic().scan_sequence)
         self.optimizer_dockwidget.setAllowedAreas(QtCore.Qt.TopDockWidgetArea)
         self._mw.addDockWidget(QtCore.Qt.TopDockWidgetArea, self.optimizer_dockwidget)
-        self.optimizer_dockwidget.visibilityChanged.connect(self._mw.action_view_optimizer.setChecked)
-        self._mw.action_view_optimizer.triggered[bool].connect(self.optimizer_dockwidget.setVisible)
+        self.optimizer_dockwidget.visibilityChanged.connect(
+            self._mw.action_view_optimizer.setChecked)
+        self._mw.action_view_optimizer.triggered[bool].connect(
+            self.optimizer_dockwidget.setVisible)
 
-        self._mw.util_toolBar.visibilityChanged.connect(self._mw.action_view_toolbar.setChecked)
+        self._mw.util_toolBar.visibilityChanged.connect(
+            self._mw.action_view_toolbar.setChecked)
         self._mw.action_view_toolbar.triggered[bool].connect(self._mw.util_toolBar.setVisible)
 
-        # Add tilt correction widget to the toolbar as a button
-        self.tilt_correction_dockwidget = TiltCorrectionDockWidget(scanner_axes=self._scanning_logic().scanner_axes)
-        self.tilt_correction_dockwidget.setAllowedAreas(QtCore.Qt.BottomDockWidgetArea)
-        self._mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.tilt_correction_dockwidget)
-        self.tilt_correction_dockwidget.setVisible(False)
-        self.tilt_correction_dockwidget.visibilityChanged.connect(self._mw.action_view_tilt_correction.setChecked)
-        self._mw.action_view_tilt_correction.triggered[bool].connect(self.tilt_correction_dockwidget.setVisible)
-
-
+        this_dir = os.path.dirname(__file__)
+        ui_file = os.path.join(this_dir, 'save_path_widget.ui')
+        self.save_path_widget = QtWidgets.QDockWidget()
+        uic.loadUi(ui_file, self.save_path_widget)
+        
+        self._mw.addDockWidget(QtCore.Qt.TopDockWidgetArea, self.save_path_widget)
 
     @QtCore.Slot()
     def restore_default_view(self):
@@ -432,7 +464,6 @@ class ScannerGui(GuiBase):
         # Remove all dockwidgets from main window layout
         self._mw.removeDockWidget(self.optimizer_dockwidget)
         self._mw.removeDockWidget(self.scanner_control_dockwidget)
-        self._mw.removeDockWidget(self.tilt_correction_dockwidget)
         for dockwidget in self.scan_2d_dockwidgets.values():
             self._mw.removeDockWidget(dockwidget)
         for dockwidget in self.scan_1d_dockwidgets.values():
@@ -446,12 +477,6 @@ class ScannerGui(GuiBase):
         self.scanner_control_dockwidget.setFloating(False)
         self.scanner_control_dockwidget.show()
         self._mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.scanner_control_dockwidget)
-
-        # Add tilt correction dock widget
-        self.tilt_correction_dockwidget.setFloating(False)
-        self.tilt_correction_dockwidget.setVisible(False)
-        self._mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.tilt_correction_dockwidget)
-
         # Add dynamically created dock widgets to layout
         dockwidgets_2d = tuple(self.scan_2d_dockwidgets.values())
         dockwidgets_1d = tuple(self.scan_1d_dockwidgets.values())
@@ -523,20 +548,29 @@ class ScannerGui(GuiBase):
 
         return
 
-    def _restore_tilt_correction(self):
-
-        tilt_settings = self._scanning_logic().tilt_correction_settings
-
-        self.tilt_corr_support_vector_updated(tilt_settings)
-        self.apply_tilt_corr_support_vectors()
-
     @QtCore.Slot(tuple)
     def save_scan_data(self, scan_axes=None):
         """
         Save data for a given (or all) scan axis.
-        @param tuple scan_axes: Axis to save. Save all currently displayed if None.
+        @param tuple: Axis to save. Save all currently displayed if None.
         """
+        
+        name_tag = self.save_path_widget.saveTagLineEdit.text()
+        if self.save_path_widget.newPathPushButton.isChecked() and self.save_path_widget.newPathPushButton.isEnabled():
+            new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
+            if new_path:
+                self._save_folderpath = new_path
+                self.save_path_widget.currPathLabel.setText(self._save_folderpath)
+                self.save_path_widget.newPathPushButton.setChecked(False)
+            else:
+                return
+
         self.sigShowSaveDialog.emit(True)
+
+        if self.save_path_widget.DailyPathPushButton.isChecked():
+            self._save_folderpath = None
+            self.save_path_widget.currPathLabel.setText('Default')
+
         try:
             data_logic = self._data_logic()
             if scan_axes is None:
@@ -548,7 +582,7 @@ class ScannerGui(GuiBase):
                     cbar_range = self.scan_2d_dockwidgets[ax].scan_widget.image_widget.levels
                 except KeyError:
                     cbar_range = None
-                self.sigSaveScan.emit(ax, cbar_range)
+                self.sigSaveScan.emit(ax, cbar_range, name_tag, self._save_folderpath)
         finally:
             pass
 
@@ -591,9 +625,6 @@ class ScannerGui(GuiBase):
             dockwidget.scan_widget.set_marker_bounds(marker_bounds)
             dockwidget.scan_widget.set_plot_range(x_range=axes_constr[0].value_range)
             self.scan_1d_dockwidgets[axes] = dockwidget
-
-            # todo not working on view/restore default
-            #dockwidget.visibilityChanged.connect(self._mw.action_view_line_scan.setChecked)
         else:
             if axes in self.scan_2d_dockwidgets:
                 self.log.error('Unable to add scanning widget for axes {0}. Widget for this scan '
@@ -623,10 +654,6 @@ class ScannerGui(GuiBase):
         dockwidget.scan_widget.sigZoomAreaSelected.connect(
             self.__get_range_from_selection_func(axes)
         )
-
-    def _add_tilt_correction_dock_widget(self):
-        dockwidget = TiltCorrectionDockWidget()
-        self._mw.addDockWidget(QtCore.Qt.TopDockWidgetArea, dockwidget)
 
     def set_active_tab(self, axes):
         avail_axs = list(self.scan_1d_dockwidgets.keys())
@@ -660,11 +687,15 @@ class ScannerGui(GuiBase):
         forward_freq = {ax: freq[0] for ax, freq in self._ssd.settings_widget.frequency.items()}
         self.sigScanSettingsChanged.emit({'frequency': forward_freq})
 
+        shift = {ax: shift for ax, shift in self._ssd.settings_widget.shift.items()}
+        self.sigScanSettingsChanged.emit({'shift': shift})
+
     @QtCore.Slot()
     def restore_scanner_settings(self):
         """ ToDo: Document
         """
         self.scanner_settings_updated({'frequency': self._scanning_logic().scan_frequency})
+        self.scanner_settings_updated({'shift': self._shifts})
 
     @QtCore.Slot(bool)
     def scanner_settings_toggle_gui_lock(self, locked):
@@ -700,6 +731,13 @@ class ScannerGui(GuiBase):
                 ax: (forward, old_freq[ax][1]) for ax, forward in settings['frequency'].items()
             }
             self._ssd.settings_widget.set_frequency(new_freq)
+            
+        if 'shift' in settings:
+            old_shift = self._ssd.settings_widget.shift
+            new_shift = {
+                ax: shift for ax, shift in settings['shift'].items()
+            }
+            self._ssd.settings_widget.set_shift(new_shift)
         return
 
     @QtCore.Slot(dict)
@@ -739,6 +777,7 @@ class ScannerGui(GuiBase):
         self.scanner_control_dockwidget.set_target(pos_dict)
 
     def scan_state_updated(self, is_running, scan_data=None, caller_id=None):
+        
         scan_axes = scan_data.scan_axes if scan_data is not None else None
         self._toggle_enable_scan_buttons(not is_running, exclude_scan=scan_axes)
         if not self._optimizer_state['is_running']:
@@ -939,8 +978,6 @@ class ScannerGui(GuiBase):
             self._mw.action_history_forward.setEnabled(enable)
         if exclude_action is not self._mw.action_optimize_position:
             self._mw.action_optimize_position.setEnabled(enable)
-        if exclude_action is not self._mw.action_toggle_tilt_correction:
-            self._mw.action_toggle_tilt_correction.setEnabled(enable)
 
     def __get_marker_update_func(self, axes: Union[Tuple[str], Tuple[str, str]]):
         def update_func(pos: Union[float, Tuple[float, float]]):
@@ -1014,8 +1051,10 @@ class ScannerGui(GuiBase):
         self._osd.change_settings(settings)
 
         # Adjust optimizer settings
+        
         if 'scan_sequence' in settings:
-            new_settings = self._optimize_logic().check_sanity_optimizer_settings(settings, self._optimizer_plot_dims)
+            new_settings = self._optimize_logic().check_sanity_optimizer_settings(settings)
+            
             if settings['scan_sequence'] != new_settings['scan_sequence']:
                 new_seq = new_settings['scan_sequence']
                 self.log.warning(f"Tried to update gui with illegal optimizer sequence= {settings['scan_sequence']}."
@@ -1024,6 +1063,7 @@ class ScannerGui(GuiBase):
             settings = new_settings
 
             axes_constr = self._scanning_logic().scanner_axes
+
             self.optimizer_dockwidget.scan_sequence = settings['scan_sequence']
 
             for seq_step in settings['scan_sequence']:
@@ -1059,98 +1099,17 @@ class ScannerGui(GuiBase):
                 # Adjust crosshair size according to optimizer range
                 self.update_crosshair_sizes()
 
-    def tilt_corr_set_support_vector(self, idx_vector=0):
-        target = self._scanning_logic().scanner_target
-
-        self.tilt_correction_dockwidget.set_support_vector(target, idx_vector)
-        self.apply_tilt_corr_support_vectors()
-
-    def tilt_corr_support_vector_updated(self, settings):
+    def save_view(self):
+        """Saves the current GUI state as a QbyteArray.
+           The .data() function will transform it to a bytearray, 
+           which can be saved as a StatusVar and read by the load_view method. 
         """
-        Signal new vectors from logic and update gui accordingly.
-
-        @param dict settings: scanning probe logic settings dict
-        @return:
+        self._save_display_view = self._mw.saveState().data() 
+    def load_view(self):
+        """Loads the saved state from the GUI and can read a QbyteArray
+            or a simple byteArray aswell.
         """
-
-        tilt_widget = self.tilt_correction_dockwidget
-
-        if settings:
-            sup_vecs = np.asarray([settings['vec_1'], settings['vec_2'], settings['vec_3']])
-            shift_vec = settings.get('vec_shift', {})
-            shift_vec = {} if shift_vec is None else shift_vec
-            auto_origin = settings['auto_origin']
-            axes = list(tilt_widget.support_vectors[0].keys())
-            #self.log.debug(f"Update vectors from logic: {sup_vecs}, {shift_vec}")
-
-            default_vec = {ax: np.inf for ax in axes}
-            shift_vec = {**default_vec, **shift_vec}
-
-            auto_state = 'ON' if auto_origin else 'OFF'
-
-            tilt_widget.blockSignals(True)
-            tilt_widget.set_auto_origin(auto_state, reset=False)
-            tilt_widget.blockSignals(False)
-
-            for i_row, box_row in enumerate(tilt_widget.support_vecs_box):
-                for j_col, box in enumerate(box_row):
-                    ax = axes[j_col]
-                    if i_row == len(tilt_widget.support_vecs_box)-1:
-                        vec = shift_vec
-                    else:
-                        vec = sup_vecs[i_row]
-
-                    box.blockSignals(True)
-                    box.setValue(vec[ax])
-                    box.blockSignals(False)
-
-    def apply_tilt_corr_support_vectors(self):
-
-        support_vecs = self.tilt_correction_dockwidget.support_vecs_box
-        support_vecs_val = self.tilt_correction_dockwidget.support_vectors
-
-        dim_idxs = [(idx, key) for idx, key in enumerate(self._scanning_logic().scanner_axes.keys())]
-
-        all_vecs_valid = True
-        vecs_to_check = [0,1,2] if self.tilt_correction_dockwidget.auto_origin else [0,1,2,3]
-        for vec in vecs_to_check:
-            vecs_valid = [support_vecs[vec][dim[0]].is_valid for dim in dim_idxs]
-            all_vecs_valid = np.all(vecs_valid) and all_vecs_valid
-
-        self.toggle_tilt_correction(False)
-        self._scanning_logic().configure_tilt_correction(None, None)
-        self._mw.action_toggle_tilt_correction.setEnabled(False)
-
-        if all_vecs_valid:
-            shift_vec = support_vecs_val[-1]
-            if self.tilt_correction_dockwidget.auto_origin:
-                shift_vec = None
-
-            support_vecs = support_vecs_val[:-1]
-            self._scanning_logic().configure_tilt_correction(support_vecs,
-                                                             shift_vec)
-            self._mw.action_toggle_tilt_correction.setEnabled(True)
-
-    def toggle_tilt_correction(self, state):
-        if type(state) != bool:
-            raise ValueError
-
-        self._scanning_logic().toggle_tilt_correction(state)
-        self._mw.action_toggle_tilt_correction.set_state(state)
-        self._mw.action_toggle_tilt_correction.setChecked(state)
-
-
-class ToggleIconsQAction(QAction):
-
-    def __init__(self, parent, text, icon_on, icon_off):
-        self.icon_on = QtGui.QIcon(QtGui.QPixmap(icon_on))
-        self.icon_off = QtGui.QIcon(QtGui.QPixmap(icon_off))
-        super().__init__(self.icon_off, text, parent, checkable=True)
-
-        self.triggered.connect(self.set_state, QtCore.Qt.QueuedConnection)
-
-    def set_state(self, enabled):
-        if enabled:
-            self.setIcon(self.icon_on)
+        if self._save_display_view is None:
+            pass
         else:
-            self.setIcon(self.icon_off)
+            self._mw.restoreState(self._save_display_view)

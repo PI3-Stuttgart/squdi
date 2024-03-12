@@ -53,6 +53,7 @@ class OceanOptics(SpectrometerInterface):
         """
         self.log.info(f'available spectrometers: {sb.list_devices()}')
         self._spectrometer = sb.Spectrometer.from_serial_number(self._serial)
+        self._spectrometer.features['thermo_electric'][0].set_temperature_setpoint_degrees_celsius(-22)
         self.log.info(''.format(self._spectrometer.model, self._spectrometer.serial_number))
         self.exposure_time = self._integration_time
         self.log.info(f'Exposure set to {self._integration_time} seconds')
@@ -89,3 +90,6 @@ class OceanOptics(SpectrometerInterface):
         assert isinstance(value, (float, int)), f'exposure_time needs to be a float in seconds, but was {value}'
         self._integration_time = float(value)
         self._spectrometer.integration_time_micros(int(self._integration_time * 1e6))
+
+    def clearBuffer(self):
+        self._spectrometer.features['data_buffer'][0].clear()

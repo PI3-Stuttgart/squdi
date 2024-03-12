@@ -35,7 +35,7 @@ class OdmrSettingsDialog(QtWidgets.QDialog):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setWindowTitle('ODMR Settings')
-
+        self.setObjectName('ODMR Settings')
         # Spinbox defining maximum scan matrix lines shown
         self.max_scans_shown_spinbox = QtWidgets.QSpinBox()
         self.max_scans_shown_spinbox.setRange(1, 2 ** 31 - 1)

@@ -72,7 +72,9 @@ class MicrowaveSmiq(MicrowaveInterface):
         self._cw_power = -20
         self._cw_frequency = 2.0e9
         self._scan_power = -20
+        self._scan_powers = None 
         self._scan_frequencies = None
+        self._scan_powers = None 
         self._scan_mode = None
         self._scan_sample_rate = 0.
 
@@ -135,7 +137,9 @@ class MicrowaveSmiq(MicrowaveInterface):
         )
 
         self._scan_frequencies = None
+        self._scan_powers = None
         self._scan_power = self._constraints.min_power
+        self._scan_powers = None
         self._cw_power = self._constraints.min_power
         self._cw_frequency = 2870.0e6
         self._scan_mode = SamplingOutputMode.JUMP_LIST
@@ -203,6 +207,18 @@ class MicrowaveSmiq(MicrowaveInterface):
         """
         with self._thread_lock:
             return self._scan_frequencies
+    
+    @property
+    def scan_powers(self):
+        """The microwave powrers used for scanning. Must implement setter as well.
+
+        In case of scan_mode == SamplingOutputMode.JUMP_LIST, this will be a 1D numpy array.
+    
+   
+        @return float[]: The currently set scanning powers. None if not set.
+        """
+        with self._thread_lock:
+            return self.scan_powers
 
     @property
     def scan_mode(self):
@@ -241,7 +257,7 @@ class MicrowaveSmiq(MicrowaveInterface):
             self._cw_power = float(self._device.query(':POW?'))
             self._cw_frequency = float(self._device.query(':FREQ?'))
 
-    def configure_scan(self, power, frequencies, mode, sample_rate):
+    def configure_scan(self, power, frequencies, mode, sample_rate, powers=None):
         """
         """
         with self._thread_lock:
@@ -254,12 +270,20 @@ class MicrowaveSmiq(MicrowaveInterface):
             self._scan_mode = mode
             self._scan_sample_rate = sample_rate
             self._scan_power = power
+
             if mode == SamplingOutputMode.JUMP_LIST:
-                self._scan_frequencies = np.asarray(frequencies, dtype=np.float64)
-                self._write_list()
+                if powers is None:
+                    self._scan_frequencies = np.asarray(frequencies, dtype=np.float64)
+                    self._write_list()
+                else:
+                    self._scan_frequencies = np.asarray(frequencies, dtype=np.float64)
+                    self._scan_powers = np.asarray(powers, dtype=np.float64)
+                    self._write_arbitrary_list()
             elif mode == SamplingOutputMode.EQUIDISTANT_SWEEP:
                 self._scan_frequencies = tuple(frequencies)
-                self._write_sweep()
+                self._write_sweep() 
+            
+
 
             self._set_trigger_edge()
 
@@ -321,8 +345,14 @@ class MicrowaveSmiq(MicrowaveInterface):
                 'No scan_frequencies set. Unable to start scan.'
 
             if self._scan_mode == SamplingOutputMode.JUMP_LIST:
+                
                 if not self._in_list_mode():
-                    self._write_list()
+                    if self._scan_powers is not None:
+                        self._write_arbitrary_list()
+                    else: 
+                        self._write_list()
+
+
 
                 # This needs to be done due to stupid design of the list mode (sweep is better)
                 self._command_wait(':FREQ:MODE CW')
@@ -403,7 +433,44 @@ class MicrowaveSmiq(MicrowaveInterface):
         self._device.write('*WAI')
 
         # Set list power
-        self._device.write(f':LIST:POW {self._scan_power:f}')
+        if self._scan_powers is not None:
+            # Set list powers
+            power_str = f'{self._scan_powers[0]:f}, '
+            power_str += ', '.join(f'{power:f}' for power in self._scan_powers)
+            self._device.write(f':LIST:POW {power_str}')
+        else:
+            self._device.write(f':LIST:POW {self._scan_power:f}')
+        self._device.write('*WAI')
+
+        self._command_wait(':TRIG1:LIST:SOUR EXT')
+
+        # Apply settings in hardware
+        self._command_wait(':LIST:LEARN')
+        # If there are timeout problems after this command, update the smiq firmware to > 5.90
+        # as there was a problem with excessive wait times after issuing :LIST:LEARN over a
+        # GPIB connection in firmware 5.88
+        self._command_wait(':FREQ:MODE LIST')
+    
+    def _write_arbitrary_list(self):
+                # Cant change list parameters if in list mode
+        if not self._in_cw_mode():
+            self._command_wait(':FREQ:MODE CW')
+
+        self._device.write(":LIST:SEL 'QUDI'")
+        self._device.write('*WAI')
+
+        # Set list frequencies
+        freq_str = f'{self._scan_frequencies[0]:f}, '
+        freq_str += ', '.join(f'{freq:f}' for freq in self._scan_frequencies)
+        self._device.write(f':LIST:FREQ {freq_str}')
+        self._device.write('*WAI')
+        self._device.write(':LIST:MODE STEP')
+        self._device.write('*WAI')
+
+        # Set list powers
+        power_str = f'{self._scan_powers[0]:f}, '
+        power_str += ', '.join(f'{power:f}' for power in self._scan_powers)
+        self._device.write(f':LIST:POW {power_str}')
         self._device.write('*WAI')
 
         self._command_wait(':TRIG1:LIST:SOUR EXT')

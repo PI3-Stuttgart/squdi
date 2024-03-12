@@ -23,7 +23,7 @@ __all__ = ['SpectrometerGui']
 
 import importlib
 from time import perf_counter
-from PySide2 import QtCore
+from PySide2 import QtCore, QtWidgets
 
 from qudi.core.module import GuiBase
 from qudi.core.connector import Connector
@@ -62,6 +62,7 @@ class SpectrometerGui(GuiBase):
     _progress_poll_interval = ConfigOption(name='progress_poll_interval',
                                            default=1,
                                            missing='nothing')
+    _save_folderpath = StatusVar('save_folderpath', default=None)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -69,6 +70,7 @@ class SpectrometerGui(GuiBase):
         self._fsd = None
         self._start_acquisition_timestamp = 0
         self._progress_timer = None
+        self.fit_results = None
 
     def on_activate(self):
         """ Definition and initialisation of the GUI.
@@ -82,6 +84,7 @@ class SpectrometerGui(GuiBase):
 
         # setting up the window
         self._mw = spectrometer_window.SpectrometerMainWindow()
+        self._restore_window_geometry(self._mw)
 
         # Fit settings dialog
         self._fsd = FitConfigurationDialog(
@@ -104,6 +107,15 @@ class SpectrometerGui(GuiBase):
         self._mw.control_widget.background_button.clicked.connect(self.acquire_background)
         self._mw.action_save_spectrum.triggered.connect(self.save_spectrum)
         self._mw.action_save_background.triggered.connect(self.save_background)
+
+        # Setting up save widget root dire memory and button relations
+        self.save_widget = self._mw.control_widget.save_path_widget
+        self.save_widget.currPathLabel.setText('Default' if self._save_folderpath is None else self._save_folderpath)
+        self.save_widget.DailyPathCheckBox.clicked.connect(lambda: self.save_widget.newPathCheckBox.setEnabled(not self.save_widget.DailyPathCheckBox.isChecked()))
+        if self._save_folderpath is None:
+            self.save_widget.DailyPathCheckBox.setChecked(True)
+            self.save_widget.DailyPathCheckBox.clicked.emit()
+
         self._mw.control_widget.background_correction_switch.sigStateChanged.connect(
             self.background_correction_changed
         )
@@ -113,6 +125,10 @@ class SpectrometerGui(GuiBase):
         self._mw.control_widget.differential_spectrum_switch.sigStateChanged.connect(
             self.differential_spectrum_changed
         )
+        self._mw.control_widget.flipper_switch.sigStateChanged.connect(
+            self.automatic_flip
+        )
+        self._mw.control_widget.flipper_switch.setChecked(self._spectrometer_logic().do_flip)
         self._mw.data_widget.fit_region_from.editingFinished.connect(self.fit_region_value_changed)
         self._mw.data_widget.fit_region_to.editingFinished.connect(self.fit_region_value_changed)
         self._mw.data_widget.axis_type.sigStateChanged.connect(self.axis_type_changed)
@@ -172,6 +188,7 @@ class SpectrometerGui(GuiBase):
         self._mw.settings_dialog.accepted.disconnect()
         self._mw.settings_dialog.rejected.disconnect()
 
+        self._save_window_geometry(self._mw)
         self._mw.close()
 
     def show(self):
@@ -264,6 +281,7 @@ class SpectrometerGui(GuiBase):
     def update_fit(self, fit_method, fit_results):
         """ Update the drawn fit curve.
         """
+        self.fit_results = fit_results
         if fit_method != 'No Fit' and fit_results is not None:
             # redraw the fit curve in the GUI plot.
             self._mw.data_widget.fit_curve.setData(x=fit_results.high_res_best_fit[0],
@@ -302,10 +320,26 @@ class SpectrometerGui(GuiBase):
             self._mw.control_widget.background_button.setText('Acquire Background')
 
     def save_spectrum(self):
-        self._spectrometer_logic().save_spectrum_data(background=False)
-
+        self.save_data(background=False)
+        
     def save_background(self):
-        self._spectrometer_logic().save_spectrum_data(background=True)
+        self.save_data(background=True)
+    
+    def save_data(self, background=False):
+        name_tag = self.save_widget.saveTagLineEdit.text()
+        if self.save_widget.newPathCheckBox.isChecked() and self.save_widget.newPathCheckBox.isEnabled():
+            new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
+            if new_path:
+                self._save_folderpath = new_path
+                self.save_widget.currPathLabel.setText(self._save_folderpath)
+                self.save_widget.newPathCheckBox.setChecked(False)
+            else:
+                return
+
+        if self.save_widget.DailyPathCheckBox.isChecked():
+            self._save_folderpath = None
+            self.save_widget.currPathLabel.setText('Default')
+        self._spectrometer_logic().save_spectrum_data(background, name_tag, self._save_folderpath)
 
     def background_correction_changed(self):
         self._spectrometer_logic().background_correction = self._mw.control_widget.background_correction_switch.isChecked()
@@ -315,7 +349,8 @@ class SpectrometerGui(GuiBase):
 
     def differential_spectrum_changed(self):
         self._spectrometer_logic().differential_spectrum = self._mw.control_widget.differential_spectrum_switch.isChecked()
-
+    def automatic_flip(self):
+        self._spectrometer_logic().do_flip = self._mw.control_widget.flipper_switch.isChecked()
     def fit_region_changed(self):
         self._spectrometer_logic().fit_region = self._mw.data_widget.fit_region.getRegion()
 

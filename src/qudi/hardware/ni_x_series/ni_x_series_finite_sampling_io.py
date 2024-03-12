@@ -86,6 +86,7 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
     _frame_size_limits = ConfigOption(name='frame_size_limits', default=(1, 1e9))
     _input_channel_units = ConfigOption(name='input_channel_units',
                                         missing='error')
+    _sum_channels = ConfigOption(name='sum_channels', default=[], missing='nothing')
 
     _output_channel_units = ConfigOption(name='output_channel_units',
                                          default={'ao{}'.format(channel_index): 'V' for channel_index in range(0, 4)},
@@ -107,7 +108,11 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
                                           default={'ao{}'.format(channel_index): [-10, 10]
                                                    for channel_index in range(0, 4)},
                                           missing='warn')
-
+    _output_voltage_ranges_LT = ConfigOption(name='output_voltage_ranges_LT',
+                                          default={'ao{}'.format(channel_index): [-10, 10]
+                                                   for channel_index in range(0, 4)},
+                                          missing='nothing')
+    _scanner_ready = True # FIX for a nicer compatibility with time tagger
     # Hardcoded data type
     __data_type = np.float64
 
@@ -159,6 +164,7 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
         """
         self._input_channel_units = {self._extract_terminal(key): value
                                      for key, value in self._input_channel_units.items()}
+                                     
         self._output_channel_units = {self._extract_terminal(key): value
                                       for key, value in self._output_channel_units.items()}
 
@@ -246,6 +252,9 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
             raise ValueError(
                 f'The channels "{", ".join(invalid_channels)}", specified in the config, were not recognized.'
             )
+        self._sum_channels = [ch.lower() for ch in self._sum_channels]
+        if len(self._sum_channels) > 1:
+            self._input_channel_units["sum"] = self._input_channel_units[self._sum_channels[0]]
 
         # Check Physical clock output if specified
         if self._physical_sample_clock_output is not None:
@@ -278,7 +287,8 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
         if digital_sources:
             input_limits.update({self._extract_terminal(key): [0, int(1e8)]
                                  for key in digital_sources})  # TODO Real HW constraint?
-
+        if len(self._sum_channels) > 1:
+            input_limits["sum"] = [0, int(1e8)]
         if analog_sources:
             adc_voltage_ranges = {self._extract_terminal(key): value
                                   for key, value in self._adc_voltage_ranges.items()}
@@ -344,7 +354,7 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
         assert not self.is_running, \
             'Unable to change active channels while IO is running. New settings ignored.'
 
-        input_channels = tuple(self._extract_terminal(channel) for channel in input_channels)
+        input_channels = tuple(self._extract_terminal(channel) for channel in input_channels )
         output_channels = tuple(self._extract_terminal(channel) for channel in output_channels)
 
         assert set(input_channels).issubset(set(self._constraints.input_channel_names)), \
@@ -417,13 +427,15 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
         if not self.is_running:
             return self._number_of_pending_samples
 
-        if self._ai_task_handle is None and self._di_task_handles is not None:
+        if self._ai_task_handle is None and self._di_task_handles is not None and len(self._di_task_handles) > 0:
             return self._di_task_handles[0].in_stream.avail_samp_per_chan
         elif self._ai_task_handle is not None and self._di_task_handles is None:
             return self._ai_task_handle.in_stream.avail_samp_per_chan
-        else:
+        elif self._ai_task_handle is not None and self._di_task_handles is not None and len(self._di_task_handles) > 0:
             return min(self._ai_task_handle.in_stream.avail_samp_per_chan,
                        self._di_task_handles[0].in_stream.avail_samp_per_chan)
+        else:
+            return self.frame_size
 
     @property
     def frame_size(self):
@@ -1129,6 +1141,41 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
             return -1
         return 0
 
+    def set_new_io_limits(self, is_LT_regime):
+
+        if is_LT_regime:
+            limits = self._output_voltage_ranges_LT
+        else:
+            limits = self._output_voltage_ranges
+
+        digital_sources = tuple(src for src in self._input_channel_units)
+        input_limits = dict()
+
+        if digital_sources:
+            input_limits.update({self._extract_terminal(key): [0, int(1e8)]
+                                for key in digital_sources})  # TODO Real HW constraint?
+
+        sample_rate_limits = (self._device_handle.ao_min_rate, min(self._device_handle.ao_max_rate, self._device_handle.ci_max_timebase))
+
+        # output_voltage_ranges = {self._extract_terminal(key): value
+        #                                 for key, value in self._output_voltage_ranges.items()}
+        output_voltage_ranges = limits
+        output_voltage_ranges = dict(sorted(output_voltage_ranges.items()))
+        self._output_channel_units = dict(sorted(self._output_channel_units.items()))
+
+        self._input_channel_units = dict(sorted(self._input_channel_units.items()))
+        input_limits = dict(sorted(input_limits.items()))
+
+        self._constraints = FiniteSamplingIOConstraints(
+                    supported_output_modes=(SamplingOutputMode.JUMP_LIST, SamplingOutputMode.EQUIDISTANT_SWEEP),
+                    input_channel_units=dict(self._input_channel_units),
+                    output_channel_units=dict(self._output_channel_units),
+                    frame_size_limits=self._frame_size_limits,
+                    sample_rate_limits=sample_rate_limits,
+                    output_channel_limits=output_voltage_ranges,
+                    input_channel_limits=input_limits
+                )
+
     def terminate_all_tasks(self):
         err = 0
 
@@ -1208,7 +1255,7 @@ class NIXSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
         """
         input_channels = tuple(self._extract_terminal(src) for src in input_channels)
 
-        di_channels = tuple(channel for channel in input_channels if 'pfi' in channel)
+        di_channels = tuple(channel for channel in input_channels if ('pfi' in channel))
         ai_channels = tuple(channel for channel in input_channels if 'ai' in channel)
 
         assert (di_channels or ai_channels), f'No channels could be extracted from {*input_channels,}'

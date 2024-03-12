@@ -155,6 +155,8 @@ class PulsedMeasurementGui(GuiBase):
     ## declare connectors
     pulsedmasterlogic = Connector(interface='PulsedMasterLogic')
 
+    _save_folderpath = StatusVar('save_folderpath', default=None)
+    _save_display_view = StatusVar(name='save_display_view', default=None)
     # status var
     _ana_param_x_axis_name_text = StatusVar('ana_param_x_axis_name_LineEdit', 'Tau')
     _ana_param_x_axis_unit_text = StatusVar('ana_param_x_axis_unit_LineEdit', 's')
@@ -218,7 +220,7 @@ class PulsedMeasurementGui(GuiBase):
         self._connect_sequence_generator_tab_signals()
         self._connect_dialog_signals()
         self._connect_logic_signals()
-
+        self._init_save_widget()
         self.sigPulseGeneratorSettingsUpdated.connect(
             self.pulsedmasterlogic().refresh_pulse_generator_settings,
             QtCore.Qt.QueuedConnection)
@@ -231,7 +233,7 @@ class PulsedMeasurementGui(GuiBase):
         self.pulsedmasterlogic().sequencegeneratorlogic().sigBenchmarkComplete.connect(
             self.sampling_or_loading_finished, QtCore.Qt.QueuedConnection)
 
-        self.show()
+        
 
         if not self.pulsedmasterlogic().sequencegeneratorlogic().has_valid_pg_benchmark():
             dialog = QtWidgets.QMessageBox()
@@ -248,7 +250,8 @@ class PulsedMeasurementGui(GuiBase):
             ret = dialog.exec()
             if ret == QtWidgets.QMessageBox.Yes:
                 self.run_pg_benchmark()
-
+        self.load_view()
+        self.show()
         return
 
     def on_deactivate(self):
@@ -279,7 +282,7 @@ class PulsedMeasurementGui(GuiBase):
 
         self.sigPulseGeneratorSettingsUpdated.disconnect()
         self.sigPulseGeneratorRunBenchmark.disconnect()
-
+        self.save_view()
         self._mw.close()
         return
 
@@ -288,10 +291,41 @@ class PulsedMeasurementGui(GuiBase):
         self._mw.show()
         self._mw.activateWindow()
         self._mw.raise_()
+    
+    def save_view(self):
+        """Saves the current GUI state as a QbyteArray.
+           The .data() function will transform it to a bytearray, 
+           which can be saved as a StatusVar and read by the load_view method. 
+        """
+        self._save_display_view = self._mw.saveState().data() 
+    def load_view(self):
+        """Loads the saved state from the GUI and can read a QbyteArray
+            or a simple byteArray aswell.
+        """
+        if self._save_display_view is None:
+            pass
+        else:
+            self._mw.restoreState(self._save_display_view)
+
 
     ###########################################################################
     #                          Signal (dis-)connections                       #
     ###########################################################################
+    def _init_save_widget(self):
+        this_dir = os.path.dirname(__file__)
+        ui_file = os.path.join(this_dir, 'save_path_widget.ui')
+        self.save_path_widget = QtWidgets.QDockWidget()
+        uic.loadUi(ui_file, self.save_path_widget)
+        
+        self._mw.addDockWidget(QtCore.Qt.TopDockWidgetArea, self.save_path_widget)
+
+        self.save_path_widget.currPathLabel.setText('Default' if self._save_folderpath is None else self._save_folderpath)
+        self.save_path_widget.DailyPathCheckBox.clicked.connect(lambda: self.save_path_widget.newPathCheckBox.setEnabled(not self.save_path_widget.DailyPathCheckBox.isChecked()))
+        
+        if self._save_folderpath is None:
+            self.save_path_widget.DailyPathCheckBox.setChecked(True)
+            self.save_path_widget.DailyPathCheckBox.clicked.emit()
+
     def _connect_main_window_signals(self):
         # Connect main window actions and toolbar
         self._mw.action_Predefined_Methods_Config.triggered.connect(
@@ -847,25 +881,46 @@ class PulsedMeasurementGui(GuiBase):
         self._mw.action_save.setEnabled(False)
         self._mw.action_save_as.setEnabled(False)
         try:
-            nametag = self._mw.save_tag_LineEdit.text()
+            nametag = self.save_path_widget.saveTagLineEdit.text().strip()
+            if self.save_path_widget.newPathCheckBox.isChecked() and self.save_path_widget.newPathCheckBox.isEnabled():
+                new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
+                if new_path:
+                    self._save_folderpath = new_path
+                    self.save_path_widget.currPathLabel.setText(self._save_folderpath)
+                    self.save_path_widget.newPathCheckBox.setChecked(False)
+                else:
+                    return
+            folder = self._save_folderpath
             with_error = self._pa.ana_param_errorbars_CheckBox.isChecked()
 
-            self.pulsedmasterlogic().save_measurement_data(tag=nametag, with_error=with_error)
+            self.pulsedmasterlogic().save_measurement_data(file_path = os.path.join(folder, nametag), with_error=with_error)
+
         finally:
             self._mw.action_save.setEnabled(True)
             self._mw.action_save_as.setEnabled(True)
+
+
+
 
     def save_as_clicked(self):
         """Saves the current data"""
         self._mw.action_save.setEnabled(False)
         self._mw.action_save_as.setEnabled(False)
         try:
-            nametag = self._mw.save_tag_LineEdit.text().strip()
+            nametag = self.save_path_widget.saveTagLineEdit.text().strip()
+            if self.save_path_widget.newPathCheckBox.isChecked() and self.save_path_widget.newPathCheckBox.isEnabled():
+                new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
+                if new_path:
+                    self._save_folderpath = new_path
+                    self.save_path_widget.currPathLabel.setText(self._save_folderpath)
+                    self.save_path_widget.newPathCheckBox.setChecked(False)
+                else:
+                    return
             with_error = self._pa.ana_param_errorbars_CheckBox.isChecked()
             file_types = {'Text File (*.dat)': TextDataStorage,
                           'CSV File (*.csv)': CsvDataStorage,
                           'Numpy Binary File (*.npy)': NpyDataStorage}
-            default_dir = self.pulsedmasterlogic().default_data_dir
+            default_dir = self._save_folderpath#self.pulsedmasterlogic().default_data_dir
             os.makedirs(default_dir, exist_ok=True)
             default_filename = get_timestamp_filename(timestamp=datetime.datetime.now(),
                                                       nametag=nametag if nametag else None)

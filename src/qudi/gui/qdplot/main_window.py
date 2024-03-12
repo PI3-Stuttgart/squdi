@@ -63,6 +63,11 @@ class QDPlotMainWindow(QtWidgets.QMainWindow):
         self.action_new_plot.setToolTip('Adds another DockWidget for a new Plot.')
         self.action_new_plot.setIcon(icon)
 
+        icon = QtGui.QIcon(os.path.join(icon_path, 'document-new'))
+        self.action_plot_from_file = QtWidgets.QAction('Add Plot from File')
+        self.action_plot_from_file.setToolTip('Adds a plot from a file')
+        self.action_plot_from_file.setIcon(icon)
+
         icon = QtGui.QIcon(os.path.join(icon_path, 'zoom-fit-best'))
         self.action_restore_tabbed_view = QtWidgets.QAction('Restore tabbed view')
         self.action_restore_tabbed_view.setToolTip('Restore the tabbed view of the DockWidgets for the plots.')
@@ -80,6 +85,8 @@ class QDPlotMainWindow(QtWidgets.QMainWindow):
         menu_bar = QtWidgets.QMenuBar()
         menu = menu_bar.addMenu('File')
         menu.addAction(self.action_new_plot)
+        menu.addSeparator()
+        menu.addAction(self.action_plot_from_file)
         menu.addSeparator()
         menu.addAction(self.action_save_all)
         menu.addSeparator()
