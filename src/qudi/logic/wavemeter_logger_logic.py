@@ -51,7 +51,7 @@ class WavemeterLoggerLogic(LogicBase):
     sigFitUpdated = QtCore.Signal(object, str)
     # declare connectors
     wavemeter = Connector(interface='WavemeterInterface')
-    timetagger = Connector(interface='TT')
+    timetagger = Connector(interface='TT', optional=True)
     _fit_config = StatusVar(name='fit_config', default=None)
     _fit_region = StatusVar(name='fit_region', default=[0, 1])
 
@@ -188,7 +188,8 @@ class WavemeterLoggerLogic(LogicBase):
     def configure_counter(self):
         n_values = len(self.wavelengths)
         bin_width = int(1e12 * self.count_time/n_values)
-        self.counter = self._timetagger.counter(channels = self._timetagger._counter['channels'], 
+        if self._timetagger:
+            self.counter = self._timetagger.counter(channels = self._timetagger._counter['channels'], 
                                                 bin_width = bin_width, 
                                                 n_values = n_values)
     
