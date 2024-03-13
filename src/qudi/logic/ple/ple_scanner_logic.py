@@ -469,7 +469,7 @@ class PLEScannerLogic(ScanningProbeLogic):
                         if (self._number_of_repeats > self._repeated 
                             or self._number_of_repeats == 0):
                             self.sigRepeatScan.emit(True, self._toggled_scan_axes) 
-                        elif not hasattr(self._scanner(), "_triggered_ao") and self._number_of_repeats == 1:
+                        elif not hasattr(self._scanner(), "_triggered_ao") and self._repeated == 1:
                             self.sigScanningDone.emit()
                             self.sigRepeatScan.emit(False, self._toggled_scan_axes)
                             self._repeated = 0 
