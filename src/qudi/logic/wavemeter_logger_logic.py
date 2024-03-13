@@ -109,11 +109,15 @@ class WavemeterLoggerLogic(LogicBase):
         self._wavemeter = self.wavemeter()
         self._wavemeter.start_acquisition()
         self.count_time = self._wavemeter._measurement_timing
+
         self._get_new_wavelength_data = lambda :  np.rec.array(np.array(self._wavemeter.get_wavelength_buffer()), dtype = WAVELENGTH_DTYPE)
+        
         self.wavelengths = self._get_new_wavelength_data()
-        self.determine_count_time()
-        self.configure_counter()
-        self.recalculate_histogram()#
+        
+        if self._timetagger:
+            self.determine_count_time()
+            self.configure_counter()
+            self.recalculate_histogram() #
 
         
 
