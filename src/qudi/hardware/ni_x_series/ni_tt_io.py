@@ -672,7 +672,11 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
 
         @return dict: Sample arrays (values) for each active input channel (keys)
         """
-
+        #FIX
+        #Since counting with time_tagger only -> buffer is fixed
+        #We allow ourselve for now to hardcode it:
+        number_of_samples=None
+        
         with self._thread_lock:
             if number_of_samples is not None:
                 assert isinstance(number_of_samples, (int, np.integer)), f'Number of requested samples not integer'

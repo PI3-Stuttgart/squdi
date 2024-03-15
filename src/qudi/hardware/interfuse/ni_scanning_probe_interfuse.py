@@ -87,7 +87,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     _ni_ao = Connector(name='analog_output', interface='ProcessSetpointInterface')
 
     _ni_channel_mapping = ConfigOption(name='ni_channel_mapping', missing='error')
-    _sum_channels = ConfigOption(name='sum_channels', default=[], missing='nothing')
+    # _sum_channels = ConfigOption(name='sum_channels', default=[], missing='nothing')
     _position_ranges = ConfigOption(name='position_ranges', missing='error')
     _frequency_ranges = ConfigOption(name='frequency_ranges', missing='error')
     _resolution_ranges = ConfigOption(name='resolution_ranges', missing='error')
@@ -142,9 +142,9 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
         assert set(mapped_channels).issubset(specified_ni_finite_io_channels_set), \
             f'Channel mapping does not coincide with ni finite sampling io.'
-        self._sum_channels = [ch.lower() for ch in self._sum_channels]
-        if len(self._sum_channels) > 1:
-            self._input_channel_units["sum"] = list(self._input_channel_units.values())[1]
+        # self._sum_channels = [ch.lower() for ch in self._sum_channels]
+        # if len(self._sum_channels) > 1:
+        #     self._input_channel_units["sum"] = list(self._input_channel_units.values())[1]
 
         # Constraints
         axes = list()
@@ -295,7 +295,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
                     self.raw_data_container = RawDataContainer(self._scan_data.channels,
                                                                resolution[1] if self._scan_data.scan_dimension==2 else 1,
                                                                resolution[0],
-                                                               self.__backwards_line_resolution)
+                                                               self._backwards_line_resolution)
 
                     ni_scan_dict = self._init_ni_scan_arrays(self._scan_data)
 
@@ -557,7 +557,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     def _fetch_data_chunk(self):
         try:
             # self.log.debug(f'fetch chunk: {self._ni_finite_sampling_io().samples_in_buffer}, {self.is_scan_running}')
-            # chunk_size = self._scan_data.scan_resolution[0] + self.__backwards_line_resolution
+            # chunk_size = self._scan_data.scan_resolution[0] + self._backwards_line_resolution
             chunk_size = 10  # TODO Hardcode or go line by line as commented out above?
             # Request a minimum of chunk_size samples per loop
             try:
@@ -571,8 +571,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             reverse_routing = {val.lower(): key for key, val in self._ni_channel_mapping.items()}
 
             new_data = {reverse_routing[key]: samples for key, samples in samples_dict.items()}
-            if len(self._sum_channels) > 1:
-                new_data["sum"] = np.sum([samples for key, samples in samples_dict.items() if key in self._sum_channels], axis=0)
+            # if len(self._sum_channels) > 1:
+            #     new_data["sum"] = np.sum([samples for key, samples in samples_dict.items() if key in self._sum_channels], axis=0)
             # self.log.debug(f'new data: {new_data}')
 
             with self._thread_lock_data:
@@ -684,7 +684,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             horizontal = np.linspace(scan_data.scan_range[0][0], scan_data.scan_range[0][1],
                                      horizontal_resolution)
             horizontal_return_line = np.linspace(scan_data.scan_range[0][1], scan_data.scan_range[0][0],
-                                                 self.__backwards_line_resolution)
+                                                 self._backwards_line_resolution)
             # TODO Return line for 1d included due to possible hysteresis. Might be able to drop it,
             #  but then get_scan_data needs to be changed accordingly
 
@@ -706,7 +706,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
             horizontal_return_line = np.linspace(scan_data.scan_range[0][1],
                                                  scan_data.scan_range[0][0],
-                                                 self.__backwards_line_resolution)
+                                                 self._backwards_line_resolution)
             # a single back and forth line
             horizontal_single_line = np.concatenate((horizontal, horizontal_return_line))
             # need as much lines as we have in the vertical directions
@@ -720,10 +720,10 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             # during horizontal line, the vertical line keeps its value
             vertical_lines = np.repeat(vertical.reshape(vertical_resolution, 1), horizontal_resolution, axis=1)
             # during backscan of horizontal, the vertical axis increases its value by "one index"
-            vertical_return_lines = np.linspace(vertical[:-1], vertical[1:], self.__backwards_line_resolution).T
+            vertical_return_lines = np.linspace(vertical[:-1], vertical[1:], self._backwards_line_resolution).T
             # need to extend the vertical lines at the end, as we reach it earlier then for the horizontal axes
             vertical_return_lines = np.concatenate((vertical_return_lines,
-                                                    np.ones((1, self.__backwards_line_resolution)) * vertical[-1]
+                                                    np.ones((1, self._backwards_line_resolution)) * vertical[-1]
                                                     ))
 
             vertical_scan_array = np.concatenate((vertical_lines, vertical_return_lines), axis=1).ravel()
@@ -803,7 +803,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
                       corresponding voltage 1D numpy arrays for each axis
         """
 
-        # TODO adjust toolchain to incorporate __backwards_line_resolution in settings?
+        # TODO adjust toolchain to incorporate _backwards_line_resolution in settings?
         # TODO maybe need to clip to voltage range in case of float precision error in conversion?
 
         assert isinstance(scan_data, ScanData), 'This function requires a scan_data object as input'
@@ -990,7 +990,11 @@ class RawDataContainer:
 
     def fill_container(self, samples_dict):
         # get index of first nan from one element of dict
-        first_nan_idx = self.number_of_non_nan_values
+        if self.number_of_non_nan_values == self.frame_size:
+            first_nan_idx = 0
+        else:
+            first_nan_idx = self.number_of_non_nan_values
+    
         for key, samples in samples_dict.items():
             self._raw[key][first_nan_idx:first_nan_idx + len(samples)] = samples
 
