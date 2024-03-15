@@ -103,10 +103,12 @@ class ScanningDataLogic(LogicBase):
 
     @_scan_history.representer
     def __scan_history_to_dicts(self, history):
+        # history = []
         return [data.to_dict() for data in history]
 
     @_scan_history.constructor
     def __scan_history_from_dicts(self, history_dicts):
+        # history_dicts = []
         return [ScanData.from_dict(hist_dict) for hist_dict in history_dicts]
 
     def get_current_scan_data(self, scan_axes=None):
