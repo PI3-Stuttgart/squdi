@@ -65,10 +65,10 @@ class PleDataLogic(LogicBase):
     _scan_logic = Connector(name='scan_logic', interface='ScanningProbeLogic')
 
     # config options
-    _max_history_length = ConfigOption(name='max_history_length', default=10)
+    _max_history_length = ConfigOption(name='max_history_length', default=0)
 
     # status variables
-    _scan_history = StatusVar(name='scan_history', default=list())
+    _scan_history = list() #StatusVar(name='scan_history', default=list())
 
     # signals
     sigHistoryScanDataRestored = QtCore.Signal(object)
@@ -89,13 +89,13 @@ class PleDataLogic(LogicBase):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-        self._shrink_history()
-        if self._scan_history:
-            self._curr_data_per_scan = {sd.scan_axes: sd for sd in self._scan_history}
-            self.restore_from_history(-1)
-        else:
-            self._curr_history_index = 0
-            self._curr_data_per_scan = dict()
+        # self._shrink_history()
+        # if self._scan_history:
+        #     self._curr_data_per_scan = {sd.scan_axes: sd for sd in self._scan_history}
+        #     self.restore_from_history(-1)
+        # else:
+        #     self._curr_history_index = 0
+        self._curr_data_per_scan = dict()
         self._logic_id = self._scan_logic().module_uuid
         self._scan_logic().sigScanStateChanged.connect(self._update_scan_state)
 
@@ -105,13 +105,13 @@ class PleDataLogic(LogicBase):
         self._scan_logic().sigScanStateChanged.disconnect(self._update_scan_state)
         self._curr_data_per_scan = dict()
 
-    @_scan_history.representer
-    def __scan_history_to_dicts(self, history):
-        return [data.to_dict() for data in history]
+    # @_scan_history.representer
+    # def __scan_history_to_dicts(self, history):
+    #     return [data.to_dict() for data in history]
 
-    @_scan_history.constructor
-    def __scan_history_from_dicts(self, history_dicts):
-        return [ScanData.from_dict(hist_dict) for hist_dict in history_dicts]
+    # @_scan_history.constructor
+    # def __scan_history_from_dicts(self, history_dicts):
+    #     return [ScanData.from_dict(hist_dict) for hist_dict in history_dicts]
 
     def get_current_scan_data(self, scan_axes=None):
         """
@@ -218,8 +218,9 @@ class PleDataLogic(LogicBase):
                 
 
     def _shrink_history(self):
-        while len(self._scan_history) > self._max_history_length:
-            self._scan_history.pop(0)
+        pass
+        # while len(self._scan_history) > self._max_history_length:
+        #     self._scan_history.pop(0)
 
     def _abs_index(self, index):
         if index < 0:
