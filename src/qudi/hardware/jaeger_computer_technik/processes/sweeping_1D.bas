@@ -49,9 +49,9 @@ Event:
   For index = 1 To PAR_21
     DAC(1, get_vol(data_1[index]))
     DAC(2, get_vol(data_2[index]))
-    DAC(6, get_vol_z(data_3[index]))
+    DAC(3, get_vol_z(data_3[index]))
     If (PAR_22 = 1) Then
-      DAC(7,40000)
+      DAC(7,41000)
       CPU_Sleep(rise_time)
       DAC(7,32768) 
       CPU_Sleep(PAR_20)

@@ -1,5 +1,5 @@
 '<ADbasic Header, Headerversion 001.001>
-' Process_Number                 = 2
+' Process_Number                 = 10
 ' Initial_Processdelay           = 3000
 ' Eventsource                    = Timer
 ' Control_long_Delays_for_Stop   = No
@@ -12,33 +12,33 @@
 ' Info_Last_Save                 = DESKTOP-O5HD7AV  DESKTOP-O5HD7AV\yy3
 '<Header End>
 #Include ADwinGoldII.inc
-Dim data_5[10000] as Float
+
 Init:
-  CONF_DIO(1111b)
-  
+  Digout(1, 0)
+  Digout(2, 0)
+  Digout(3, 0)
+  Digout(4, 0)
+  Digout(5, 0)
+  Digout(6, 0)
+  Digout(7, 0)
+  Digout(0, 0)
+
 Event:
-  If (data_5[1] = 1.0) Then
-    Digout(3,1)
-    
-  Else
-    Digout(3,0)
-   
-  EndIf
+  Digout(1, PAR_1)
+  Digout(2, PAR_2)
+  Digout(3, PAR_3)
+  Digout(4, PAR_4)
+  Digout(5, PAR_5)
+  Digout(6, PAR_6)
+  Digout(7, PAR_7)
+  Digout(0, PAR_8)
   
-  If (data_5[2] = 1.0) Then
-    Digout(7,1)
-    
-  Else
-    Digout(7,0)
-    
-  EndIf
-  
-  If (data_5[3] = 1.0) Then
-    Digout(0,1)
-    
-  Else
-    Digout(0,0)
-    
-  EndIf
 Finish:
-  
+  Digout(1, 0)
+  Digout(2, 0)
+  Digout(3, 0)
+  Digout(4, 0)
+  Digout(5, 0)
+  Digout(6, 0)
+  Digout(7, 0)
+  Digout(0, 0)
