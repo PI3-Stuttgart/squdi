@@ -125,11 +125,11 @@ def measurement_mode(mode):
     else:
         print("No mode by this name")
 
-high_finesse_wavemeter.start_acquisition()
+ws_wavemeter.start_acquisition()
 
 #%%
 
-for i in range(3):
+for i in range(2):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
@@ -138,7 +138,15 @@ for i in range(3):
     name, dir_ = save_scan(f"pillar_scan_{i}")
     
 # %%
+#Calibrate PLE scanner:
+go_to_ple_target(laser_scanner_logic.scan_ranges['a'][0])
+time.sleep(1)
+ws_wavemeter
 
+
+
+
+#%%
 list(poi_manager_logic._roi._pois.keys())
 # %%
 switchlogic.states
