@@ -339,6 +339,8 @@ class PLEOptimizeScannerLogic(LogicBase):
             # optimizer scans are never saved
             self._scan_logic().set_scan_settings({'save_to_history': False})
 
+            self._scan_logic()._number_of_repeats = 1
+            
             self._sequence_index = 0
             self._optimal_position = dict()
             self.sigOptimizeStateChanged.emit(True, self.optimal_position, None)
