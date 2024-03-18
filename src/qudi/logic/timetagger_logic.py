@@ -213,7 +213,8 @@ class TimeTaggerLogic(LogicBase):
 
         @return dict parameters: Dictionary which contains the saving parameters
         """
-
+        if save_type is None:
+            save_type='counter'
         self._recorded_data = {'counter': self.trace_data, 'corr': self.corr_data, 'hist': self.hist_data}[save_type]
         if not self._recorded_data:
             self.log.error('No data has been recorded. Save to file failed.')

@@ -332,7 +332,9 @@ class TTGui(GuiBase):
 
     def _save_data_clicked(self):
         save_type = None
-        save_types = {'counter': self._mw.counter_checkBox.isChecked(), 'corr': self._mw.corr_checkBox.isChecked(), 'hist': self._mw.hist_checkBox.isChecked()}
+        save_types = {'counter': self._mw.counter_checkBox.isChecked(), 
+                      'corr': self._mw.corr_checkBox.isChecked(), 
+                      'hist': self._mw.hist_checkBox.isChecked()}
         for st in save_types:
             if save_types[st]:
                 save_type = st
