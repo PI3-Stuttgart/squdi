@@ -20,6 +20,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
     _timetagger = Connector(name='tt', interface = "TT")
     _timetagger_remote = Connector(name='tt_remote', interface = "TT", optional=True)
     _triggered_ao = Connector(name='triggered_ao', interface='TriggeredAOInterface')
+    
     _channel_mapping = ConfigOption(name='channel_mapping', missing='error')
     _sum_channels = ConfigOption(name='sum_channels', default=[], missing='nothing')
     _position_ranges = ConfigOption(name='position_ranges', missing='error')
