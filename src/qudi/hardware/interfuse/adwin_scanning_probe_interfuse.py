@@ -37,7 +37,7 @@ from qudi.util.helpers import in_range
 
 
 
-class NiScanningProbeInterfuseBare(ScanningProbeInterface):
+class AdwinScanningProbeInterfuseBare(ScanningProbeInterface):
     """
     This interfuse combines modules of a National Instrument device to make up a scanning probe hardware.
     One module for software timed analog output (NIXSeriesAnalogOutput) to position e.g. a scanner to a specific
