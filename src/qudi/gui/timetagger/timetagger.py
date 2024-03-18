@@ -331,6 +331,7 @@ class TTGui(GuiBase):
         self._mw.currPathLabel.setText(self._save_folderpath)
 
     def _save_data_clicked(self):
+        save_type = None
         save_types = {'counter': self._mw.counter_checkBox.isChecked(), 'corr': self._mw.corr_checkBox.isChecked(), 'hist': self._mw.hist_checkBox.isChecked()}
         for st in save_types:
             if save_types[st]:
@@ -348,7 +349,11 @@ class TTGui(GuiBase):
             self._mw.currPathLabel.setText(self._save_folderpath)
             save = True
         # if save:
-        self._timetaggerlogic._save_recorded_data(to_file=True, name_tag=self._mw.saveTagLineEdit.text(), save_figure=True, save_type=save_type, save_path = self._save_folderpath)
+        self._timetaggerlogic._save_recorded_data(to_file=True, 
+                                                  name_tag=self._mw.saveTagLineEdit.text(), 
+                                                  save_figure=True, 
+                                                  save_type=save_type, 
+                                                  save_path = self._save_folderpath)
 
     def update_fit(self, fit_method, fit_results):
         """ Update the drawn fit curve.
