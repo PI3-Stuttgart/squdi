@@ -83,9 +83,9 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
     _timetagger = Connector(name='tt', interface = "TT")
     
     #_timetagger_remote = Connector(name='tt_remote', interface = "TT", optional = True) we dont have any yet.
-    _adwin_name = ConfigOption(name='device_name', default='11', missing='warn') #Here the name is properly send to the BTL
+    _device_name = ConfigOption(name='device_name', default='adwin11', missing='warn') #Here the name is properly send to the BTL
     ### HERE THE ADWIN IS CONNECTING...
-    _adwin = Connector(name='adwin', interface = "ADWIN", optional = True) ##connection to the main adwin holder.
+    _adwin = Connector(name='adwin', interface = "Adwin_Scanning_Device", optional = True) ##connection to the adwin_Scanner holder.
     _rw_timeout = ConfigOption('read_write_timeout', default=10, missing='nothing')
 
     # Finite Sampling #TODO What are the frame size hardware limits?
@@ -124,12 +124,12 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                                        missing='nothing')
 
     _output_voltage_ranges = ConfigOption(name='output_voltage_ranges',
-                                          default={'ao{}'.format(channel_index): [-10, 10]
-                                                   for channel_index in range(0, 4)},
+                                          default={'ao{}'.format(channel_index): [0, 1]
+                                                   for channel_index in range(0, 3)},
                                           missing='warn')
     _output_voltage_ranges_LT = ConfigOption(name='output_voltage_ranges_LT',
-                                          default={'ao{}'.format(channel_index): [-10, 10]
-                                                   for channel_index in range(0, 4)},
+                                          default={'ao{}'.format(channel_index): [0, 1]
+                                                   for channel_index in range(0, 3)},
                                           missing='nothing')
 
     _scanner_ready = False
@@ -219,15 +219,16 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
 
         # WHY???? For now rename and see later if it is needed. Fro now seems not needed.
-        self.__all_counters = tuple(
-            self._extract_terminal(ctr) for ctr in self._adwin_handle.co_physical_chans.channel_names if
-            'ctr' in ctr.lower())
-        self.__all_digital_terminals = tuple(
-            self._extract_terminal(term) for term in self._adwin_handle.terminals if 'pfi' in term.lower())
-        self.__all_analog_in_terminals = tuple(
-            self._extract_terminal(term) for term in self._adwin_handle.ai_physical_chans.channel_names)
+        
+        # ## Maybe later to use for making it smoother for multiple channels, bla
+        # self.__all_counters = tuple(
+        #     self._extract_terminal(ctr) for ctr in self._adwin_handle.co_physical_chans.channel_names if
+        #     'ctr' in ctr.lower())
+        self.__all_digital_terminals = tuple(self._extract_terminal(term) for term in self._adwin_handle._digital_outputs.keys() if 'd' in term)
+        # self.__all_analog_in_terminals = tuple(
+        #     self._extract_terminal(term) for term in self._adwin_handle.ai_physical_chans.channel_names)
         self.__all_analog_out_terminals = tuple(
-            self._extract_terminal(term) for term in self._adwin_handle.ao_physical_chans.channel_names)
+             self._extract_terminal(term) for term in self._adwin_handle._analog_outputs.keys())
 
         # Get digital input terminals from _input_channel_units of the Time Tagger
         # The input channels are assumed to be time tagger exclusively
@@ -253,6 +254,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         if analog_outputs:
             source_set = set(analog_outputs)
+            #print(source_set, self.__all_analog_out_terminals)
             invalid_sources = source_set.difference(set(self.__all_analog_out_terminals))
             if invalid_sources:
                 self.log.error('Invalid analog source channels encountered. Following sources will '
@@ -270,15 +272,16 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             )
 
         # If there are any invalid inputs or outputs specified, raise an error
-        defined_channel_set = set.union(set(self._input_channel_units), set(self._output_channel_units))
+        defined_channel_set = set.union(set(self._input_channel_units), 
+                                        set(self._output_channel_units))
         detected_channel_set = set.union(set(analog_sources),
                                          set(digital_sources),
                                          set(analog_outputs))
         invalid_channels = set.difference(defined_channel_set, detected_channel_set)
+        
+        #print('invalid channels', invalid_channels)
         if invalid_channels:
-            raise ValueError(
-                f'The channels "{", ".join(invalid_channels)}", specified in the config, were not recognized.'
-            )
+            raise ValueError(f'The channels "{", ".join(invalid_channels)}", specified in the config, were not recognized.')
         
 
         self._sum_channels = [ch.lower() for ch in self._sum_channels]
@@ -292,20 +295,21 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 f'Physical sample clock terminal specified in config is invalid'
 
         # Get correct sampling frequency limits based on config specified channels
-        if analog_sources and len(analog_sources) > 1:  # Probably "Slowest" case
-            sample_rate_limits = (
-                max(self._device_handle.ai_min_rate, self._device_handle.ao_min_rate),
-                min(self._device_handle.ai_max_multi_chan_rate, self._device_handle.ao_max_rate)
-            )
-        elif analog_sources and len(analog_sources) == 1:  # Potentially faster than ai multi channel
-            sample_rate_limits = (
-                max(self._device_handle.ai_min_rate, self._device_handle.ao_min_rate),
-                min(self._device_handle.ai_max_single_chan_rate, self._device_handle.ao_max_rate)
-            )
-        else:  # Only ao and di, therefore probably the fastest possible
-            sample_rate_limits = (
-                self._device_handle.ao_min_rate,
-                min(self._device_handle.ao_max_rate, self._device_handle.ci_max_timebase)
+        # if analog_sources and len(analog_sources) > 1:  # Probably "Slowest" case
+        #     sample_rate_limits = (
+        #         max(self._device_handle.ai_min_rate, self._device_handle.ao_min_rate),
+        #         min(self._device_handle.ai_max_multi_chan_rate, self._device_handle.ao_max_rate)
+        #     )
+        # elif analog_sources and len(analog_sources) == 1:  # Potentially faster than ai multi channel
+        #     sample_rate_limits = (
+        #         max(self._device_handle.ai_min_rate, self._device_handle.ao_min_rate),
+        #         min(self._device_handle.ai_max_single_chan_rate, self._device_handle.ao_max_rate)
+        #     )
+        # else: 
+        # # Only ao and di, therefore probably the fastest possible
+        sample_rate_limits = (
+                self._adwin_handle.ao_min_rate,
+                min(self._adwin_handle.ao_max_rate, self._adwin_handle.ci_max_timebase)
             )
 
         output_voltage_ranges = {self._extract_terminal(key): value
@@ -852,8 +856,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         # # Return if sample clock is externally supplied
         # if self._external_sample_clock_source is not None:
         #     return 0
-
-        status = self._device_handle.set_up_scanner_clock(frequency)
+        print('Hello adwin')
+        status = self._adwin_handle.set_up_clock(frequency)
         return status
 
     def _init_tt_cbm_task(self):
@@ -1194,11 +1198,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         self.signal_scan_lines_next.emit()
         return 0
         
-        
-        
+                
     ### Continue from new qudi. 
-    
-    
 
     def _init_analog_out_task_NI_only(self):
         
@@ -1350,7 +1351,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         while len(self._adwin_handle.scanner_processes) > 0:
             try:
                 pass
-                #TODO stop the processes...
+                #TODO stop the processes... Doing nothing now...
             
             except Exception as e:
                 self.log.exception('Error while trying to terminate digital counter task.'+e)
@@ -1372,7 +1373,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         @param str term_str: The str to extract the terminal name from
         @return str: The terminal name in lower case
         """
-        term = term_str.strip('/').lower()
+        term = term_str#.strip('/').lower()
         if 'dev' in term:
             term = term.split('/', 1)[-1]
         return term

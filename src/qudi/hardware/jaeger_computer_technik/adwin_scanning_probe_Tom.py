@@ -19,6 +19,8 @@ You should have received a copy of the GNU Lesser General Public License along w
 If not, see <https://www.gnu.org/licenses/>.
 """
 
+## THIS IS FILE WRITTEN BY TOM?
+
 import time
 import numpy as np
 from PySide2 import QtCore

@@ -32,12 +32,14 @@ from qudi.interface.scanning_probe_interface import ScanningProbeInterface, Scan
 from qudi.core.configoption import ConfigOption
 from qudi.core.connector import Connector
 from qudi.util.mutex import RecursiveMutex, Mutex
+
+from qudi.util.helpers import natural_sort, in_range
 from qudi.util.enums import SamplingOutputMode
 from qudi.util.helpers import in_range
 
 
 
-class AdwinScanningProbeInterfuseBare(ScanningProbeInterface):
+class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     """
     This interfuse combines modules of a National Instrument device to make up a scanning probe hardware.
     One module for software timed analog output (NIXSeriesAnalogOutput) to position e.g. a scanner to a specific
@@ -84,6 +86,8 @@ class AdwinScanningProbeInterfuseBare(ScanningProbeInterface):
     # TODO Bool indicators deprecated; Change in scanning probe toolchain
 
     _ni_finite_sampling_io = Connector(name='scan_hardware', interface='FiniteSamplingIOInterface')
+    
+    # THIS IS SLOW analog outputs?
     _ni_ao = Connector(name='analog_output', interface='ProcessSetpointInterface')
 
     _ni_channel_mapping = ConfigOption(name='ni_channel_mapping', missing='error')
@@ -147,7 +151,6 @@ class AdwinScanningProbeInterfuseBare(ScanningProbeInterface):
         # self._sum_channels = [ch.lower() for ch in self._sum_channels]
         # if len(self._sum_channels) > 1:
         #     self._input_channel_units["sum"] = list(self._input_channel_units.values())[1]
-
         # Constraints
         axes = list()
         for axis in self._position_ranges:

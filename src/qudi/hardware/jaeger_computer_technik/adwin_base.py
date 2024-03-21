@@ -10,6 +10,7 @@ class AdwinBase(Base):
         """
         super().__init__(*args, **kwargs)
         self.adwin = ADwin.ADwin(0x1, 1)
+        self._device_name = 'adwin11'
         self.btl = f'{self.adwin.ADwindir}adwin11.btl'
         # TODO: Make process path part of config?
         self.adwin_processes_path = os.path.join(
@@ -46,3 +47,10 @@ class AdwinBase(Base):
             
             int_adw_process_nr = 10 if int(str_file_name[-1]) == 0 else int(str_file_name[-1])
             self.adwin.Start_Process(int_adw_process_nr)
+            
+    
+    
+    def reset_hardware(self): ##SHOULDNT IT BE IN ADWIN BASE?
+        self.stop_all()
+        self.boot_adwin()
+        return 1
