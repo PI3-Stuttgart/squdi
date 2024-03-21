@@ -117,6 +117,8 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
         Returns:
             _type_: _description_
         """
+        print('Achtung, i am Scanning!')
+        
         self._line_length= len(line_path[0])
         self.adwin.SetData_Float(line_path[0], 1, 1, len(line_path[0]))
         self.adwin.SetData_Float(line_path[1], 2, 1, len(line_path[1]))

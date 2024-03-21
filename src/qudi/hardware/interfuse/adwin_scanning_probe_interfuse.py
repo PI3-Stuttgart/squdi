@@ -245,7 +245,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     def configure_scan(self, scan_settings):
         """ Configure the hardware with all parameters needed for a 1D or 2D scan.
 
-        @param dict scan_settings: scan_settings dictionary holding all the parameters 'axes', 'resolution', 'ranges'
+        @param dict scan_settings: scan_settings dictionary holding all the parameters 'axes', 
+        'resolution', 'ranges'
         #  TODO update docstring in interface
 
         @return (bool, ScanSettings): Failure indicator (fail=True),
@@ -320,8 +321,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
                 self._ni_finite_sampling_io().set_frame_data(ni_scan_dict)
 
-            except:
-                self.log.exception("")
+            except Exception as e:
+                self.log.exception(e)
                 return True, self.scan_settings
 
             self._current_scan_resolution = tuple(resolution)

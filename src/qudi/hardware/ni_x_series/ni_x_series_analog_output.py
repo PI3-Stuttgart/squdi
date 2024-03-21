@@ -24,12 +24,10 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 # ToDo: Handle case where zero volts is not a good default value
 
 import nidaqmx as ni
-
 from qudi.util.mutex import Mutex
 from qudi.core.configoption import ConfigOption
 from qudi.core.statusvariable import StatusVar
 from qudi.util.helpers import natural_sort, in_range
-
 from qudi.interface.process_control_interface import ProcessControlConstraints
 from qudi.interface.process_control_interface import ProcessSetpointInterface
 from qudi.interface.mixins.process_control_switch import ProcessControlSwitchMixin

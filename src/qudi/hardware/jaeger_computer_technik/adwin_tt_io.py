@@ -1298,7 +1298,9 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             input_limits.update({self._extract_terminal(key): [0, int(1e8)]
                                 for key in digital_sources})  # TODO Real HW constraint?
 
-        sample_rate_limits = (self._device_handle.ao_min_rate, min(self._device_handle.ao_max_rate, self._device_handle.ci_max_timebase))
+        sample_rate_limits = (self._adwin_handle.ao_min_rate,
+                              min(self._adwin_handle.ao_max_rate, 
+                                  self._adwin_handle.ci_max_timebase)) #hardcoded in adwin_Scanner.
 
         # output_voltage_ranges = {self._extract_terminal(key): value
         #                                 for key, value in self._output_voltage_ranges.items()}

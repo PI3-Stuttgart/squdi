@@ -65,7 +65,7 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
 
         self._constraints = None
         self._device_channel_mapping = dict()
-        self._ao_task_handles = dict()
+        self._ao_task_handles = dict() ## 
         self._keep_values = dict()
         
         
@@ -142,6 +142,101 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
         """
         return self._constraints
     
+    
+    def set_new_ao_limits(self, is_LT_regime):
+        #lim = {'ao2': [0, lim], 'ao1': [0, lim], 'ao3': [0, lim]}
+        if is_LT_regime:
+            limits = {ch_name:ch_params["limits_LT"]  for ch_name, ch_params in self._channels_config.items()}
+        else:
+            limits = {ch_name:ch_params["limits"]  for ch_name, ch_params in self._channels_config.items()}
+        if self._constraints:
+            self._constraints._channel_limits = limits
+
+    def _terminate_ao_task(self, channel: str) -> None:
+        """ Reset analog output to 0 if keep_values flag is not set """
+        try:
+            if not self._keep_values[channel]:
+                self._write_ao_value(channel=channel,value=0)
+            task = self._ao_task_handles.pop(channel)
+            return
+        except KeyError: #meeining that the keep_values are not present.
+            return
+        #try: #We dont have any actual tasks on ADWIN only processes and parameters. 
+        #    if not task.is_task_done():
+        #        task.stop()
+        #finally:
+        #    task.close()
+
+    def _create_ao_task(self, channel: str) -> None:
+        
+        #TODO: do we need it really?
+        if channel in self._ao_task_handles:
+            raise ValueError(f'AO task with name "{channel}" already present.')
+        try:
+            ao_task = 'task'#ni.Task(channel)
+        except Exception as err:
+            raise RuntimeError(f'Unable to create NI task "{channel}"') from err
+            raise RuntimeError('Error while configuring NI analog out task') from err
+        self._ao_task_handles[channel] = ao_task
+
+    def _write_ao_value(self, channel: str, value: float) -> None:
+        
+        """setparameters for analog outputs. 
+        Channel: id of parameter
+        Value: analog output in Volts. (the process of ao should then convert it to bits.)
+        """
+        print(channel, value) # Achtung, It is printing a lot!!!
+        #TODO convert value to int before writing!!!
+        # TODO write a mapping of channel to the parameter index
+        # old code:
+        # def scanner_set_position(self, x, y, z, a):
+        #     self._current_position[0] = x #m
+        #     self._current_position[1] = y #m
+        #     self._current_position[2] = z #
+        #     self.adw.Set_Par(11, x)
+        #     self.adw.Set_Par(12, y)
+        #     self.adw.Set_Par(13, z)
+        #     self.adw.Set_Par(14, a)
+        #     self.stop_all()
+        #     self.adw.Start_Process(3)
+        
+        
+        #self._ao_task_handles[channel].write(value) #here in principle, 
+        self.adwin.Set_Par(1,0)#channel, value) #This in principle writes a parameter into adwin
+        #and tells it to create a certain voltage.
+
+    def _sanitize_setpoint_status(self) -> None:
+        # Remove obsolete channels and out-of-bounds values
+        for channel, value in list(self._setpoints.items()):
+            try:
+                if not self.constraints.channel_value_in_range(channel, value)[0]:
+                    del self._setpoints[channel]
+            except KeyError:
+                del self._setpoints[channel]
+        # Add missing setpoint channels and set initial value to zero
+        self._setpoints.update(
+            {ch: 0 for ch in self.constraints.setpoint_channels if ch not in self._setpoints}
+        )
+    
+    def set_setpoint(self, channel: str, value: float) -> None:
+        """ Set new setpoint for a single channel """
+        value = float(value)
+        with self._thread_lock:
+            if not self._get_activity_state(channel):
+                raise RuntimeError(f'Please activate channel "{channel}" before setting setpoint')
+            if not self.constraints.channel_value_in_range(channel, value)[0]:
+                raise ValueError(f'Setpoint {value} for channel "{channel}" out of allowed '
+                                 f'value bounds {self.constraints.channel_limits[channel]}')
+            self._write_ao_value(channel, value)
+            self._setpoints[channel] = value
+    
+    def get_setpoint(self, channel: str) -> float:
+        """ Get current setpoint for a single channel """
+        with self._thread_lock:
+            if not self._get_activity_state(channel):
+                raise RuntimeError(f'Please activate channel "{channel}" before getting setpoint')
+            return self._setpoints[channel]
+    
     def set_activity_state(self, channel: str, active: bool) -> None:
         """ Set activity state for given channel.
         State is bool type and refers to active (True) and inactive (False).
@@ -159,24 +254,25 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
             if active != current_state:
                 try:
                     if active:
-                        self._create_ao_task(channel) #obsolete
+                        self._create_ao_task(channel)
                         self._write_ao_value(channel, self._setpoints.get(channel, 0))
                     else:
                         self._terminate_ao_task(channel)
                 finally:
                     self._update_module_state()
+    
     def get_activity_state(self, channel: str) -> bool:
         """ Get activity state for given channel.
         State is bool type and refers to active (True) and inactive (False).
         """
         with self._thread_lock:
             return self._get_activity_state(channel)
-
+        
     def _get_activity_state(self, channel: str) -> bool:
         if channel not in self.constraints.all_channels:
             raise ValueError(f'Invalid channel specifier "{channel}". Valid channels are:\n'
                              f'{self.constraints.all_channels}')
-        return channel in self._ao_task_handles                
+        return channel in self._ao_task_handles
     
     def _update_module_state(self) -> None:
         busy = len(self._ao_task_handles) > 0
@@ -184,92 +280,6 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
             self.module_state.lock()
         elif not busy and self.module_state() == 'locked':
             self.module_state.unlock()
-
-    def set_setpoint(self, channel: str, value: float) -> None:
-        """ Set new setpoint for a single channel """
-        value = float(value)
-        with self._thread_lock:
-            if not self._get_activity_state(channel):
-                raise RuntimeError(f'Please activate channel "{channel}" before setting setpoint')
-            if not self.constraints.channel_value_in_range(channel, value)[0]:
-                raise ValueError(f'Setpoint {value} for channel "{channel}" out of allowed '
-                                 f'value bounds {self.constraints.channel_limits[channel]}')
-            self._write_ao_value(channel, value)
-            self._setpoints[channel] = value
-
-    def get_setpoint(self, channel: str) -> float:
-        """ Get current setpoint for a single channel """
-        with self._thread_lock:
-            if not self._get_activity_state(channel):
-                raise RuntimeError(f'Please activate channel "{channel}" before getting setpoint')
-            return self._setpoints[channel]
-
-    def set_new_ao_limits(self, is_LT_regime):
-        #lim = {'ao2': [0, lim], 'ao1': [0, lim], 'ao3': [0, lim]}
-        if is_LT_regime:
-            limits = {ch_name:ch_params["limits_LT"]  for ch_name, ch_params in self._channels_config.items()}
-        else:
-            limits = {ch_name:ch_params["limits"]  for ch_name, ch_params in self._channels_config.items()}
-        if self._constraints:
-            self._constraints._channel_limits = limits
-
-    def _terminate_ao_task(self, channel: str) -> None:
-        """ Reset analog output to 0 if keep_values flag is not set """
-        try:
-            if not self._keep_values[channel]:
-                self._write_ao_value(0)
-            task = self._ao_task_handles.pop(channel)
-        except KeyError:
-            return
-        try:
-            if not task.is_task_done():
-                task.stop()
-        finally:
-            task.close()
-
-    def _create_ao_task(self, channel: str) -> None:
-        if channel in self._ao_task_handles:
-            raise ValueError(f'AO task with name "{channel}" already present.')
-        try:
-            ao_task = ni.Task(channel)
-        except ni.DaqError as err:
-            raise RuntimeError(f'Unable to create NI task "{channel}"') from err
-        try:
-            ao_phys_ch = f'/{self._device_name}/{self._device_channel_mapping[channel]}'
-            min_val, max_val = self.constraints.channel_limits[channel]
-            ao_task.ao_channels.add_ao_voltage_chan(physical_channel=ao_phys_ch,
-                                                    min_val=min_val,
-                                                    max_val=max_val)
-        except Exception as err:
-            try:
-                ao_task.close()
-            except ni.DaqError:
-                pass
-            raise RuntimeError('Error while configuring NI analog out task') from err
-        self._ao_task_handles[channel] = ao_task
-
-    def _write_ao_value(self, channel: str, value: float) -> None:
-        self._ao_task_handles[channel].write(value)
-
-    def _sanitize_setpoint_status(self) -> None:
-        # Remove obsolete channels and out-of-bounds values
-        for channel, value in list(self._setpoints.items()):
-            try:
-                if not self.constraints.channel_value_in_range(channel, value)[0]:
-                    del self._setpoints[channel]
-            except KeyError:
-                del self._setpoints[channel]
-        # Add missing setpoint channels and set initial value to zero
-        self._setpoints.update(
-            {ch: 0 for ch in self.constraints.setpoint_channels if ch not in self._setpoints}
-        )
-    
-    def set_setpoint(self):
-        pass
-    def get_setpoint(self):
-        pass
-    def set_activity_state(self):
-        pass
 
 class Adwin_IO(AnalogAndDigitalIO, AdwinBase): #TODO see towards - ProcessSetpointInterface
     
