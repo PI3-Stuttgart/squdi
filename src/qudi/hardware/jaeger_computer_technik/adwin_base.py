@@ -9,6 +9,7 @@ class AdwinBase(Base):
         """Get instance of ADwin adn bootloader 
         """
         super().__init__(*args, **kwargs)
+        print('test')
         self.adwin = ADwin.ADwin(0x1, 1)
         self._device_name = 'adwin11'
         self.btl = f'{self.adwin.ADwindir}adwin11.btl'
@@ -29,10 +30,11 @@ class AdwinBase(Base):
         pass
     
     
-    def boot_adwin(self):
+    def boot_adwin(self, brut_force=False):
         """Boots adwin
         """
-        self.adwin.Boot(self.btl)
+        if self.adwin.Test_Version() != 0 or brut_force:
+            self.adwin.Boot(self.btl)
         
         
     def start_adwin_processes(self, list_file_names:List[str]):

@@ -33,6 +33,10 @@ class SetupControlLogicQINU(LogicBase):
     Adwin_IO = Connector(interface='Adwin_IO')
     
     powermeter_in = False
+    lamp_on = False
+    current_lamp_power = 0
+    max_power_lamp = 2.3 # V
+    min_power_lamp = 1 # V
 
     
     def __init__(self, config, **kwargs):   
@@ -54,12 +58,16 @@ class SetupControlLogicQINU(LogicBase):
         
         
     def activate_lamp(self, active: bool):
-        self.io_dev.set_digi_out(
-            self.io_dev.port_by_name('lamp'), active)
+#        self.io_dev.set_digi_out(
+#            self.io_dev.port_by_name('lamp'), active)
+
+        self.lamp_on = active
+        self.set_lamp_power(self.current_lamp_power)  
       
       
     def flip_powermeter(self, flipped_in:bool):
         self._flip(self.io_dev.port_by_name('flip_powermeter'))
+    
     
     def set_green_power(self, power_percentage: float):
         self.io_dev.set_analog_out(
@@ -67,6 +75,17 @@ class SetupControlLogicQINU(LogicBase):
             self._calculate_attenuation_from_power(power_percentage)
             )
         
+        
+    def set_lamp_power(self, power_percentage: float):
+        self.current_lamp_power = power_percentage
+        if self.lamp_on:
+            voltage = self.min_power_lamp + (self.max_power_lamp - self.min_power_lamp) * (power_percentage/100)        
+        else:
+            voltage = 0
+            
+        self.io_dev.set_analog_out(
+                self.io_dev.port_by_name('lamp_power'), voltage)
+            
 
     ### Helper functions for standard devices ##
   

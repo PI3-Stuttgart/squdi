@@ -96,10 +96,52 @@
          <double>0</double>
         </property>
         <property name="maximum">
-         <double>500</double>
+         <double>100</double>
         </property>
        </widget>
       </item>
+
+    <item row="2" column="2">
+        <widget class="QSlider" name="lamp_power">
+            <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+                </sizepolicy>
+            </property>
+            <property name="minimumSize">
+                <size>
+                    <width>150</width>
+                    <height>0</height>
+                </size>
+            </property>
+            <property name="sizeIncrement">
+                <size>
+            <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="baseSize">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="focusPolicy">
+         <enum>Qt::StrongFocus</enum>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="minimum">
+         <double>0</double>
+        </property>
+        <property name="maximum">
+         <double>100</double>
+        </property>
+       </widget>
+      </item>
+
      </layout>
     </item>
    </layout>
@@ -121,6 +163,7 @@
   <tabstop>Green_Button</tabstop>
   <tabstop>Flipmirror_Button</tabstop>
   <tabstop>green_attenuation</tabstop>
+  <tabstop>lamp_power</tabstop>
  </tabstops>
  <resources/>
  <connections/>

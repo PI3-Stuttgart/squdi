@@ -73,6 +73,7 @@ class SetupControlGUI(GuiBase):
         self._mw.Green_Button.clicked.connect(self.green_laser_button_pressed)
         self._mw.Lamp_Button.clicked.connect(self.lamp_button_pressed)
         self._mw.green_attenuation.valueChanged.connect(self.green_power_slider_moved)
+        self._mw.lamp_power.valueChanged.connect(self.lamp_power_slider_moved)
 
         self._mw.Flipmirror_Button.clicked.connect(self.flip_powermeter_button_pressed)
 
@@ -93,6 +94,9 @@ class SetupControlGUI(GuiBase):
 
     def green_power_slider_moved(self, power):
         self._setupcontrol_logic.set_green_power(power)
+        
+    def lamp_power_slider_moved(self, power):
+        self._setupcontrol_logic.set_lamp_power(power)
 
     def green_laser_button_pressed(self, active):
         self._setupcontrol_logic.activate_green_laser(active)

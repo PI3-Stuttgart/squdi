@@ -7,7 +7,7 @@ from qudi.core.connector import Connector
 
 class MagnetLogic(LogicBase):
     ## connectors
-    magnet = Connector(interface = 'magnet_3d')
+    magnet = Connector(interface = 'Magnet3D')
     tagger = Connector(interface = 'TT')
 
     ## external signals
@@ -27,10 +27,11 @@ class MagnetLogic(LogicBase):
     def on_activate(self):
         self._magnet = self.magnet()
         self._tagger = self.tagger()
-
-        # connect external signals
-        self._magnet.sigRampFinished.connect(self._start_pixelIntegrationTimer)
-        self.sigChangePswStatus.connect(self._magnet.set_psw_status)
+        
+        if self._magnet.has_persistence:
+            self._magnet.sigRampFinished.connect(self._start_pixelIntegrationTimer)
+            self.sigChangePswStatus.connect(self._magnet.set_psw_status)
+        
         self.sigPauseRamp.connect(self._magnet.pause_ramp)
         self.sigContinueRamp.connect(self._magnet.continue_ramp)
         self.sigRampToZero.connect(self._magnet.ramp_to_zero)

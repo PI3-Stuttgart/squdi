@@ -121,15 +121,10 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
         # Sanitize status variables
         self._sanitize_setpoint_status()
         
-        
-        
     def on_deactivate(self):
         """Stops all adwin process needed for the script
         """
         # TODO
-        
-        
-        self.stop_all()
         pass
     
     ## THIS FOLLOWING FUNCTIONS HAVE TO BE WRITTEN TO MAP TO NI_AO class from Bluefors.cfg
@@ -186,17 +181,21 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
         Value: analog output in Volts. (the process of ao should then convert it to bits.)
         """
         print(channel, value) # Achtung, It is printing a lot!!!
+        #Apparently it is even used during the scan
+        
+        parid = {'ao0':11,}[channel]
+        
         #TODO convert value to int before writing!!!
         # TODO write a mapping of channel to the parameter index
         # old code:
-        # def scanner_set_position(self, x, y, z, a):
+        #def scanner_set_position(self, x, y, z, a):
         #     self._current_position[0] = x #m
         #     self._current_position[1] = y #m
         #     self._current_position[2] = z #
-        #     self.adw.Set_Par(11, x)
-        #     self.adw.Set_Par(12, y)
-        #     self.adw.Set_Par(13, z)
-        #     self.adw.Set_Par(14, a)
+        #self.adwin.Set_Par(parid, value) #Set float. value is float. 
+        #     self.adwin.Set_Par(12, y)
+        #     self.adwin.Set_Par(13, z)
+        
         #     self.stop_all()
         #     self.adw.Start_Process(3)
         
@@ -337,7 +336,7 @@ class Adwin_IO(AnalogAndDigitalIO, AdwinBase): #TODO see towards - ProcessSetpoi
     def set_analog_out(self, port: int, voltage: float):
         
         if self.available_ports()['analog'][port] is not None:
-            par_idx = 8 if port == 0 else port
+            par_idx = port
 
             self.adwin.Set_FPar(par_idx, voltage)
     

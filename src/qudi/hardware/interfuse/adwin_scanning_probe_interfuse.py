@@ -414,6 +414,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             return pos
 
     def start_scan(self):
+        
+        print('start scan intefuse.')
         try:
 
             #self.log.debug(f"Start scan in thread {self.thread()}, QT.QThread {QtCore.QThread.currentThread()}... ")
@@ -424,8 +426,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             else:
                 self._start_scan()
 
-        except:
-            self.log.exception("")
+        except Exception as e:
+            self.log.exception(e)
             return -1
 
         return 0
@@ -882,7 +884,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
     def _start_hw_timed_scan(self):
 
-        #self.log.debug("Starting hw timed scan")
+        self.log.debug("Starting hw timed scan")
         try:
             self._ni_finite_sampling_io().start_buffered_frame()
             self.sigNextDataChunk.emit()

@@ -856,7 +856,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         # # Return if sample clock is externally supplied
         # if self._external_sample_clock_source is not None:
         #     return 0
-        print('Hello adwin')
+        #print('Hello adwin')
+        frequency = 100
         status = self._adwin_handle.set_up_clock(frequency)
         return status
 
