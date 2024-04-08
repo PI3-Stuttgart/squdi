@@ -2,6 +2,7 @@
 import time
 import numpy as np
 import json
+import schedule
 import os
 from toptica.lasersdk.dlcpro.v2_0_3 import DLCpro,LaserHead,  NetworkConnection, DeviceNotFoundError
 def go_to_ple_target(target):
@@ -125,7 +126,7 @@ def measurement_mode(mode):
     else:
         print("No mode by this name")
 
-ws_wavemeter.start_acquisition()
+# ws_wavemeter.start_acquisition()
 
 #%%
 
@@ -222,14 +223,14 @@ def check_ple():
     measurement_mode('Off-res')
 #%%
 # Schedule the function
-schedule.every(60).seconds.do(check_ple)
+# schedule.every(300).seconds.do(check_ple)
 start_time = time.time()
-fw = tagger.write_into_file(os.path.join(folder, 'g2_1_6March.ttbin'), channels=[1,2,3, 5, 8, 6])
+fw = tagger.write_into_file(os.path.join(folder, 'g2_1_4April.ttbin'), channels=[1,2,3, 5, 8, 6])
 
 # Keep the script running to continuously check for scheduled tasks
-while True:
-    schedule.run_pending()
-    time.sleep(1)  # Check for tasks more frequently (adjust if needed)
+# while True:
+#     schedule.run_pending()
+#     time.sleep(1)  # Check for tasks more frequently (adjust if needed)
 # %%
 schedule.every(40).seconds.do(blast_green)
 while True:
@@ -240,3 +241,15 @@ green_laser(True)
 time.sleep(1)
 blue_laser_repump(True, on_t=1e6)
 # %%
+
+
+# %%
+ch1_cts = timetaggerlogic.counter.getDataNormalized()[0, :]
+
+# %%
+ch1_cts.mean()
+# %%
+timetaggerlogic.counter.getDataNormalized()[0, :]
+
+# %%
+
