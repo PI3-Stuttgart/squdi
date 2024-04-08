@@ -216,16 +216,19 @@ class TimeTaggerLogic(LogicBase):
         if save_type is None:
             save_type='counter'
         self._recorded_data = {'counter': self.trace_data, 'corr': self.corr_data, 'hist': self.hist_data}[save_type]
+        
         if not self._recorded_data:
             self.log.error('No data has been recorded. Save to file failed.')
             return np.empty(0), dict()
         #FIX
-        data_arr = np.array([self._recorded_data[list(self._recorded_data.keys())[0]]])
+        
         if save_type == 'counter':
             data_arr = []
             for ch in self.toggled_channels:
                 data_arr.append(np.nan_to_num(self._recorded_data[ch][1]))
             data_arr = np.array(data_arr)
+        else:
+            data_arr = np.array([self._recorded_data[1]])
         if data_arr.size == 0:
             self.log.error('No data has been recorded. Save to file failed.')
             return np.empty(0), dict()
