@@ -46,6 +46,7 @@ class TTGui(GuiBase):
     sigToggleCounter = QtCore.Signal(object)
     sigToggleCorr = QtCore.Signal(object)
     sigToggleHist = QtCore.Signal(object)
+    sigToggleDump = QtCore.Signal(bool, str, str)
 
     _counter_freq = StatusVar('counter_freq', default=50)
     _counter_length = StatusVar('counter_length', default=10)
@@ -58,6 +59,7 @@ class TTGui(GuiBase):
     _save_folderpath = StatusVar('save_folder_path', default='Default')
    
     save_folderpath = StatusVar('save_folderpath', default='')
+    _save_dump_folderpath = StatusVar('save_dump_folderpath', default='')
 
 
     def __init__(self, *args, **kwargs):
@@ -74,6 +76,7 @@ class TTGui(GuiBase):
 
         @return int: error code (0:OK, -1:error)
         """
+
         self._save_window_geometry(self._mw)
         self.__disconnect_fit_control_signals()
         self._fsd.close()
@@ -226,7 +229,8 @@ class TTGui(GuiBase):
             self._timetaggerlogic.configure_counter, QtCore.Qt.QueuedConnection)
         self._timetaggerlogic.sigCounterDataChanged.connect(
             self.update_counter_data, QtCore.Qt.QueuedConnection)
-
+        self._timetaggerlogic.sigDumpSizeChanged.connect(
+            self.update_dump_size, QtCore.Qt.QueuedConnection)
         self._mw.toggleCorrPushButton.toggled.connect(self.update_corr)
         self._mw.corrBinWidthDoubleSpinBox.setValue(self._corr_bin_width)
         self._mw.corrRecordLengthDoubleSpinBox.setValue(self._corr_record_length)
@@ -247,12 +251,17 @@ class TTGui(GuiBase):
         self._mw.histRecordLengthDoubleSpinBox.setValue(self._hist_record_length)
         self.sigToggleHist.connect(
             self._timetaggerlogic.configure_hist, QtCore.Qt.QueuedConnection)
+        self.sigToggleDump.connect(
+            self._timetaggerlogic.dump_data, QtCore.Qt.QueuedConnection)
         self._timetaggerlogic.sigHistDataChanged.connect(
             self.update_hist_data, QtCore.Qt.QueuedConnection)
         self._mw.saveAllPushButton.clicked.connect(self._save_data_clicked)
+        self._mw.dump_checkBox.toggled.connect(self._dump_toggled)
         self._mw.currPathLabel.setText(self._save_folderpath)
+        self._mw.currDumpPathLabel.setText(self._save_dump_folderpath)
         self._mw.DailyPathPushButton.clicked.connect(self._daily_path_clicked)
         self._mw.newPathPushButton.clicked.connect(self._new_path_clicked)
+        self._mw.dumpNewPathPushButton.clicked.connect(self._new_dump_path_clicked)
 
         self._mw.counter_checkBox.setChecked(True)
     
@@ -295,6 +304,9 @@ class TTGui(GuiBase):
             self.averaged_curves[ch].setData(y=y_arr, x=x_arr)
         counts = data['sum']
         self._mw.count_display_label.setText('{:.2r}c/s'.format(ScaledFloat(counts)))
+        
+    def update_dump_size(self, memory_used):
+        self._mw.memory_label.setText('{:.2r}b'.format(ScaledFloat(memory_used)))
 
     def update_corr(self):
         self._corr_bin_width = self._mw.corrBinWidthDoubleSpinBox.value()
@@ -329,6 +341,35 @@ class TTGui(GuiBase):
     def _daily_path_clicked(self):
         self._save_folderpath = 'Default'
         self._mw.currPathLabel.setText(self._save_folderpath)
+
+    def _new_dump_path_clicked(self):
+        new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
+        if new_path:
+            self._save_dump_folderpath = new_path
+            self._mw.currDumpPathLabel.setText(self._save_dump_folderpath)
+
+    def _dump_toggled(self):
+        if not self._mw.dump_checkBox.isChecked():
+            self.sigToggleDump.emit(False, '', '')
+        else:
+            if self._mw.dumpNewPathPushButton.isChecked() and self._mw.dumpNewPathPushButton.isEnabled():
+                #new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
+                #if new_path:
+                #self._save_folderpath = new_path
+                self._mw.currDumpPathLabel.setText(self._save_dump_folderpath)
+                self._mw.dumpNewPathPushButton.setChecked(False)
+                save = True
+                self.sigToggleDump.emit(True, self._mw.saveDumpTagLineEdit.text(),
+                                        self._save_dump_folderpath)
+     
+            elif self._save_dump_folderpath.strip():
+                self._mw.currDumpPathLabel.setText(self._save_dump_folderpath)
+                self._mw.dumpNewPathPushButton.setChecked(False)
+                save = True
+                self.sigToggleDump.emit(True, self._mw.saveDumpTagLineEdit.text(),
+                                        self._save_dump_folderpath)
+            else:
+                self.log.warning("Set the dump path.")
 
     def _save_data_clicked(self):
         save_type = None
