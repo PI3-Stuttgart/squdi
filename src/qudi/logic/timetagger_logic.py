@@ -91,7 +91,9 @@ class TimeTaggerLogic(LogicBase):
     
     def on_deactivate(self):
         self._fit_config = self._fit_config_model.dump_configs()
-        pass
+        self._counter_poll_timer = None
+        self._corr_poll_timer = None
+        self._hist_poll_timer = None
     
     def configure_counter(self, data):
         self.counter_freq, self.counter_length, self.counter_channels, self.counter_toggle, self.display_channel = data['counter']

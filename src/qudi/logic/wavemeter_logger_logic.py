@@ -85,7 +85,7 @@ class WavemeterLoggerLogic(LogicBase):
     accumulated_data = []
 
     # config opts
-    _logic_update_timing = ConfigOption('logic_query_timing', 400, missing='warn') # has to be larger than the count time
+    _logic_update_timing = ConfigOption('logic_query_timing', 600, missing='warn') # has to be larger than the count time
     #sig_query_wavemeter = QtCore.Signal()
     sig_update_current_wavelength = QtCore.Signal(float)
     sig_update_data = QtCore.Signal(object,object)
@@ -127,8 +127,8 @@ class WavemeterLoggerLogic(LogicBase):
         self.sigUpdateSettings.connect(self._udpate_settings)
         
         self._queryTimer = QtCore.QTimer()
-        #self._queryTimer.setInterval(self._logic_update_timing)
-        self._queryTimer.setSingleShot(False)
+        self._queryTimer.setInterval(self._logic_update_timing)
+        # self._queryTimer.setSingleShot(False)
         self._queryTimer.timeout.connect(self.update_data, QtCore.Qt.QueuedConnection)     
         
         self._wavemeter.start_acquisition()
@@ -142,8 +142,9 @@ class WavemeterLoggerLogic(LogicBase):
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
         """
-        if self.module_state() != 'idle' and self.module_state() != 'deactivated':
-            self.stop_scanning()
+        self._queryTimer = None
+        # if self.module_state() != 'idle' and self.module_state() != 'deactivated':
+        # self.stop_scanning()
 
     @QtCore.Slot()
     def update_data(self):

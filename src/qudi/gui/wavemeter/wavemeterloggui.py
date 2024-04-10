@@ -107,6 +107,7 @@ class WavemeterLogGui(GuiBase):
         self.wavelog_logic.sig_update_data.connect(self._update_data, QtCore.Qt.QueuedConnection)
         self.wavelog_logic.sig_toggle_log.connect(self.wavelog_logic.toggle_log)
 
+        self._restore_window_geometry(self._mw)
         # Connect signals
         # self._mw.actionFit_settings.triggered.connect(self._fsd.show)
         # self._mw.do_fit_PushButton.clicked.connect(self.doFit)
@@ -117,6 +118,7 @@ class WavemeterLogGui(GuiBase):
     def on_deactivate(self):
         """ Deactivate the module properly.
         """
+        self._save_window_geometry(self._mw)
         self._mw.close()
 
     def show(self):
