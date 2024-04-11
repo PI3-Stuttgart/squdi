@@ -40,6 +40,8 @@ from qudi.hardware.jaeger_computer_technik.helpers_adwin import ao_channel_names
 import os
 import ADwin
 
+from typing import Union 
+
 
 class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
     
@@ -55,18 +57,19 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
     fpar_idx_set_volt_y: int = 11
     fpar_idx_set_volt_z: int = 12
     
-    conv_factor_x = 0.0542 # mT/A
-    conv_factor_y = 0.0534 # mT/A
-    conv_factor_z = 0.0644 # mT/A
+    CONV_FACTOR_X: float = 0.0542 # T/A
+    CONV_FACTOR_Y: float = 0.0534 # T/A
+    CONV_FACTOR_Z: float = 0.0644 # T/A
+    
+    # external signals
+    sigRampFinished = QtCore.Signal()
     
     has_persistence = False
     
     target_voltages: list
     
     def on_activate(self):
-
-        # Check if adwin is booted, and boot it of not
-        self.boot_adwin() 
+        self.boot_adwin()
         # Start relevent adwin process for magnet control
         self.start_adwin_processes(['magnet_control.TB2'])
         
@@ -113,10 +116,11 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         # stop timers, don't know if this is really necessary
         self.fastRampTimer.stop()
         self.fastRampTimer.timeout.disconnect()
-        self.slowRampTimer.stop()
-        self.slowRampTimer.timeout.disconnect()
+        #self.slowRampTimer.stop()
+        #self.slowRampTimer.timeout.disconnect()
         self.zeroRampTimer.stop()
         self.zeroRampTimer.timeout.disconnect()
+        self.clear_adwin_processes(['magnet_control.TB2'])
         '''
         self.pswTimer.stop()
         self.pswTimer.timeout.disconnect()
@@ -125,51 +129,68 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         '''
         
         
-    def _field2amp(self, b_field: float, axis: str = None): 
+    def _field2amp(self, b_field: Union[float, list[float], np.ndarray[float]], 
+                   axis: str = None) -> Union[float, list[float]]:
+        """Converts B-filed in (T) to current in (A).
+
+        Args:
+            b_field (Union[float, list, np.ndarray]): Input as single value 
+            of vector type list or np.ndarray in the form of [x_value, y_value, z_value]
+            axis (str, optional): _description_. Defaults to None.
+
+        Raises:
+            ValueError: Wrong input datatype
+            ValueError: _description_
+
+        Returns:
+            list[str]: Current as vector in the form of [x_value, y_value, z_value] 
+            or single float
+        """
         
         if isinstance(b_field, float):
-            if axis == 'x': conv_factor = self.conv_factor_x
-            elif axis == 'y': conv_factor = self.conv_factor_y
-            elif axis == 'z': conv_factor = self.conv_factor_z
+            if axis == 'x': conv_factor = self.CONV_FACTOR_X
+            elif axis == 'y': conv_factor = self.CONV_FACTOR_Y
+            elif axis == 'z': conv_factor = self.CONV_FACTOR_Z
             else: raise ValueError('Axis not defined')
             
             return b_field / conv_factor # A
     
         if isinstance(b_field, list) or isinstance(b_field, np.ndarray):
-            print('hello')
-            return [b_field[0]/self.conv_factor_x, 
-                    b_field[1]/self.conv_factor_y,
-                    b_field[2]/self.conv_factor_z]
+            return [b_field[0]/self.CONV_FACTOR_X, 
+                    b_field[1]/self.CONV_FACTOR_Y,
+                    b_field[2]/self.CONV_FACTOR_Z]
             
-        else: raise ValueError('Input must be of type float, np.ndarray or list')
+        else: 
+            raise ValueError('Input must be of type float, np.ndarray or list')
     
     
-    def _amp2field(self, voltage, axis: str = None): 
+    def _amp2field(self, voltage: Union[float, list[float], np.ndarray[float]], 
+                   axis: str = None) -> Union[float, list[float]]: 
         
         if isinstance(voltage, float):
         
-            if axis == 'x': conv_factor = self.conv_factor_x
-            elif axis == 'y': conv_factor = self.conv_factor_y
-            elif axis == 'z': conv_factor = self.conv_factor_z
+            if axis == 'x': conv_factor = self.CONV_FACTOR_X
+            elif axis == 'y': conv_factor = self.CONV_FACTOR_Y
+            elif axis == 'z': conv_factor = self.CONV_FACTOR_Z
             else: raise ValueError('Axis not defined')
             
-            return voltage * conv_factor # mT
+            return voltage * conv_factor # T
 
         if isinstance(voltage, list) or isinstance(voltage, np.ndarray):
-            return [voltage[0]*self.conv_factor_x, 
-                    voltage[1]*self.conv_factor_y,
-                    voltage[2]*self.conv_factor_z]
+            return [voltage[0]*self.CONV_FACTOR_X, 
+                    voltage[1]*self.CONV_FACTOR_Y,
+                    voltage[2]*self.CONV_FACTOR_Z]
             
         else: raise ValueError('Input must be of type float, np.ndarray or list')
             
     
     @staticmethod
-    def _volt2amp(voltage: float) -> float:
+    def _volt2amp(voltage: Union[float, list[float], np.ndarray[float]]) -> Union[float, list[float], np.ndarray[float]]:
         return voltage # A
     
     
     @staticmethod
-    def _amp2volt(current: float) -> float:
+    def _amp2volt(current: Union[float, list[float], np.ndarray[float]]) -> Union[float, list[float], np.ndarray[float]]:
         return current # V
     
     
@@ -246,7 +267,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
          
 
         
-    def ramp(self, field_target: list[float,float,float]=[None, None, None], enter_persistent: bool=False) -> None:
+    def ramp(self, field_target: list[float]=[None, None, None], enter_persistent: bool=False) -> None:
         """ Initiates ramp to target b-field.
 
         Args:
@@ -257,6 +278,11 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
             RuntimeError: _
             RuntimeError: _
         """
+        # Check for rounding errors leading to allmost, but no quite zero values
+        for i, value in enumerate(field_target):
+            if abs(value) < 1e-5:
+                field_target[i] = 0
+        
         # Check if persistent mode is used, if so, raise error, as the used magnet does not support it.
         if enter_persistent:
             raise RuntimeError('Magnet does not persistent mode')
@@ -297,16 +323,16 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         self._set_voltages(self._get_voltages())
 
 
-    def check_field_amplitude(self, target_field: list[float,float,float]) -> int:
+    def check_field_amplitude(self, target_field: Union[list[float], np.ndarray[float]]) -> int:
         """ Checks if the given field exceeds the constraints.
 
         Args:
-            target_field (list[float,float,float]): [x, y, z] component of target b-field. 
+            target_field (list[float]): [x, y, z] component of target b-field. 
 
         Returns:
             int: 0 if everything is okay, -1 if field is too strong.
         """
-        
+        print(target_field)
         if isinstance(target_field, np.ndarray):
              
             if np.count_nonzero(target_field==0) >= 1:
@@ -328,7 +354,8 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
                     
             else: return -1   
             
-        else: raise ValueError('Target_field must be numpy array or list')
+        else: 
+            raise ValueError('Target_field must be numpy array or list')
         
         
         if max(self._field2amp(target_field)) <= max_amp:
@@ -431,7 +458,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         self._abortRampLoop = True
         self._abortRampToZeroLoop = False
         
-        self.set_voltages([0, 0, 0])
+        self._set_voltages([0, 0, 0])
         self.target_voltages = [0, 0, 0]
 
 

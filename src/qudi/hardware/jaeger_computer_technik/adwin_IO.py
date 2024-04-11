@@ -109,7 +109,7 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
             self._device_channel_mapping[ch_name] = device_name
             self._keep_values[ch_name] = bool(ch_cfg.get('keep_value', True))
             limits[ch_name] = ch_limits
-
+        
         # Initialization of hardware constraints defined in the config file
         self._constraints = ProcessControlConstraints(
             setpoint_channels=self._device_channel_mapping,
@@ -120,6 +120,13 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
 
         # Sanitize status variables
         self._sanitize_setpoint_status()
+        self.map_channels()
+    def map_channels(self):
+        
+        for ch_name in self._channels_config:
+            print(ch_name)
+            #self.adwin.Set_Par([11,12,13], int(ch_name))
+            #TODO set integer parameters for channel indexing (now it is hardcoded!)
         
     def on_deactivate(self):
         """Stops all adwin process needed for the script
@@ -183,7 +190,7 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
         print(channel, value) # Achtung, It is printing a lot!!!
         #Apparently it is even used during the scan
         
-        parid = {'ao0':11,}[channel]
+        #parid = {'ao0':11,}[channel]
         
         #TODO convert value to int before writing!!!
         # TODO write a mapping of channel to the parameter index
@@ -289,14 +296,13 @@ class Adwin_IO(AnalogAndDigitalIO, AdwinBase): #TODO see towards - ProcessSetpoi
 
     def on_activate(self):
         self.boot_adwin()
-        self.start_adwin_processes(['control_analog_out.TB9'])  
-        self.start_adwin_processes(['control_digout.TB0'])
+        self.start_adwin_processes(['control_analog_out.TB9', 'control_digout.TB0'])  
         
         
     def on_deactivate(self):
         """Stops all adwin process needed for the script
         """
-        # TODO
+        self.clear_adwin_processes(['control_analog_out.TB9', 'control_digout.TB0'])  
         pass
     
     

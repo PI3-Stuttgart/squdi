@@ -26,9 +26,17 @@
       </item>
 
       <item row="3" column="1">
-       <widget class="QPushButton" name="Flipmirror_Button">
+       <widget class="QPushButton" name="Flip_powermeter_Button">
         <property name="text">
          <string>Powermeter in</string>
+        </property>
+       </widget>
+      </item>
+
+    <item row="3" column="2">
+       <widget class="QPushButton" name="Flip_mirror_camera_Button">
+        <property name="text">
+         <string>Camera mirror in</string>
         </property>
        </widget>
       </item>
@@ -161,7 +169,8 @@
  <tabstops>
   <tabstop>Lamp_Button</tabstop>
   <tabstop>Green_Button</tabstop>
-  <tabstop>Flipmirror_Button</tabstop>
+  <tabstop>Flip_powermeter_Button</tabstop>
+  <tabstop>Flip_mirror_camera_Button</tabstop>
   <tabstop>green_attenuation</tabstop>
   <tabstop>lamp_power</tabstop>
  </tabstops>

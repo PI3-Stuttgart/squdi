@@ -45,9 +45,6 @@ class SetupControlLogicQINU(LogicBase):
         
     def on_activate(self):
         self.io_dev = self.Adwin_IO()
-        self.io_dev.boot_adwin()
-        self.io_dev.start_adwin_processes(['control_analog_out.TB9'])  
-        self.io_dev.start_adwin_processes(['control_digout.TB0'])
     
     def on_deactivate(self):
         del self.io_dev
@@ -69,6 +66,10 @@ class SetupControlLogicQINU(LogicBase):
         self._flip(self.io_dev.port_by_name('flip_powermeter'))
     
     
+    def flip_mirror_camera_path(self, flipped_in: bool):
+        self._flip(self.io_dev.port_by_name('flip_mirror_camera_path'))
+    
+    
     def set_green_power(self, power_percentage: float):
         self.io_dev.set_analog_out(
             self.io_dev.port_by_name('green_laser_attenuation'), 
@@ -85,10 +86,10 @@ class SetupControlLogicQINU(LogicBase):
             
         self.io_dev.set_analog_out(
                 self.io_dev.port_by_name('lamp_power'), voltage)
-            
+        
+   
 
     ### Helper functions for standard devices ##
-  
     def _flip(self, port: int, delta_t_on: float = 0.1):
         print(delta_t_on)
         self.io_dev.set_digi_out(port, True)

@@ -22,16 +22,16 @@ class MagnetLogic(LogicBase):
         super().__init__(*args, **kwargs)
         self.debug = True
         self.abortScan = True
+        
 
 
     def on_activate(self):
         self._magnet = self.magnet()
         self._tagger = self.tagger()
-        
         if self._magnet.has_persistence:
-            self._magnet.sigRampFinished.connect(self._start_pixelIntegrationTimer)
             self.sigChangePswStatus.connect(self._magnet.set_psw_status)
-        
+            
+        self._magnet.sigRampFinished.connect(self._start_pixelIntegrationTimer)
         self.sigPauseRamp.connect(self._magnet.pause_ramp)
         self.sigContinueRamp.connect(self._magnet.continue_ramp)
         self.sigRampToZero.connect(self._magnet.ramp_to_zero)
@@ -218,7 +218,7 @@ class MagnetLogic(LogicBase):
         return
 
 
-    def spherical_to_carthesian(self,spherical):
+    def spherical_to_carthesian(self, spherical):
         """Turns spherical coordinates into carthesian coordinates.
         
         @param array spherical: spherical coordinates in [r, theta, phi]
@@ -228,15 +228,18 @@ class MagnetLogic(LogicBase):
         if self.debug:
             print('spherical_to_carthesian')
         r = spherical[0]
-        theta = spherical[1]
-        phi = spherical[2]
+        theta = np.deg2rad(spherical[1])
+        phi = np.deg2rad(spherical[2])
 
         x = r*np.cos(phi)*np.sin(theta)
         y = r*np.sin(phi)*np.sin(theta)
         z = r*np.cos(theta)
-
+    
         carthesian = np.array([x,y,z])
-
+        print(carthesian)
+        print(phi)
+        print(theta)
+        
         return carthesian
 
 
@@ -285,10 +288,10 @@ class MagnetLogic(LogicBase):
         return
 
 
-    def ramp(self,axes):
+    def ramp(self, filed_target_sperical):
         if self.debug:
             print(f'{__name__}, {inspect.stack()[0][3]}')
-        self.sigRamp.emit(axes,False)
+        self.sigRamp.emit(self.spherical_to_carthesian(filed_target_sperical), False)
         # self._magnet.ramp(field_target=axes)
         return
 

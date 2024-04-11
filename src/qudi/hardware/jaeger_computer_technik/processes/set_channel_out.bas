@@ -37,9 +37,9 @@ EndFunction
 Init:
 
 Event:
-  DAC(1, get_vol(PAR_11))
-  DAC(2, get_vol(PAR_12))
-  DAC(6, get_vol_z(PAR_13))
+  DAC(1, get_vol(PAR_11)) 'x'
+  DAC(2, get_vol(PAR_12)) 'y'
+  DAC(3, get_vol_z(PAR_13)) 'z'
   
 Finish:
   

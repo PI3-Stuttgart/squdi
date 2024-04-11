@@ -2,6 +2,7 @@ from qudi.core import Base
 import os
 import ADwin
 from typing import Dict, Mapping, Sequence, Tuple, List
+import time
 
 class AdwinBase(Base):
     
@@ -30,11 +31,29 @@ class AdwinBase(Base):
         pass
     
     
-    def boot_adwin(self, brut_force=False):
+    def boot_adwin(self, brut_force: bool = False) -> None:
         """Boots adwin
         """
-        if self.adwin.Test_Version() != 0 or brut_force:
+        
+        adwin_status: int = self.adwin.Test_Version() 
+        print(f'adwin test code: {self.adwin.Test_Version()}')
+        
+        if adwin_status != 0 or brut_force:
+            print(f'I have booted (AdWin) :)')
             self.adwin.Boot(self.btl)
+            return
+        
+        reboot_required = True
+        for process_nr in range(1, 11):
+            if self.adwin.Process_Status(process_nr) == 1:
+                print(self.adwin.Process_Status(process_nr))
+                reboot_required = False
+                break 
+        
+        if reboot_required:
+            self.adwin.Boot(self.btl)
+            print(f'I have booted (AdWin) :)')
+        
         
         
     def start_adwin_processes(self, list_file_names:List[str]):
@@ -50,6 +69,16 @@ class AdwinBase(Base):
             int_adw_process_nr = 10 if int(str_file_name[-1]) == 0 else int(str_file_name[-1])
             self.adwin.Start_Process(int_adw_process_nr)
             
+    def clear_adwin_processes(self, list_file_names:List[str]):
+        """Stops and clears all specified adwin processes
+
+        Args:
+            list_file_names (List[str]): List of file names
+        """ 
+        for str_file_name in list_file_names:
+            int_adw_process_nr = 10 if int(str_file_name[-1]) == 0 else int(str_file_name[-1])
+            self.adwin.Stop_Process(int_adw_process_nr)
+            self.adwin.Clear_Process(int_adw_process_nr)
     
     
     def reset_hardware(self): ##SHOULDNT IT BE IN ADWIN BASE?
