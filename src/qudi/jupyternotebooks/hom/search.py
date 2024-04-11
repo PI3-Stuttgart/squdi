@@ -194,7 +194,7 @@ blue_quick_repump(dt = 1)
 #Recording g2
 from TimeTagger import FileWriter, FileReader
 # %%
-folder = r'Z:\Vlad\SnV\HOM\dumps'
+folder = r'Z:\Vlad\SnV\TPI\dumps'
 
 
 #%%
@@ -225,7 +225,7 @@ def check_ple():
 # Schedule the function
 # schedule.every(300).seconds.do(check_ple)
 start_time = time.time()
-fw = tagger.write_into_file(os.path.join(folder, 'g2_1_4April.ttbin'), channels=[1,2,3, 5, 8, 6])
+fw = tagger.write_into_file(os.path.join(folder, 'g2_1_5April.ttbin'), channels=[1,2,3, 5, 8, 6])
 
 # Keep the script running to continuously check for scheduled tasks
 # while True:
