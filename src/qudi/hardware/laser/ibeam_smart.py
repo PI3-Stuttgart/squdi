@@ -164,12 +164,12 @@ class iBeamSmart(Base):
         """ Check the laser output power.
         """
         #TODO!
-        return self.power
+        return self._power
     
     def setPower(self, power):
         """ Set the laser output power in muW.
         """
-        self.power = power
+        self._power = power
         if self.portOK:
             if power <= 0:
                 power = 0.01
@@ -177,4 +177,16 @@ class iBeamSmart(Base):
                 power = 100000
             self.port.write(f"ch pow {power} mic {EOL}".encode())
       
-    
+    @property
+    def power(self):
+        return self._power
+
+    @power.setter
+    def power(self, power):
+        if self.portOK:
+            if power <= 0:
+                power = 0.01
+            elif power >= 100000:
+                power = 100000
+            self.port.write(f"ch pow {power} mic {EOL}".encode())
+        self._power = power
