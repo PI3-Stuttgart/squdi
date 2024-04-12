@@ -5,7 +5,7 @@ from enum import Enum
 
 from qudi.core.configoption import ConfigOption
 from qudi.core.module import Base
-
+from qudi.core.statusvariable import StatusVar
 ON  = 1
 OFF = 0
 EOL = "\r\n"
@@ -15,7 +15,7 @@ class iBeamSmart(Base):
     """
     """
     port = ConfigOption(name='port', missing='error')
-
+    _power = StatusVar('power', 0)
     channel = 2
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
