@@ -50,7 +50,7 @@ class SpectrometerLogic(LogicBase):
     # declare connectors
     spectrometer = Connector(interface='SpectrometerInterface')
     modulation_device = Connector(interface='ModulationInterface', optional=True)
-    flip_mirror = Connector(interface = 'DigitalSwitchNI', optional=True)
+    flip_mirror = Connector(interface = 'SwitchInterface', optional=True)
     # declare status variables
     _spectrum = StatusVar(name='spectrum', default=[None, None])
     _background = StatusVar(name='background', default=None)
