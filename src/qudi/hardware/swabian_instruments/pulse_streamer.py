@@ -45,6 +45,7 @@ class PulseStreamer(PulserInterface):
     """
 
     _pulsestreamer_ip = ConfigOption('pulsestreamer_ip', '192.168.1.100', missing='warn')
+    _seq = None
     _laser_channel = ConfigOption('laser_channel', 1, missing='warn')
     _uw_x_channel = ConfigOption('uw_x_channel', 3, missing='warn')
     _use_external_clock = ConfigOption('use_external_clock', False, missing='info')
