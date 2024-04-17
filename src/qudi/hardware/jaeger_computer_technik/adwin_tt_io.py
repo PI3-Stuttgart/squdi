@@ -82,7 +82,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
     # config options
     _timetagger = Connector(name='tt', interface = "TT")
     
-    #_timetagger_remote = Connector(name='tt_remote', interface = "TT", optional = True) we dont have any yet.
+    _timetagger_remote = Connector(name='tt_remote', interface = "TT", optional = True) #we dont have any yet.
     _device_name = ConfigOption(name='device_name', default='adwin11', missing='warn') #Here the name is properly send to the BTL
     ### HERE THE ADWIN IS CONNECTING...
     _adwin = Connector(name='adwin', interface = "Adwin_Scanning_Device", optional = True) ##connection to the adwin_Scanner holder.
@@ -606,7 +606,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 self.module_state.unlock()
                 raise NiInitError('Analog out task initialization failed; all tasks terminated')
 
-            output_data = np.ndarray((len(self.active_channels[1]), self.frame_size)) #basicylly a scan line size..
+            output_data = np.ndarray((len(self.active_channels[1]), self.frame_size)) #basically a scan line size..
 
             for num, output_channel in enumerate(self.active_channels[1]):
                 output_data[num] = self.__frame_buffer[output_channel]
@@ -913,8 +913,9 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        analog_channels = self.__active_channels['ai_channels']
-        self.setup_ai_task()
+        pass
+        #analog_channels = self.__active_channels['ai_channels']
+        #self.setup_ai_task() # NO AI channels so far. 
         return 0
     
     def _init_analog_out_task_adwin(self):
@@ -1141,9 +1142,11 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        print('lockin_adwin_tt_io')
         self.module_state.lock()
-
+        print(self._scanning_device)# There is no scanning device"
         self._scanning_device.module_state.lock()
+        print('locking the adwin galvo')
         if self.initialize_image() < 0:
             self._scanning_device.module_state.unlock()
             self.module_state.unlock()

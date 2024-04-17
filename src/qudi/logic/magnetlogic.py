@@ -43,11 +43,10 @@ class MagnetLogic(LogicBase):
 
     def on_deactivate(self):
         pass
-
+    
 
     def set_up_scan(self, params, int_time):
-        if self.debug:
-            print('set_up_scan')
+        self.log.debug('set up scan')
         self.abortScan = False
         self.int_time = int_time
         # set up counter
@@ -68,8 +67,8 @@ class MagnetLogic(LogicBase):
         
         @param float int_time: integration time in ns.
         """
-        if self.debug:
-            print('set_up_counter')
+        
+        self.log.debug('set up counter')
         apdChannels = self._tagger._counter['channels']
         # convert ms into ps
         self.ctr = self._tagger.counter(bin_width=int(int_time*1e9),n_values=1,channels=apdChannels)
@@ -111,8 +110,7 @@ class MagnetLogic(LogicBase):
             [x1,y2,z1]
         ]
         """
-        if self.debug:
-            print('build_3d_scan_line')
+        self.log.debug('build 3d scan line')
         # build axes
         axes = []
         for i in range(3):
@@ -138,37 +136,31 @@ class MagnetLogic(LogicBase):
         ax2 = np.transpose(ax2)
         ax2 = np.reshape(ax2,np.prod(steps))
         scanning_line[:,2] = ax2
-        if self.debug:
-            print(f'scanning line is \n {scanning_line}')
+        self.log.debug(f'scanning line is: {scanning_line}')
         return scanning_line
 
 
     def _set_up_next_pixel(self):
-        if self.debug:
-            print('setting up next pixel')
+        self.log.debug('setting up next pixel')
         if self.abortScan:
-            if self.debug:
-                print('aborting scan')
+            self.log.debug('aborting scan')
             return
         if len(self._scanning_line) > 0: # if we still have pixels to scan
             self._rampForPixel = True # the ramp of the magnet was initiated by this script
             # choose next pixel
             self.pixel = self._scanning_line[0]
-            if self.debug:
-                print(f'current pixel is {self.pixel}')
+            self.log.debug(f'current pixel is {self.pixel}')
             # remove the pixel from the stack
             self._scanning_line = self._scanning_line[1:]
             # turn spherical coordinates into carthesian
             carthesian = self.spherical_to_carthesian(self.pixel)
-            if self.debug:
-                print(carthesian)
+            self.log.debug(carthesian)
             # ramp the magnet
             self.sigRamp.emit(carthesian,False)
             # self._magnet.ramp(field_target=carthesian, enter_persistent=False)
             return
         else: # if we are finished
-            if self.debug:
-                print('scan finished')
+            self.log.debug('scan finished')
             # turn counts from list into array for faster processing later on
             self.counts = np.array(self.counts)
             self._rampForPixel = False
@@ -178,41 +170,33 @@ class MagnetLogic(LogicBase):
 
 
     def _start_pixelIntegrationTimer(self):
-        if self.debug:
-            print('_start_pixelIntegrationTimer')
+        self.log.debug('_start_pixelIntegrationTimer')
         if self.abortScan:
-            if self.debug:
-                print('aborting scan')
+            self.log.debug('aborting scan')
             return
         if self._rampForPixel: # only do sth if ramp was initiated for the pixel
             if self.thread() is not QtCore.QThread.currentThread():
-                if self.debug:
-                    print('_start_pixelIntegrationTimer, thread is not currentThread')
+                self.log.debug('_start_pixelIntegrationTimer, thread is not currentThread')
                 QtCore.QMetaObject.invokeMethod(self.pixelIntegrationTimer,
                                                 'start',
                                                 QtCore.Qt.BlockingQueuedConnection)
             else:
-                if self.debug:
-                    print('_start_pixelIntegrationTimer, thread is currentThread')
+                self.log.debug('_start_pixelIntegrationTimer, thread is currentThread')
                 self.pixelIntegrationTimer.start()
         else:
-            if self.debug:
-                print('ramp was not initiated by this file, doing noting.')
+            self.log.debug('ramp was not initiated by this file, doing noting.')
 
 
     @QtCore.Slot()
     def _scan_pixel(self):
         """ Gets counts and sets up next pixel.
         """
-        if self.debug:
-            print('_scan_pixel')
+        self.log.debug('_scan_pixel')
         if self.abortScan:
-            if self.debug:
-                print('aborting scan')
+            self.log.debug('aborting scan')
             return
         cts = self.ctr.getData()
-        if self.debug:
-            print(f'counts were {cts}')
+        self.log.debug(f'counts were {cts}')
         self.counts.append(cts) # store counts in list
         self._set_up_next_pixel()
         return
@@ -225,8 +209,7 @@ class MagnetLogic(LogicBase):
 
         @return array carthesian: carthesian coordinates in [x, y, z]
         """
-        if self.debug:
-            print('spherical_to_carthesian')
+        self.log.debug('spherical_to_carthesian')
         r = spherical[0]
         theta = np.deg2rad(spherical[1])
         phi = np.deg2rad(spherical[2])
@@ -241,8 +224,31 @@ class MagnetLogic(LogicBase):
         print(theta)
         
         return carthesian
+    
+    def cartesian_to_spherical(self, cartesian):
+        """
+        Converts a list of Cartesian coordinates to spherical coordinates using NumPy.
 
+        Parameters:
+        coords (list): A list containing the Cartesian coordinates [x, y, z].
 
+        Returns:
+        list: A list containing the spherical coordinates [radius, polar_angle, azimuthal_angle].
+            - radius (float): The distance from the origin to the point.
+            - polar_angle (float): The angle from the positive z-axis (in radians).
+            - azimuthal_angle (float): The angle from the positive x-axis in the x-y plane (in radians).
+        """
+        x = cartesian[0]
+        y = cartesian[1]
+        z = cartesian[2]
+        
+        radius = np.sqrt(x**2 + y**2 + z**2)
+        theta = np.arccos(z / radius) if radius != 0 else 0
+        phi = np.arctan2(y, x)
+        phi_deg = np.rad2deg(phi) if phi > 0 else np.rad2deg(phi) + 360
+        return np.array([radius, np.rad2deg(theta), phi_deg])
+        
+    
     def stop_scan(self):
         """Aborts the scan.
         
@@ -257,43 +263,39 @@ class MagnetLogic(LogicBase):
 
     
     def set_psw_status(self,status):
-        if self.debug:
-            print(f'{__name__}, {inspect.stack()[0][3]}: passing psw status {status}')
+        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}: passing psw status {status}')
         self.sigChangePswStatus.emit(status)
         # self._magnet.set_psw_status(status)
         return
 
 
     def pause_ramp(self):
-        if self.debug:
-            print(f'{__name__}, {inspect.stack()[0][3]}')
+        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
         self.sigPauseRamp.emit()
         # self._magnet.pause_ramp()
         return
 
 
     def continue_ramp(self):
-        if self.debug:
-            print(f'{__name__}, {inspect.stack()[0][3]}')
+        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
         self.sigContinueRamp.emit()
         # self._magnet.continue_ramp()
         return
 
     
     def ramp_to_zero(self):
-        if self.debug:
-            print(f'{__name__}, {inspect.stack()[0][3]}')
+        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
         self.sigRampToZero.emit()
         # self._magnet.ramp_to_zero()
         return
 
 
     def ramp(self, filed_target_sperical):
-        if self.debug:
-            print(f'{__name__}, {inspect.stack()[0][3]}')
+        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
         self.sigRamp.emit(self.spherical_to_carthesian(filed_target_sperical), False)
         # self._magnet.ramp(field_target=axes)
         return
+    
 
 
 

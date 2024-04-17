@@ -25,7 +25,7 @@ EndFunction
 
 Function get_vol_z(input_z) As Long      
   Dim vol2 as Float
-  vol2 = (input_z/3)*10e5
+  vol2 = input_z
   If ((vol2 > 9.5) OR (vol2 < -5)) Then
     get_vol_z = 32768
   Else
@@ -34,12 +34,24 @@ Function get_vol_z(input_z) As Long
 
 EndFunction
 
+
+
+Function get_vol_xy(input) As Long      
+  Dim vol2 as Float
+  vol2 = input
+  If ((vol2 > 5) OR (vol2 < -5)) Then
+    get_vol_xy = 32768
+  Else
+    get_vol_xy = vol2 * 3277 + 32768 'Bits'
+  EndIf
+  
+EndFunction
 Init:
 
 Event:
-  DAC(1, get_vol(PAR_11)) 'x'
-  DAC(2, get_vol(PAR_12)) 'y'
-  DAC(3, get_vol_z(PAR_13)) 'z'
+  DAC(1, get_vol_xy(FPAR_21)) 'x'
+  DAC(2, get_vol_xy(FPAR_22)) 'y'
+  DAC(3, get_vol_z(FPAR_23)) 'z'
   
 Finish:
   

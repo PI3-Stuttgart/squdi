@@ -53,7 +53,7 @@ class MicrowaveSmiq(MicrowaveInterface):
     """
 
     _visa_address = ConfigOption('visa_address', missing='error')
-    _comm_timeout = ConfigOption('comm_timeout', default=10, missing='warn')
+    _comm_timeout = ConfigOption('comm_timeout', default=1000, missing='warn')
     _visa_baud_rate = ConfigOption('visa_baud_rate', default=None)
     _rising_edge_trigger = ConfigOption('rising_edge_trigger', default=True, missing='info')
     _config_freq_min = ConfigOption('frequency_min', default=None)
@@ -82,6 +82,7 @@ class MicrowaveSmiq(MicrowaveInterface):
         """ Initialisation performed during activation of the module. """
         # Connect to hardware
         self._rm = visa.ResourceManager()
+        print(self._rm.list_resources())
         if self._visa_baud_rate is None:
             self._device = self._rm.open_resource(self._visa_address,
                                                   timeout=self._comm_timeout)

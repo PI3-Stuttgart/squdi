@@ -77,9 +77,9 @@ Init:
   
   max_meas_diff_bit_final = 0.005 * 3277
   
-  meas_offset_x_volt = -0.004
-  meas_offset_y_volt = 0.004
-  meas_offset_z_volt = 0.002
+  meas_offset_x_volt = 0 '-0.004
+  meas_offset_y_volt = 0 '0.004
+  meas_offset_z_volt = 0 '0.002
   
   meas_offset_x_bit = meas_offset_x_volt * 3277
   meas_offset_y_bit = meas_offset_y_volt * 3277

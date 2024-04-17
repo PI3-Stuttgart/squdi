@@ -66,7 +66,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
     
     has_persistence = False
     
-    target_voltages: list
+    target_voltages: list = [0, 0, 0]
     
     def on_activate(self):
         self.boot_adwin()
@@ -94,18 +94,8 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         self.zeroRampTimer.setSingleShot(True)
         self.zeroRampTimer.timeout.connect(self._ramp_to_zero_loop_body, QtCore.Qt.QueuedConnection)
         self.zeroRampTimer.setInterval(self.timerIntervals['rampToZero'])
-        '''
-        # psw cooling
-        self.pswTimer = QtCore.QTimer()
-        self.pswTimer.setSingleShot(True)
-        self.pswTimer.timeout.connect(self._psw_status_change_loop_body, QtCore.Qt.QueuedConnection)
-        self.pswTimer.setInterval(self.timerIntervals['pswStatusChange'])
-        # equalizing currents
-        self.equalizeCurrentsTimer = QtCore.QTimer()
-        self.equalizeCurrentsTimer.setSingleShot(True)
-        self.equalizeCurrentsTimer.timeout.connect(self._equalize_currents_loop_body, QtCore.Qt.QueuedConnection)
-        self.equalizeCurrentsTimer.setInterval(self.timerIntervals['equalizeCurrents'])
-        '''
+
+        self. target_voltages = self._get_voltages()
 
 
     def on_deactivate(self):
@@ -116,17 +106,10 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         # stop timers, don't know if this is really necessary
         self.fastRampTimer.stop()
         self.fastRampTimer.timeout.disconnect()
-        #self.slowRampTimer.stop()
-        #self.slowRampTimer.timeout.disconnect()
         self.zeroRampTimer.stop()
         self.zeroRampTimer.timeout.disconnect()
         self.clear_adwin_processes(['magnet_control.TB2'])
-        '''
-        self.pswTimer.stop()
-        self.pswTimer.timeout.disconnect()
-        self.equalizeCurrentsTimer.stop()
-        self.equalizeCurrentsTimer.timeout.disconnect()
-        '''
+
         
         
     def _field2amp(self, b_field: Union[float, list[float], np.ndarray[float]], 
@@ -151,7 +134,8 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
             if axis == 'x': conv_factor = self.CONV_FACTOR_X
             elif axis == 'y': conv_factor = self.CONV_FACTOR_Y
             elif axis == 'z': conv_factor = self.CONV_FACTOR_Z
-            else: raise ValueError('Axis not defined')
+            else: 
+                self.log.error('Axis not defined')
             
             return b_field / conv_factor # A
     
@@ -161,7 +145,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
                     b_field[2]/self.CONV_FACTOR_Z]
             
         else: 
-            raise ValueError('Input must be of type float, np.ndarray or list')
+             self.log.error('Input must be of type float, np.ndarray or list')
     
     
     def _amp2field(self, voltage: Union[float, list[float], np.ndarray[float]], 
@@ -172,7 +156,8 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
             if axis == 'x': conv_factor = self.CONV_FACTOR_X
             elif axis == 'y': conv_factor = self.CONV_FACTOR_Y
             elif axis == 'z': conv_factor = self.CONV_FACTOR_Z
-            else: raise ValueError('Axis not defined')
+            else: 
+                self.log.error('Axis not defined')
             
             return voltage * conv_factor # T
 
@@ -181,7 +166,8 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
                     voltage[1]*self.CONV_FACTOR_Y,
                     voltage[2]*self.CONV_FACTOR_Z]
             
-        else: raise ValueError('Input must be of type float, np.ndarray or list')
+        else: 
+            self.log.error('Input must be of type float, np.ndarray or list')
             
     
     @staticmethod
@@ -215,7 +201,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         self.adwin.Set_FPar(self.fpar_idx_set_volt_z, ls_voltages[2])
         
 
-    def _get_voltages(self) -> list[float,float,float]:
+    def _get_voltages(self) -> list[float]:
         """
         Reads the Fpars, giving the measured voltage supplied by 
         the adwin tho the x, y, z axsis magnet controlers
@@ -230,13 +216,20 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         return [volt_x, volt_y, volt_z]
     
     
+    def get_target_magnet_currents(self):
+        return self._volt2amp(self.target_voltages)
+    
+    def get_target_field(self) -> list[float]:
+        return self._volt2field(self.target_voltages)
+
+    
     def get_field(self) -> list[float, float, float]:
         """Returns field in x, y, z direction
 
         Returns:
             list[float, float, float]: [x, y, z] b-field strengths
         """
-        field_x, field_y, field_z = self._volt2field(self.get_voltages)
+        field_x, field_y, field_z = self._volt2field(self._get_voltages())
         
         return[field_x, field_y, field_z]
         
@@ -285,12 +278,14 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         
         # Check if persistent mode is used, if so, raise error, as the used magnet does not support it.
         if enter_persistent:
-            raise RuntimeError('Magnet does not persistent mode')
-    
+            self.log.error('Magnet does not have a persistent mode')
+            return
+        
         # check if the target field is within constraints
         if self.check_field_amplitude(field_target) != 0:
-            raise RuntimeError('Entered field is too strong.')
-
+            self.log.error('Entered field is too strong.')
+            return
+        
         self.target_voltages = self._field2volt(field_target)
         # ramp according to the result from the check
         self._abortRampLoop = False
@@ -305,7 +300,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         Aborts the ramp loops and pauses the ramp.
         """
         self._abortRampLoop = True
-        self.pause_ramp()
+        # self.pause_ramp()
         return
     
     
@@ -313,6 +308,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         """Resumes ramping.
         """
         self._set_voltages(self.target_voltages)
+        self.log.info('Ramp continue')
 
 
     def pause_ramp(self):
@@ -321,6 +317,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         The current/field will stay at the level it has now.
         """
         self._set_voltages(self._get_voltages())
+        self.log.info('Ramp paused')
 
 
     def check_field_amplitude(self, target_field: Union[list[float], np.ndarray[float]]) -> int:
@@ -370,14 +367,12 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
 
     def _start_fastRampTimer(self):
         if self.thread() is not QtCore.QThread.currentThread():
-            if self.debug:
-                print('_start_fastRampTimer, thread is not currentThread')
+            self.log.info('Start ramping, thread is not currentThread')
             QtCore.QMetaObject.invokeMethod(self.fastRampTimer,
                                             'start',
                                             QtCore.Qt.BlockingQueuedConnection)
         else:
-            if self.debug:
-                print('_start_fastRampTimer, thread is currentThread')
+            self.log.info('Start ramping')
             self.fastRampTimer.start()
 
 
@@ -388,8 +383,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         If target field has been reached and magnet is in holding mode, sigRampFinished is emitted.
         Otherwise it is called again later.
         """
-        if self.debug:
-            print('_fast_ramp_loop_body')
+        self.log.debug('_fast_ramp_loop_body')
         # abort ramp loop if requested
         if self._abortRampLoop:
             self.pause_ramp()
@@ -398,20 +392,18 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         print(ramping_state)
         if ramping_state.count(2) + ramping_state.count(8) == 3: # might be a problem with pause?
             self._abortRampLoop = True
-            if self.debug:
-                 print('fast ramp finished')
+            self.log.info('Ramp finished')
         
             self.sigRampFinished.emit()
             return
     
         else:
-            if self.debug:
-                print('fast ramping not finished')
+            self.log.debug('fast ramping not finished')
             self.fastRampTimer.start()
             return
 
     
-    def get_ramping_state(self) -> list[int,int,int]:
+    def get_ramping_state(self) -> list[int]:
         """Returns the ramping state of all three 1D magnets.
         
         integers mean the following:
@@ -436,7 +428,7 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         ls_status = []
         
         for set_voltage, curr_voltage, target_voltage in zip(ls_set_voltages, ls_curr_voltages, self.target_voltages):
-            if abs(set_voltage - curr_voltage) < self.voltage_step_size/2: # max meas diff
+            if abs(set_voltage - curr_voltage) < 0.01:# self.ve_step_size/2: # max meas diffoltag
                 if round(target_voltage, 3) == round(set_voltage, 3):
                     if set_voltage == 0:
                         ls_status.append(8) 
@@ -460,45 +452,41 @@ class Magnet3D(AdwinBase): #TODO see towards - ProcessSetpointInterface
         
         self._set_voltages([0, 0, 0])
         self.target_voltages = [0, 0, 0]
+        self._start_zeroRampTimer()
 
 
     def _start_zeroRampTimer(self):
         if self.thread() is not QtCore.QThread.currentThread():
-            if self.debug:
-                print('_start_zeroRampTimer, thread is not currentThread')
+            self.log.info('Start ramping to Zero, thread is not currentThread')
             QtCore.QMetaObject.invokeMethod(self.zeroRampTimer,
                                             'start',
                                             QtCore.Qt.BlockingQueuedConnection)
         else:
-            if self.debug:
-                print('_start_zeroRampTimer, thread is currentThread')
+            self.log.info('Start ramping to Zero')
             self.zeroRampTimer.start()
 
     
     @QtCore.Slot()
     def _ramp_to_zero_loop_body(self):
-        if self.debug:
-            print('_ramp_to_zero_loop_body')
+        self.log.debug('_ramp_to_zero_loop_body')
         if self._abortRampToZeroLoop:
             self.pause_ramp()
             return 
         ramping_state = self.get_ramping_state()
-        currents = self.get_supply_currents()
+        currents = self.get_magnet_currents()
         # ramping to zero sometimes ends up in HOLDING (2) or PAUSED (3) or ZERO (8)
         # no iddea why but this should fix it.
         boolean = (ramping_state == [8,8,8]) or \
             ( (ramping_state == [2,2,2]) and (np.allclose(currents, [0,0,0], atol = 0.1)) ) or \
             ( (ramping_state == [3,3,3]) and (np.allclose(currents, [0,0,0], atol = 0.1)) )
-        if self.debug:
-            print(f'boolean turned out to be {boolean}')
+        
+        self.log.debug(f'boolean turned out to be {boolean}')
         if boolean:
-            if self.debug:
-                print('ramp to zero finished')
+            self.log.info('Ramping to zero finished')
             self.sigRampFinished.emit()
             return
         else:
-            if self.debug:
-                print('still ramping to zero')
+            self.log.debug('still ramping to zero')
             self.zeroRampTimer.start()
             return
     

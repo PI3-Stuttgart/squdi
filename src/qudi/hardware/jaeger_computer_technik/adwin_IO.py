@@ -121,6 +121,7 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
         # Sanitize status variables
         self._sanitize_setpoint_status()
         self.map_channels()
+        self.start_adwin_processes(['set_channel_out.TB3'])
     def map_channels(self):
         
         for ch_name in self._channels_config:
@@ -187,28 +188,15 @@ class Adwin_AO(AdwinBase, ProcessControlSwitchMixin,
         Channel: id of parameter
         Value: analog output in Volts. (the process of ao should then convert it to bits.)
         """
-        print(channel, value) # Achtung, It is printing a lot!!!
-        #Apparently it is even used during the scan
-        
-        #parid = {'ao0':11,}[channel]
-        
-        #TODO convert value to int before writing!!!
-        # TODO write a mapping of channel to the parameter index
-        # old code:
+        pardict = {'ao1':21, 'ao2':22,'ao3':23} #10-17 is taken by magnet 7-8 by setup control. 
         #def scanner_set_position(self, x, y, z, a):
         #     self._current_position[0] = x #m
         #     self._current_position[1] = y #m
         #     self._current_position[2] = z #
-        #self.adwin.Set_Par(parid, value) #Set float. value is float. 
-        #     self.adwin.Set_Par(12, y)
-        #     self.adwin.Set_Par(13, z)
-        
-        #     self.stop_all()
-        #     self.adw.Start_Process(3)
-        
-        
-        #self._ao_task_handles[channel].write(value) #here in principle, 
-        self.adwin.Set_Par(1,0)#channel, value) #This in principle writes a parameter into adwin
+        self.adwin.Set_FPar(pardict[channel], value) #Set float. value is float. 
+        #TODO what is it handles`?`
+        self._ao_task_handles[channel] = value #here in principle, 
+        #self.adwin.Set_Par(1,0)#channel, value) #This in principle writes a parameter into adwin
         #and tells it to create a certain voltage.
 
     def _sanitize_setpoint_status(self) -> None:
