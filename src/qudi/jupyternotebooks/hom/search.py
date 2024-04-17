@@ -59,6 +59,8 @@ def do_ple_scan(lines = 1, in_range = None, frequency=None, resolution=None):
             self.ple_gui.fit_result[1].best_values['center'] + self.ple_gui.fit_result[1].best_values['sigma']  * 3
         )
     """
+
+    #laser_scanner_logic.scan_ranges["a"]
     if in_range is None:
         ple_gui._mw.actionFull_range.triggered.emit()
     else:
@@ -191,7 +193,7 @@ for i in range(2):
 # %%
 
 # %%
-res = do_ple_scan(lines=5)
+res = do_ple_scan(lines=5, in_range=laser_scanner_logic.scan_ranges["a"])
 
 
 #%%
@@ -222,7 +224,8 @@ def check_ple():
     measurement_mode('PLE')
     
     for i in range(3):
-        res = do_ple_scan(lines=1)
+        res = do_ple_scan(lines=1, 
+                          in_range = laser_scanner_logic.scan_ranges["a"])
         if res.rsquared > 0.5:
             save_ple(tag=f'{elapsed_time}', poi_name='')
             break
