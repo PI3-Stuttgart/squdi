@@ -114,15 +114,23 @@ def measurement_mode(mode):
         if switchlogic.get_state("Shutter") != 'Off':
             switchlogic.set_state(switch = "Shutter", state = "Off")
         time.sleep(0.5)
-        blue_laser_repump(enable=True)
+        if switchlogic.get_state("Green") != 'Off':
+            switchlogic.set_state(switch = "Green", state = "Off")
+        time.sleep(0.5)
+        ibeam_remote.power = 0.5e3
+        # blue_laser_repump(enable=True)
 
     elif mode == "Off-res":
         green_laser(True)
+        
         if switchlogic.get_state("Shutter") != 'On':
             switchlogic.set_state(switch = "Shutter", state = "On")
         time.sleep(1)
         if switchlogic.get_state("Mirror") != 'Off':
             switchlogic.set_state(switch = "Mirror", state = "Off")
+        if switchlogic.get_state("Green") != 'On':
+            switchlogic.set_state(switch = "Green", state = "On")
+        ibeam_remote.power = 50e3
     else:
         print("No mode by this name")
 
@@ -228,9 +236,9 @@ start_time = time.time()
 fw = tagger.write_into_file(os.path.join(folder, 'g2_1_5April.ttbin'), channels=[1,2,3, 5, 8, 6])
 
 # Keep the script running to continuously check for scheduled tasks
-# while True:
-#     schedule.run_pending()
-#     time.sleep(1)  # Check for tasks more frequently (adjust if needed)
+while True:
+    schedule.run_pending()
+    time.sleep(1)  # Check for tasks more frequently (adjust if needed)
 # %%
 schedule.every(40).seconds.do(blast_green)
 while True:
