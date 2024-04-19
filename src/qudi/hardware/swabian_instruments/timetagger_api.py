@@ -1,4 +1,4 @@
-
+  
 from os.path import join, getsize, isfile
 import numpy as np
 from TimeTagger import createTimeTagger,createTimeTaggerNetwork,AccessMode, Dump, Correlation, Histogram, Counter, CountBetweenMarkers, FileWriter, Countrate, Combiner, TimeDifferences
