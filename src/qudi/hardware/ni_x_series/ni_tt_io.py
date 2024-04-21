@@ -873,14 +873,14 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
             else:
                 clock_fall_tt = - clock_tt
             
-
-            
-            self._timetagger_cbm_tasks.append([self._tt.count_between_markers(click_channel = channel, 
+            for channel in channels_tt:
+                self._timetagger_cbm_tasks.append(
+                        self._tt.count_between_markers(click_channel = channel, 
                                             begin_channel = clock_tt,
                                             end_channel = clock_fall_tt, 
-                                            n_values=self.frame_size) 
-                                            for channel in channels_tt])
-        
+                                            n_values=self.frame_size)
+                )
+            
         if self._timetagger_remote():
            
             channels_tt_remote = [int(ch.split("_")[-1]) for ch in self.__active_channels['di_channels'] if "ttR".lower() == ch.split("_")[0]]
