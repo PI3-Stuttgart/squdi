@@ -140,13 +140,13 @@ def measurement_mode(mode):
 
 #%%
 
-for i in range(2):
+for i in range(10):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
             time.sleep(1)
     
-    name, dir_ = save_scan(f"pillar_scan_{i}")
+    name, dir_ = save_scan(f"bf_scan_{i}")
     
 # %%
 #Calibrate PLE scanner:
