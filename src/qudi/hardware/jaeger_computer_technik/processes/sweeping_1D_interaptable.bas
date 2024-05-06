@@ -1,10 +1,10 @@
 '<ADbasic Header, Headerversion 001.001>
-' Process_Number                 = 1
+' Process_Number                 = 6
 ' Initial_Processdelay           = 3000
 ' Eventsource                    = Timer
 ' Control_long_Delays_for_Stop   = No
 ' Priority                       = Low
-' Priority_Low_Level             = 1
+' Priority_Low_Level             = 2
 ' Version                        = 1
 ' ADbasic_Version                = 6.3.1
 ' Optimize                       = Yes
@@ -22,6 +22,8 @@ Dim index as Long
 Dim rise_time as Long
 Dim low_time as Long
 Dim total_time as Long
+
+
 
 
 
@@ -47,26 +49,40 @@ Function get_vol_z(input_z) As Long
 EndFunction
   
 Init:
-  rise_time = 0.25*PAR_20
-  low_time = 0.75*PAR_20
-  total_time = PAR_20
+  Processdelay = 100000
+  PAR_20 = 10000000
   Digout(9, 0)
+  index = 1
 Event:  
-  For index = 1 To PAR_21
-    DAC(1, get_vol(data_1[index]))
-    DAC(2, get_vol(data_2[index]))
-    DAC(3, get_vol_z(data_3[index]))
-    If (PAR_22 = 1) Then
-      Digout(9, 0) 'TTL' - timetagger.we need to switch to the DO
-      CPU_Sleep(rise_time)
+  Processdelay = PAR_20*3
+  If (PAR_24 = 1) Then
+    If (index < PAR_21) Then
+      'PAR_23 = index'
+      DAC(1, get_vol(data_1[index]))
+      DAC(2, get_vol(data_2[index]))
+      DAC(3, get_vol_z(data_3[index]))
+      'If (PAR_22 = 1) Then
+      'Digout(9, 0) 'TTL' - timetagger.we need to switch to the DO
+      'CPU_Sleep(rise_time)
       Digout(9, 1)
-      CPU_Sleep(low_time)
+      'CPU_Sleep(low_time)
+      'Else      
+      'CPU_Sleep(rise_time)
+      'EndIf
+      index = index+1
+      PAR_23 = index
     Else
-      CPU_Sleep(total_time)
+      'stop scan
+      PAR_24 = 0
     EndIf
-  Next
-  CPU_Sleep(100)
-  End
+    
+  Else
+    index = 1
+    PAR_23 = 1
+  EndIf
+  CPU_Sleep(100000)
+  Digout(9, 0)
+  'CPU_Sleep(100)
+  'End
   
 Finish:
-  Digout(9, 0)

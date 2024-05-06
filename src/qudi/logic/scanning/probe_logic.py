@@ -155,6 +155,7 @@ class ScanningProbeLogic(LogicBase):
 
     @property
     def scanner_axes(self):
+        print(self.scanner_constraints.axes)
         return self.scanner_constraints.axes
 
     @property
@@ -365,6 +366,8 @@ class ScanningProbeLogic(LogicBase):
             if start:
                 return self.start_scan(scan_axes, caller_id)
             return self.stop_scan()
+    
+
     def toggle_tilt_correction(self, enable=True):
 
         target_pos = self._scanner().get_target()
@@ -522,6 +525,8 @@ class ScanningProbeLogic(LogicBase):
                 return 0
 
             scan_axes = tuple(scan_axes)
+            print(scan_axes)
+            print('Hrllo World')
             self._curr_caller_id = self.module_uuid if caller_id is None else caller_id
 
             self.module_state.lock()

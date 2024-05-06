@@ -31,6 +31,7 @@ from qudi.interface.process_control_interface import ProcessControlConstraints
 from qudi.interface.process_control_interface import ProcessSetpointInterface
 from qudi.interface.mixins.process_control_switch import ProcessControlSwitchMixin
 from qudi.core.statusvariable import StatusVar
+from qudi.core.module import Base
 
 from qudi.util.helpers import natural_sort, in_range
 from qudi.hardware.jaeger_computer_technik.helpers_adwin import sanitize_device_name, normalize_channel_name
@@ -340,3 +341,75 @@ class Adwin_IO(AnalogAndDigitalIO, AdwinBase): #TODO see towards - ProcessSetpoi
     
     def available_ports(self) -> dict:
         return self._ports
+    
+    
+class AdwinTrigger(AdwinBase, Base):
+    
+    def on_activate(self):
+        self.boot_adwin()
+        self.start_adwin_processes(['give_trigger.TB1'])  
+        
+        
+    def on_deactivate(self):
+        """Stops all adwin process needed for the script
+        """
+        self.clear_adwin_processes(['give_trigger.TB1'])  
+      
+      
+    # TODO: check for faulty input and catch it
+    @property
+    def number_of_pulses(self):
+        return self.adwin.Get_Par(31)
+        
+        
+    @number_of_pulses.setter
+    def number_of_pulses(self, number_of_pulses: int):
+        self.adwin.Set_Par(31, number_of_pulses)
+    
+    
+    @property
+    def sample_rate(self):
+        return self.adwin.Get_FPar(30)
+    
+    
+    @sample_rate.setter
+    def sample_rate(self, sample_rate: float):
+        self.adwin.Set_FPar(30, sample_rate)
+        print(sample_rate)
+        
+    @property
+    def digi_out_port(self):
+        return self.adwin.Get_Par(33)
+    
+    
+    @digi_out_port.setter
+    def digi_out_port(self, port: int):
+        if  0 < port <= 16: 
+            self.adwin.Set_Par(33, port)
+        else:
+            self.log.warning('Wrong port number given')
+    
+    
+    def start(self):
+        if self.digi_out_port == 0:
+            self.log.warning('Digi out port number not given')
+            return -1
+        try:
+            self.adwin.Set_Par(30, 1)
+            return 0
+        except:
+            return -1
+
+    
+    def stop(self):
+        try:
+            self.adwin.Set_Par(30, 0)
+            return 0
+        except:
+            return -1
+    
+    
+    
+    
+    
+    

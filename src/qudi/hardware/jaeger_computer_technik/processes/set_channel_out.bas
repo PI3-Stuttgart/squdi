@@ -3,13 +3,14 @@
 ' Initial_Processdelay           = 3000
 ' Eventsource                    = Timer
 ' Control_long_Delays_for_Stop   = No
-' Priority                       = High
+' Priority                       = Low
+' Priority_Low_Level             = 1
 ' Version                        = 1
 ' ADbasic_Version                = 6.3.1
 ' Optimize                       = Yes
 ' Optimize_Level                 = 1
 ' Stacksize                      = 1000
-' Info_Last_Save                 = DESKTOP-O5HD7AV  DESKTOP-O5HD7AV\yy3
+' Info_Last_Save                 = QINU  QINU\yy3
 '<Header End>
 #Include ADwinGoldII.inc
 
@@ -49,9 +50,12 @@ EndFunction
 Init:
 
 Event:
-  DAC(1, get_vol_xy(FPAR_21)) 'x'
-  DAC(2, get_vol_xy(FPAR_22)) 'y'
-  DAC(3, get_vol_z(FPAR_23)) 'z'
+  If (PAR_24 = 0) Then
+    DAC(1, get_vol_xy(FPAR_21)) 'x'
+    DAC(2, get_vol_xy(FPAR_22)) 'y'
+    DAC(3, get_vol_z(FPAR_23)) 'z'
+  EndIf
+  
   
 Finish:
   

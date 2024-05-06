@@ -5,9 +5,11 @@ from qudi.interface.finite_sampling_io_interface import FiniteSamplingIOInterfac
 from qudi.hardware.jaeger_computer_technik.adwin_base import AdwinBase
 import os
 import numpy as np
+import time
 from qudi.interface.scanning_probe_interface import ScanningProbeInterface, ScanData
 from qudi.interface.scanning_probe_interface import ScanConstraints, ScannerAxis, ScannerChannel
-import ADwin
+#import ADwin
+from ADwin import ADwin, ADwinError
 processes_path = os.path.join(os.path.dirname(__file__), 'processes')
 
 """funciton which has to be implelemnted
@@ -36,13 +38,15 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
         self.boot_adwin()
         self._current_position = np.array([0,0,0])# TODO
         #TODO put here some real command, to run the processes.
-        self.adwin.Load_Process(os.path.join(processes_path, "sweeping_1D.TB1"))
+        #self.Load_Process(os.path.join(processes_path, "sweeping_1D.TB1"))
+        self.adwin.Load_Process(os.path.join(processes_path, "sweeping_1D_interaptable.TB6"))
         #self.adwin.Load_Process(os.path.join(processes_path, "set_channel_out.TB3")) #what is set channel out
         #self.adw.Load_Process(os.path.join(processes_path, "control_digout.TB0"))
         #self.adw.Load_Process(os.path.join(processes_path, "laser_attenuation.TB5"))
         #self.start_adwin_processes(['control_analog_out.TB9'])  
         #self.start_adwin_processes(['control_digout.TB0'])
-        self.start_adwin_processes(['sweeping_1D.TB1'])
+        #self.start_adwin_processes(['sweeping_1D.TB1'])
+        self.start_adwin_processes(['sweeping_1D_interaptable.TB6'])
         
         # TODO
         self._constraints = 'None'
@@ -58,6 +62,7 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
     def on_deactivate(self):
         """Stops all adwin process needed for the script
         """
+        self.clear_adwin_processes(['set_channel_out.TB3', 'sweeping_1D_interaptable.TB6']) 
         self.stop_all()
         #TODO think about cleaning the tasks if they will be.
         self.reset()
@@ -72,10 +77,12 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
         self.stop_scan()
     
     def stop_scan(self):
-        self.stop_all()
+        self.adwin.Set_Par(24, 0)#int(1/self.clock_frequency*1e8)) ##WEIRD!!!!
+        # self.adwin.Stop_Process()
+        #self.stop_all()
     
     def stop_all(self): ##This is stops only confocal channels.
-        for i in range(1, 4): #TODO adjust only for confocal processes to stop. 
+        for i in range(1, 4,7): #TODO adjust only for confocal processes to stop. 
             self.adwin.Stop_Process(i)
         return 0#FIXME achtung, try self.check_stautus(process = 3) for more robust work. #FIXME is it?
         
@@ -97,6 +104,7 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
         self.adwin.Start_Process(10)
     
     def close_scanner(self):
+        self.adwin.Set_Par(24,0)
         self.stop_all()
         return 0
     
@@ -107,7 +115,7 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
             time.sleep(0.2)
         
     
-    def start_scan(self):
+    def start_scan(self, pixel_clock = True):
         """former scan line function, its arguments are moved to configure_scan.
 
         Args:
@@ -117,29 +125,50 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
         Returns:
             _type_: _description_
         """
+        #self.adwin.Stop_Process(3)
+        #time.sleep(1)
         print('Achtung, i am Scanning!')
-        
-        self._line_length= len(line_path[0])
-        self.adwin.SetData_Float(line_path[0], 1, 1, len(line_path[0]))
-        self.adwin.SetData_Float(line_path[1], 2, 1, len(line_path[1]))
-        self.adwin.SetData_Float(line_path[2], 3, 1, len(line_path[2]))
-        self.adwin.SetData_Float(line_path[3], 4, 1, len(line_path[3]))
+        self.adwin.Start_Process(6)
+        #print('process is started')
+        self._line_length= len(self.line_path[0])
+        #self.adwin.Data_Length(2)
+        try:
+            self.adwin.SetData_Float(self.line_path[0], 1, 1,len(self.line_path[0]))
+            #print(self.line_path[0])
+            self.adwin.SetData_Float(self.line_path[1], 2, 1, len(self.line_path[1]))
+            #print(self.line_path[1])
+            self.adwin.SetData_Float(self.line_path[2], 3, 1, len(self.line_path[2]))
+            #print(self.line_path[2])
+        except ADwinError as e:
+            print('An Adwin Error occured in Adwin_Scanning_Device',e) 
+        #print('-------------------Hellloooooo----------')
+        #print(self.adwin.GetData_Long(1, 1, len(self.line_path[0]))[0])
+        #self.adwin.SetData_Float(line_path[3], 4, 1, len(line_path[3]))
 
         if pixel_clock==False:
             self.adwin.Set_Par(22, 0)
-            self.adwin.Set_Par(21, len(line_path[0]))
-            self.adwin.Set_Par(20, 100)
-            self.adwin.Start_Process(1)
+            self.adwin.Set_Par(21, len(self.line_path[0]))
+            self.adwin.Set_Par(20, 100) #clock speed?
 
 
         elif pixel_clock==True:
             self.adwin.Set_Par(22, 1)
-            self.adwin.Set_Par(21, len(line_path[0])+3)
-            self.adwin.Set_Par(20, int(1/self.clock_frequency*100000000)) ##WEIRD!!!!
-            self.adwin.Start_Process(1)
-            self.check_stautus(1)
+            self.adwin.Set_Par(21, len(self.line_path[0]))
+            self.adwin.Set_Par(20, int(1/self.clock_frequency*1e8)) ##WEIRD!!!!
 
-        self._current_position = np.array(line_path[:, -1])
+        
+        self.adwin.Set_Par(24,1)# # - starting the scan...
+        
+        '''
+        while self.adwin.Get_Par(24) == 1:
+            time.sleep(0.2)
+            
+        self.adwin.Start_Process(3)
+        '''
+        print('before fininsihg and current position: adwin scanner')
+        #self._current_position = np.array(self.line_path[:, -1])
+        # The line path will be the last point of a 2D sweep, 
+        #should be elsewhere, no?
         return 0
 
     def close_scanner_clock(self, power=0):
@@ -217,8 +246,12 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
                        sources=None,
                        clock_channel=None,
                        scanner_ao_channels=None):
-        self.scan_settings = line_path
-        return 1
+        
+
+        
+        self.line_path = line_path
+        
+        return 0
 
     def get_scanner_count_channels(self):
         """ Return list of counter channels """
