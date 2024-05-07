@@ -80,7 +80,7 @@ def do_ple_scan(lines = 1, in_range = None, frequency=None, resolution=None):
     ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
     time.sleep(1)
     # self.ple_gui._accumulated_data.mean(axis=0)
-    print(f"Rsquared {res.rsquared}")
+    print(f"Rsquared {ple_gui.fit_result[1].rsquared}")
     # self.ple_gui.fit_result[1].params["center"].value
     return ple_gui.fit_result[1]
 
@@ -127,7 +127,7 @@ def measurement_mode(mode):
         
         if switchlogic.get_state("Shutter") != 'On':
             switchlogic.set_state(switch = "Shutter", state = "On")
-        time.sleep(1)
+        time.sleep(3)
         if switchlogic.get_state("Mirror") != 'Off':
             switchlogic.set_state(switch = "Mirror", state = "Off")
         if switchlogic.get_state("Green") != 'On':
@@ -140,7 +140,7 @@ def measurement_mode(mode):
 
 #%%
 
-for i in range(10):
+for i in range(20):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
@@ -234,7 +234,7 @@ def check_ple():
     measurement_mode('Off-res')
 #%%
 # Schedule the function
-# schedule.every(300).seconds.do(check_ple)
+schedule.every(600).seconds.do(check_ple)
 start_time = time.time()
 fw = tagger.write_into_file(os.path.join(folder, 'g2_1_5April.ttbin'), channels=[1,2,3, 5, 8, 6])
 
@@ -247,12 +247,6 @@ schedule.every(40).seconds.do(blast_green)
 while True:
     schedule.run_pending()
     time.sleep(1)  # Check for tasks more frequently (adjust if needed)
-#%%
-green_laser(True)
-time.sleep(1)
-blue_laser_repump(True, on_t=1e6)
-# %%
-
 
 # %%
 ch1_cts = timetaggerlogic.counter.getDataNormalized()[0, :]
@@ -264,3 +258,36 @@ timetaggerlogic.counter.getDataNormalized()[0, :]
 
 # %%
 
+measurement_mode('Off-res')
+# %%
+timetagger._mw.saveTagLineEdit.setText("def4")
+time.sleep(0.2)
+timetagger._mw.saveAllPushButton.clicked.emit()
+# %%
+measurement_mode('PLE')
+# %%
+res = do_ple_scan(lines=1) 
+                    #in_range = laser_scanner_logic.scan_ranges["a"])
+go_to_ple_target(res.best_values['center'])
+
+#%%
+ple_gui.toggle_optimize(True)
+while ple_optimize_logic.module_state()=='locked':
+        time.sleep(1)
+w1 = ws_wavemeter._current_wavelengths[4]
+
+res = ple_optimize_logic._last_fit_results
+
+fine_scan_range = (
+            res.best_values['center'] - res.best_values['sigma'] * 8,
+            res.best_values['center'] + res.best_values['sigma']  * 8
+        )
+
+save_ple(f"wide_range_c1_{str(w1).replace('.', '_')}")
+res = do_ple_scan(lines=3, 
+                    in_range = fine_scan_range)
+save_ple('narrow_range')
+# %%
+# go_to_ple_target(res.best_values['center'])
+
+# %%
