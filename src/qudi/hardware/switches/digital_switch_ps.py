@@ -164,8 +164,9 @@ class DigitalSwitchPS(SwitchInterface):
                 for channel_index, (switch, state) in enumerate(new_states.items()):
                   
                     state_int = 1 if state == 'On' else 0
-                    
+
                     if switch in self._pulsed_switches:
+                        state_int = 1
                         self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
                                     [(self._cw_on_t, state_int)])
                         self.pulsestreamer().pulser_on()
