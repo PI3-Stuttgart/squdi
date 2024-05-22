@@ -21,7 +21,8 @@
 
 Dim pulse_length as Long
 Init:
-  pulse_length = 1000
+  pulse_length = 10000
+  
   FPAR_30 = 1000
 Event:
   Processdelay = 1/FPAR_30*3*10^8

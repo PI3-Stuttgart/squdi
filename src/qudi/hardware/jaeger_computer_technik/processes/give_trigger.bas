@@ -21,7 +21,7 @@
 
 Dim pulse_length as Long
 Init:
-  pulse_length = 99
+  pulse_length = 10000
   
   FPAR_30 = 1000
 Event:

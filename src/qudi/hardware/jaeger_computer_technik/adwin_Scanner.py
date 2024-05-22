@@ -36,17 +36,8 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
     def on_activate(self):
         print('I am here... Activate Adwin Galvo scanner .....')
         self.boot_adwin()
-        self._current_position = np.array([0,0,0])# TODO
-        #TODO put here some real command, to run the processes.
-        #self.Load_Process(os.path.join(processes_path, "sweeping_1D.TB1"))
-        self.adwin.Load_Process(os.path.join(processes_path, "sweeping_1D_interaptable.TB6"))
-        #self.adwin.Load_Process(os.path.join(processes_path, "set_channel_out.TB3")) #what is set channel out
-        #self.adw.Load_Process(os.path.join(processes_path, "control_digout.TB0"))
-        #self.adw.Load_Process(os.path.join(processes_path, "laser_attenuation.TB5"))
-        #self.start_adwin_processes(['control_analog_out.TB9'])  
-        #self.start_adwin_processes(['control_digout.TB0'])
-        #self.start_adwin_processes(['sweeping_1D.TB1'])
         self.start_adwin_processes(['sweeping_1D_interaptable.TB6'])
+        self._current_position = np.array([0,0,0])# TODO
         
         # TODO
         self._constraints = 'None'
@@ -59,12 +50,12 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
         #     output_channel_limits=output_voltage_ranges,
         #     input_channel_limits=input_limits
         # )
+        
+        
     def on_deactivate(self):
         """Stops all adwin process needed for the script
         """
         self.clear_adwin_processes(['set_channel_out.TB3', 'sweeping_1D_interaptable.TB6']) 
-        self.stop_all()
-        #TODO think about cleaning the tasks if they will be.
         self.reset()
     
     def get_constraints(self):
@@ -78,12 +69,9 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
     
     def stop_scan(self):
         self.adwin.Set_Par(24, 0)#int(1/self.clock_frequency*1e8)) ##WEIRD!!!!
-        # self.adwin.Stop_Process()
-        #self.stop_all()
+        self.stop_all()
     
     def stop_all(self): ##This is stops only confocal channels.
-        for i in range(1, 4,7): #TODO adjust only for confocal processes to stop. 
-            self.adwin.Stop_Process(i)
         return 0#FIXME achtung, try self.check_stautus(process = 3) for more robust work. #FIXME is it?
         
     #this was before set_current_position or so.
@@ -100,8 +88,6 @@ class Adwin_Scanning_Device(AdwinBase, ScanningProbeInterface):  # ScanningProbe
         self.adwin.Set_Par(12, y)
         self.adwin.Set_Par(13, z)
         #self.adw.Set_Par(14, a) #This is the PLE? (at least it was in the old code.)
-        self.stop_all()
-        self.adwin.Start_Process(10)
     
     def close_scanner(self):
         self.adwin.Set_Par(24,0)
