@@ -20,42 +20,52 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-__all__ = ['sanitize_device_name', 'ao_channel_names', 'ai_channel_names', 'ao_voltage_range',
-           'ai_voltage_range', 'pfi_channel_names', 'counter_names', 'normalize_channel_name']
+__all__ = [
+    "sanitize_device_name",
+    "ao_channel_names",
+    "ai_channel_names",
+    "ao_voltage_range",
+    "ai_voltage_range",
+    "pfi_channel_names",
+    "counter_names",
+    "normalize_channel_name",
+]
 
-#import nidaqmx as ni
+# import nidaqmx as ni
 from typing import List, Tuple
 
 
 def sanitize_device_name(device_name: str) -> str:
-    """ Performs case-insensitive comparison of connected device names reported by nidaqmx.system
+    """Performs case-insensitive comparison of connected device names reported by nidaqmx.system
     with given name and returns match.
     Raises ValueError if no connected device can be matched.
     """
     device_name = device_name.lower()
-    connected_devices = ['adwin11']#ni.system.System().devices.device_names
+    connected_devices = ["adwin11"]  # ni.system.System().devices.device_names
     for name in connected_devices:
         if name.lower() == device_name:
             return name
-    raise ValueError(f'No connected device matches given name "{device_name}". '
-                     f'Found devices: {connected_devices}')
+    raise ValueError(
+        f'No connected device matches given name "{device_name}". '
+        f"Found devices: {connected_devices}"
+    )
 
 
 def ao_channel_names(device_name: str) -> List[str]:
-    """ Extracts available physical analog output channel names from device """
-    channel_names = ['ao'+str(i) for i in range(8)]
+    """Extracts available physical analog output channel names from device"""
+    channel_names = ["ao" + str(i) for i in range(8)]
     return [normalize_channel_name(channel) for channel in channel_names]
 
 
 def ai_channel_names(device_name: str) -> List[str]:
-    """ Extracts available physical analog input channel names from device """
-    channel_names = ['ai'+str(i) for i in range(16)]
+    """Extracts available physical analog input channel names from device"""
+    channel_names = ["ai" + str(i) for i in range(16)]
     return [normalize_channel_name(channel) for channel in channel_names]
 
 
 def ao_voltage_range(device_name: str) -> Tuple[float, float]:
-    """ Extracts the biggest available analog output voltage range from device """
-    ao_ranges = (-5,5)
+    """Extracts the biggest available analog output voltage range from device"""
+    ao_ranges = (-5, 5)
     max_ao_range = (0, 0)
     for voltage_range in zip(ao_ranges[::2], ao_ranges[1::2]):
         low, high = sorted(voltage_range)
@@ -65,8 +75,8 @@ def ao_voltage_range(device_name: str) -> Tuple[float, float]:
 
 
 def ai_voltage_range(device_name: str) -> Tuple[float, float]:
-    """ Extracts the biggest available analog input voltage range from device """
-    ai_ranges = (0,1)
+    """Extracts the biggest available analog input voltage range from device"""
+    ai_ranges = (0, 1)
     max_ai_range = (0, 0)
     for voltage_range in zip(ai_ranges[::2], ai_ranges[1::2]):
         low, high = sorted(voltage_range)
@@ -76,20 +86,24 @@ def ai_voltage_range(device_name: str) -> Tuple[float, float]:
 
 
 def pfi_channel_names(device_name: str) -> List[str]:
-    """ Extracts available physical PFI channel names from device """
-    channel_names = ['di'+str(i) for i in range(16)]
-    return [normalize_channel_name(channel) for channel in channel_names if 'PFI' in channel]
+    """Extracts available physical PFI channel names from device"""
+    channel_names = ["di" + str(i) for i in range(16)]
+    return [
+        normalize_channel_name(channel) for channel in channel_names if "PFI" in channel
+    ]
 
 
 def counter_names(device_name: str) -> List[str]:
-    """ Extracts available counter (channel) names from device """
-    channel_names = ['co' + str(i) for i in range(2)]
-    return [normalize_channel_name(chnl) for chnl in channel_names if 'ctr' in chnl.lower()]
+    """Extracts available counter (channel) names from device"""
+    channel_names = ["co" + str(i) for i in range(2)]
+    return [
+        normalize_channel_name(chnl) for chnl in channel_names if "ctr" in chnl.lower()
+    ]
 
 
 def normalize_channel_name(channel_name: str) -> str:
-    """ Extracts the bare terminal name from a string and strip it of the device name and dashes """
-    name = channel_name#.strip('/')
-    if 'dev' in name.lower():
-        name = name.split('/', 1)[-1]
+    """Extracts the bare terminal name from a string and strip it of the device name and dashes"""
+    name = channel_name  # .strip('/')
+    if "dev" in name.lower():
+        name = name.split("/", 1)[-1]
     return name
