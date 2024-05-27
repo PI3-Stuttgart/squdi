@@ -229,7 +229,7 @@ class Magnet3D(AdwinBase):  # TODO see towards - ProcessSetpointInterface
         volt_x, _ = self.read_fpar(self.fpar_idx_volt_x)
         volt_y, _ = self.read_fpar(self.fpar_idx_volt_y)
         volt_z, _ = self.read_fpar(self.fpar_idx_volt_z)
-
+        print
         return [volt_x, volt_y, volt_z]
 
     def get_target_magnet_currents(self):
@@ -256,10 +256,10 @@ class Magnet3D(AdwinBase):  # TODO see towards - ProcessSetpointInterface
             list[float, float, float]: set voltages to the [x, y, z] axis
         """
 
-        set_voltage_x = self.adwin.Get_FPar(self.fpar_idx_set_volt_x)
-        set_voltage_y = self.adwin.Get_FPar(self.fpar_idx_set_volt_y)
-        set_voltage_z = self.adwin.Get_FPar(self.fpar_idx_set_volt_z)
-
+        set_voltage_x, _ = self.read_fpar(self.fpar_idx_set_volt_x)
+        set_voltage_y, _ = self.read_fpar(self.fpar_idx_set_volt_y)
+        set_voltage_z, _ = self.read_fpar(self.fpar_idx_set_volt_z)
+        
         return [set_voltage_x, set_voltage_y, set_voltage_z]
 
     def get_magnet_currents(self) -> list[float, float, float]:
@@ -433,13 +433,13 @@ class Magnet3D(AdwinBase):  # TODO see towards - ProcessSetpointInterface
             list[int,int,int]: list of ints with ramping status [status_x,status_y,status_z]
         """
 
-        ls_set_voltages = self._get_curr_set_voltages()
-        ls_curr_voltages = self._get_voltages()
+        set_voltages = self._get_curr_set_voltages()
+        curr_voltages = self._get_voltages()
 
         ls_status = []
 
         for set_voltage, curr_voltage, target_voltage in zip(
-            ls_set_voltages, ls_curr_voltages, self.target_voltages
+            set_voltages, curr_voltages, self.target_voltages
         ):
             if (
                 abs(set_voltage - curr_voltage) < 0.01

@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Dict, Sequence, Tuple, List, Union
 import ctypes
 
-from ADwin import ADwin, AdwinError
+from ADwin import ADwin, ADwinError
 from qudi.core import Base
 
 
@@ -144,7 +144,7 @@ class AdwinBase(Base):
         """
         try:
             self.__adwin.Set_FPar(idx, value)
-        except AdwinError as e:
+        except ADwinError as e:
             self.log.error(f"Could not set Fpar. Error:\n\n {e}")
             return AdwinStatus.BASE_ERROR
 
@@ -162,7 +162,8 @@ class AdwinBase(Base):
         """
         try:
             self.__adwin.Set_Par(idx, value)
-        except AdwinError as e:
+            print(idx)
+        except ADwinError as e:
             self.log.error(f"Could not set Par. Error:\n\n {e}")
             return AdwinStatus.BASE_ERROR
 
@@ -188,7 +189,7 @@ class AdwinBase(Base):
         """
         try:
             self.__adwin.SetData_Float(pc_array, data_no, start_idx, count)
-        except AdwinError as e:
+        except ADwinError as e:
             self.log.error(f"Could not set Data Float. Error:\n\n {e}")
             return AdwinStatus.BASE_ERROR
 
@@ -205,7 +206,7 @@ class AdwinBase(Base):
         """
         try:
             value: int = self.__adwin.Get_Par(idx)
-        except AdwinError as e:
+        except ADwinError as e:
             self.log.error(f"Could not set Par. Error:\n\n {e}")
             return None, AdwinStatus.BASE_ERROR
 
@@ -274,7 +275,7 @@ class AdwinDummy:
         """Simulates Boot, doesn't do anything"""
 
     @staticmethod
-    def Test_Version() -> Int:
+    def Test_Version() -> int:
         """Simulates Test_Version, returns always 0"""
         return 0
 

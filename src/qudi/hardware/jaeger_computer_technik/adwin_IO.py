@@ -26,7 +26,7 @@ from qudi.util.mutex import Mutex
 from qudi.core.configoption import ConfigOption
 from qudi.util.mutex import RecursiveMutex
 from qudi.interface.anolog_and_digital_io import AnalogAndDigitalIO
-from qudi.hardware.jaeger_computer_technik.adwin_base import AdwinBase
+from qudi.hardware.jaeger_computer_technik.adwin_base import AdwinBase, AdwinStatus
 from qudi.interface.process_control_interface import ProcessControlConstraints
 from qudi.interface.process_control_interface import ProcessSetpointInterface
 from qudi.interface.mixins.process_control_switch import ProcessControlSwitchMixin
@@ -43,7 +43,6 @@ from qudi.hardware.jaeger_computer_technik.helpers_adwin import (
 )
 
 import os
-import ADwin
 
 
 ## This needs to be compatible with the NI_AO, which is
@@ -82,8 +81,8 @@ class Adwin_AO(
     def on_activate(self):
         # Check if device is connected and set device to use
         self.boot_adwin()
-        # self.start_adwin_processes(['control_analog_out.TB9'])
-        # self.start_adwin_processes(['control_digout.TB0'])
+        self.start_adwin_processes(['control_analog_out.TB9'])
+        self.start_adwin_processes(['control_digout.TB0'])
 
         self._device_channel_mapping = dict()
         self._ao_task_handles = dict()
@@ -350,6 +349,7 @@ class Adwin_IO(
 
         if self.available_ports()["digital"][port]["IO"] == "in":
             par_idx = 8 if port == 0 else port
+            print(par_idx)
 
             if active:
                 self.write_par(par_idx, 1)

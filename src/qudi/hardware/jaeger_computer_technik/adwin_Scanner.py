@@ -99,7 +99,7 @@ class Adwin_Scanning_Device(
         _ = self.write_par(11, x)
         _ = self.write_par(12, y)
         _ = self.write_par(13, z)
-        self.stop_confocal_adwin_processes()
+        # self.stop_confocal_adwin_processes()
 
     def close_scanner(self) -> int:
         adw_status: AdwinStatus = self.stop_confocal_adwin_processes()
@@ -135,7 +135,7 @@ class Adwin_Scanning_Device(
             _ = self.write_par(
                 20, int(1 / self.clock_frequency * 100000000)
             )  ##WEIRD!!!!
-            _ = self.start_adwin_processes(["sweeping_1D.TB1"])
+            # _ = self.start_adwin_processes(["sweeping_1D.TB1"])
 
         self._current_position = np.array(line_path[:, -1])
         return 0
@@ -329,3 +329,6 @@ class Adwin_Scanning_Device(
     def get_scan_data(self):
         print("not yet")
         return None
+
+    def reset(self):
+        self.reset()
