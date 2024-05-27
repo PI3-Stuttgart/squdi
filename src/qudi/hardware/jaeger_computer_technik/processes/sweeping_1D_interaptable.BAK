@@ -55,8 +55,6 @@ Init:
   index = 1
 Event:  
   Processdelay = PAR_20*3
-  
-  CPU_Sleep(100)
   If (PAR_24 = 1) Then
     If (index < PAR_21) Then
       'PAR_23 = index'
@@ -82,7 +80,7 @@ Event:
     index = 1
     PAR_23 = 1
   EndIf
-  CPU_Sleep(10000)
+  CPU_Sleep(100000)
   Digout(9, 0)
   'CPU_Sleep(100)
   'End
