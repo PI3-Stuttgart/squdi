@@ -265,35 +265,30 @@ class MagnetLogic(LogicBase):
     def set_psw_status(self,status):
         self.log.debug(f'{__name__}, {inspect.stack()[0][3]}: passing psw status {status}')
         self.sigChangePswStatus.emit(status)
-        # self._magnet.set_psw_status(status)
         return
 
 
     def pause_ramp(self):
         self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
-        self.sigPauseRamp.emit()
-        # self._magnet.pause_ramp()
+        self.sigPauseRamp.emit())
         return
 
 
     def continue_ramp(self):
         self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
         self.sigContinueRamp.emit()
-        # self._magnet.continue_ramp()
         return
 
     
     def ramp_to_zero(self):
         self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
         self.sigRampToZero.emit()
-        # self._magnet.ramp_to_zero()
         return
 
 
     def ramp(self, filed_target_sperical):
         self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
         self.sigRamp.emit(self.spherical_to_carthesian(filed_target_sperical), False)
-        # self._magnet.ramp(field_target=axes)
         return
     
 
