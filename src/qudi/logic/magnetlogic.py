@@ -5,6 +5,7 @@ import inspect
 from qudi.core.module import LogicBase
 from qudi.core.connector import Connector
 
+
 class MagnetLogic(LogicBase):
     ## connectors
     magnet = Connector(interface = 'Magnet3D')

@@ -18,15 +18,16 @@ You should have received a copy of the GNU Lesser General Public License along w
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-import time
-import os
-import numpy as np
 from typing import Union
 from enum import Enum
+import numpy as np
 
 from PySide2 import QtCore
+
 from qudi.core.configoption import ConfigOption
+
 from qudi.hardware.jaeger_computer_technik.adwin_base import AdwinBase
+from qudi.interface.coil_magnet_interface import CoilMagnetInterface
 
 
 class MagnetStatus(Enum):
@@ -44,7 +45,8 @@ class MagnetStatus(Enum):
     # 10: [not implemented] Cooling persistent switch
 
 
-class Magnet3D(AdwinBase):  # TODO see towards - ProcessSetpointInterface
+class Magnet3D(AdwinBase):
+    """Controles analog voltage output of the ADwin to the Qinu magnet coils"""
 
     debug = True
     has_persistence = False
