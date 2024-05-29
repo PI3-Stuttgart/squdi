@@ -83,25 +83,26 @@ class AdwinBase(Base):
         # TODO: Implement checks
         return AdwinStatus.EXECUTED
 
-    def start_adwin_processes(self, list_file_names: List[str]) -> AdwinStatus:
+    def start_adwin_processes(self, file_names: List[str], load_processes: bool = True) -> AdwinStatus:
         """Loads all specified adwin .tb_ files and starts the processes
 
         Args:
             list_file_names (List[str]): List of file names
         """
-        for str_file_name in list_file_names:
-            self.__adwin.Load_Process(
-                os.path.join(self.__adwin_processes_path, str_file_name)
-            )
+        for file_name in file_names:
+            if load_processes:
+                self.__adwin.Load_Process(
+                    os.path.join(self.__adwin_processes_path, file_name)
+                )
 
             int_adw_process_nr = (
-                10 if int(str_file_name[-1]) == 0 else int(str_file_name[-1])
+                10 if int(file_name[-1]) == 0 else int(file_name[-1])
             )
             self.__adwin.Start_Process(int_adw_process_nr)
         # TODO: Implement checks
         return AdwinStatus.EXECUTED
 
-    def clear_adwin_processes(self, file_names: List[str]) -> AdwinStatus:
+    def stop_adwin_processes(self, file_names: List[str], clear_processes: bool = False) -> AdwinStatus:
         """Stops and clears all specified adwin processes
 
         Args:
@@ -110,7 +111,8 @@ class AdwinBase(Base):
         for file_name in file_names:
             int_adw_process_nr = 10 if int(file_name[-1]) == 0 else int(file_name[-1])
             self.__adwin.Stop_Process(int_adw_process_nr)
-            self.__adwin.Clear_Process(int_adw_process_nr)
+            if clear_processes:
+                self.__adwin.Clear_Process(int_adw_process_nr)
         # TODO: Implement checks
         return AdwinStatus.EXECUTED
 

@@ -74,8 +74,9 @@ class Adwin_Scanning_Device(
 
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
-        self.clear_adwin_processes(
-            ["set_channel_out.TB3", "sweeping_1D_interaptable.TB6"]
+        self.stop_adwin_processes(
+            ["set_channel_out.TB3", "sweeping_1D_interaptable.TB6"],
+            clear_processes = True
         )
         self.reset()
 
@@ -93,10 +94,9 @@ class Adwin_Scanning_Device(
         self.stop_all()
 
     def stop_confocal_adwin_processes(self) -> AdwinStatus:
-        adwin_status: AdwinStatus = self.clear_adwin_processes(
-            [
-                "sweeping_1D.TB1",
-            ]
+        adwin_status: AdwinStatus = self.stop_adwin_processes(
+            ["sweeping_1D.TB1"],
+            clear_processes = False
         )
         return adwin_status
 
@@ -139,7 +139,7 @@ class Adwin_Scanning_Device(
         """
         # self.adwin.Stop_Process(3)
         # time.sleep(1)
-        self.__adwin.Start_Process(6)
+        self.start_adwin_processes(["sweeping_1D_interaptable.TB6"], load_processes=False)
         # print('process is started')
         self._line_length = len(self.line_path[0])
         # self.adwin.Data_Length(2)

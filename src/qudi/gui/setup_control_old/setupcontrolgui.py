@@ -68,11 +68,16 @@ class SetupControlGUI(GuiBase):
 
         self._mw.Lamp_Button.setCheckable(True)
         self._mw.Green_Button.setCheckable(True)
+        self._mw.Red_Button.setCheckable(True)
+        self._mw.Blue_Button.setCheckable(True)
         self._mw.Flip_powermeter_Button.setCheckable(True)
         self._mw.Flip_mirror_camera_Button.setCheckable(True)
 
         self._mw.Green_Button.clicked.connect(self.green_laser_button_pressed)
+        self._mw.Red_Button.clicked.connect(self.red_laser_button_pressed)
+        self._mw.Blue_Button.clicked.connect(self.blue_laser_button_pressed)
         self._mw.Lamp_Button.clicked.connect(self.lamp_button_pressed)
+        
         self._mw.green_attenuation.valueChanged.connect(self.green_power_slider_moved)
         self._mw.lamp_power.valueChanged.connect(self.lamp_power_slider_moved)
 
@@ -107,6 +112,14 @@ class SetupControlGUI(GuiBase):
     def green_laser_button_pressed(self, active):
         self._setupcontrol_logic.activate_green_laser(active)
         self.toggle_switch(self._mw.Green_Button, color='rgb(31, 255, 0)')
+        
+    def red_laser_button_pressed(self, active):
+        self._setupcontrol_logic.activate_red_laser_aom(active)
+        self.toggle_switch(self._mw.Red_Button, color='rgb(255, 119, 0)')
+        
+    def blue_laser_button_pressed(self, active):
+        self._setupcontrol_logic.activate_blue_laser(active)
+        self.toggle_switch(self._mw.Blue_Button, color='rgb(0, 70, 255)')
 
 
     def lamp_button_pressed(self, active):
@@ -114,16 +127,13 @@ class SetupControlGUI(GuiBase):
         self.toggle_switch(self._mw.Lamp_Button, color='rgb(130, 0, 200)')
 
 
-
     def flip_mirror_camera_button_pressed(self, active):
         self._setupcontrol_logic.flip_mirror_camera_path(active)
         self.toggle_switch(self._mw.Flip_mirror_camera_Button)
         
-
     def flip_powermeter_button_pressed(self, active):
         self._setupcontrol_logic.flip_powermeter(active)
         self.toggle_switch(self._mw.Flip_powermeter_Button)
-
 
     def show(self):
         """Make window visible and put it above all other windows.
@@ -131,7 +141,6 @@ class SetupControlGUI(GuiBase):
         QtWidgets.QMainWindow.show(self._mw)
         self._mw.activateWindow()
         self._mw.raise_()
-    
     
     def restoreDefaultView(self):
         """ Restore the arrangement of DockWidgets to the default

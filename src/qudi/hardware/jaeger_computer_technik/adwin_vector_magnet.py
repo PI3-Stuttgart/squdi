@@ -119,7 +119,7 @@ class Magnet3D(AdwinBase):
         self.zero_ramp_timer.timeout.disconnect()
 
         # Stop and clear used adwin process
-        self.clear_adwin_processes(["magnet_control.TB2"])
+        self.stop_adwin_processes(["magnet_control.TB2"], clear_processes=True)
 
     def _b_field2current(
         self,
