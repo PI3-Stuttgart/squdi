@@ -82,9 +82,9 @@ class Adwin_AO(
     def on_activate(self):
         # Check if device is connected and set device to use
         self.boot_adwin()
-        self.start_adwin_processes(["control_analog_out.TB9"])
-        self.start_adwin_processes(["control_digout.TB0"])
-
+        # self.start_adwin_processes(["control_analog_out.TB9"])
+        # self.start_adwin_processes(["control_digout.TB0"])
+        self.start_adwin_processes(["set_channel_out.TB3"])
         self._device_channel_mapping = dict()
         self._ao_task_handles = dict()
         self._keep_values = dict()
@@ -133,7 +133,7 @@ class Adwin_AO(
         # Sanitize status variables
         self._sanitize_setpoint_status()
         self.map_channels()
-        self.start_adwin_processes(["set_channel_out.TB3"])
+        # self.start_adwin_processes(["set_channel_out.TB3"])
 
     def map_channels(self):
 
@@ -144,7 +144,10 @@ class Adwin_AO(
 
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
-        # TODO
+        self.stop_adwin_processes(
+            ["set_channel_out.TB3"],
+            clear_processes = True
+        )
         pass
 
     ## THIS FOLLOWING FUNCTIONS HAVE TO BE WRITTEN TO MAP TO NI_AO class from Bluefors.cfg

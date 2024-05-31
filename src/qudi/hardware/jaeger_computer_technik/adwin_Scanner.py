@@ -75,7 +75,7 @@ class Adwin_Scanning_Device(
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
         self.stop_adwin_processes(
-            ["set_channel_out.TB3", "sweeping_1D_interaptable.TB6"],
+            ["sweeping_1D_interaptable.TB6"],
             clear_processes = True
         )
         self.reset()

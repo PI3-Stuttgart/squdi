@@ -46,8 +46,6 @@ class AdwinBase(Base):
             self._device_name = "adwin11"
             self.btl: str = f"{self.__adwin.ADwindir}adwin11.btl"
         # TODO: Make process path part of config?
-        
-        self.adwin = self.__adwin
 
         self.__adwin_processes_path: str = os.path.join(
             os.path.dirname(__file__), "processes"
@@ -96,11 +94,16 @@ class AdwinBase(Base):
                 self.__adwin.Load_Process(
                     os.path.join(self.__adwin_processes_path, file_name)
                 )
-
+            # gets Process number from file name
             int_adw_process_nr = (
                 10 if int(file_name[-1]) == 0 else int(file_name[-1])
             )
-            self.__adwin.Start_Process(int_adw_process_nr)
+            # Checks if process is already running, and only starts it if this is not the case
+            if self.__adwin.Process_Status == 1:
+                self.log.info('Adwin process is allready running')
+                return AdwinStatus.EXECUTED
+            else:
+                self.__adwin.Start_Process(int_adw_process_nr)
         # TODO: Implement checks
         return AdwinStatus.EXECUTED
 
