@@ -91,7 +91,7 @@ class Adwin_Scanning_Device(
 
     def stop_scan(self):
         self.adwin.Set_Par(24, 0)  # int(1/self.clock_frequency*1e8)) ##WEIRD!!!!
-        self.stop_all()
+        # self.stop_all()
 
     def stop_confocal_adwin_processes(self) -> AdwinStatus:
         adwin_status: AdwinStatus = self.stop_adwin_processes(
@@ -118,7 +118,7 @@ class Adwin_Scanning_Device(
 
     def close_scanner(self) -> int:
         adw_status: AdwinStatus = self.write_par(idx=24, value=0)
-        self.stop_confocal_adwin_processes()
+        # self.stop_confocal_adwin_processes()
         return 0
 
     def check_stautus(self, process):
@@ -139,7 +139,7 @@ class Adwin_Scanning_Device(
         """
         # self.adwin.Stop_Process(3)
         # time.sleep(1)
-        self.start_adwin_processes(["sweeping_1D_interaptable.TB6"], load_processes=False)
+        # self.start_adwin_processes(["sweeping_1D_interaptable.TB6"], load_processes=False)
         # print('process is started')
         self._line_length = len(self.line_path[0])
         # self.adwin.Data_Length(2)

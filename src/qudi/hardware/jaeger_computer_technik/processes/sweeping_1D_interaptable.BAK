@@ -1,6 +1,6 @@
 '<ADbasic Header, Headerversion 001.001>
 ' Process_Number                 = 6
-' Initial_Processdelay           = 3000
+' Initial_Processdelay           = 30000000
 ' Eventsource                    = Timer
 ' Control_long_Delays_for_Stop   = No
 ' Priority                       = Low
@@ -49,7 +49,7 @@ Function get_vol_z(input_z) As Long
 EndFunction
   
 Init:
-  Processdelay = 100000
+  Conf_DIO(1111b)
   PAR_20 = 10000000
   Digout(9, 0)
   index = 1

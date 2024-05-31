@@ -21,6 +21,7 @@
 
 Dim pulse_length as Long
 Init:
+  Conf_DIO(1111b)
   pulse_length = 10000
   
   FPAR_30 = 1000

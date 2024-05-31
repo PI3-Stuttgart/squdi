@@ -389,29 +389,29 @@ class AdwinTrigger(AdwinBase, Base):
     # TODO: check for faulty input and catch it
     @property
     def number_of_pulses(self):
-        return self.adwin.Get_Par(31)
+        return self.read_par(31)
 
     @number_of_pulses.setter
     def number_of_pulses(self, number_of_pulses: int):
-        self.adwin.Set_Par(31, number_of_pulses)
+        self.write_par(31, number_of_pulses)
 
     @property
     def sample_rate(self):
-        return self.adwin.Get_FPar(30)
+        return self.read_fpar(30)
 
     @sample_rate.setter
     def sample_rate(self, sample_rate: float):
-        self.adwin.Set_FPar(30, sample_rate)
+        self.write_fpar(30, sample_rate)
         print(sample_rate)
 
     @property
     def digi_out_port(self):
-        return self.adwin.Get_Par(33)
+        return self.read_par(33)
 
     @digi_out_port.setter
     def digi_out_port(self, port: int):
         if 0 < port <= 16:
-            self.adwin.Set_Par(33, port)
+            self.write_par(33, port)
         else:
             self.log.warning("Wrong port number given")
 
@@ -420,14 +420,14 @@ class AdwinTrigger(AdwinBase, Base):
             self.log.warning("Digi out port number not given")
             return -1
         try:
-            self.adwin.Set_Par(30, 1)
+            self.write_par(30, 1)
             return 0
         except:
             return -1
 
     def stop(self):
         try:
-            self.adwin.Set_Par(30, 0)
+            self.write_par(30, 0)
             return 0
         except:
             return -1

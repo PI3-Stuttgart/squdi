@@ -9,7 +9,7 @@
 ' Optimize                       = Yes
 ' Optimize_Level                 = 1
 ' Stacksize                      = 1000
-' Info_Last_Save                 = DESKTOP-O5HD7AV  DESKTOP-O5HD7AV\yy3
+' Info_Last_Save                 = QINU  QINU\yy3
 '<Header End>
 #Include ADwinGoldII.inc
 
@@ -26,6 +26,7 @@ EndFunction
 
   
 Init:
+  Conf_DIO(1111b)
   curr_volt_port_7 = 0
   DAC(7, volt2bit(0)) 
   curr_volt_port_7 = FPar_7

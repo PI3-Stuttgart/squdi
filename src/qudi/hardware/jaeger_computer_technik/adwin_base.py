@@ -46,6 +46,8 @@ class AdwinBase(Base):
             self._device_name = "adwin11"
             self.btl: str = f"{self.__adwin.ADwindir}adwin11.btl"
         # TODO: Make process path part of config?
+        
+        self.adwin = self.__adwin
 
         self.__adwin_processes_path: str = os.path.join(
             os.path.dirname(__file__), "processes"
