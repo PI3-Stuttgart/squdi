@@ -174,7 +174,7 @@ class DigitalSwitchNI(SwitchInterface):
             with self.lock:
                 new_states = self._states.copy()
                 new_states.update(state_dict)
-
+ 
                 with nidaqmx.Task('NISwitchTask' + self.name.replace(':', ' ')) as switch_task:
                     binary = list()
                     for channel_index, (switch, state) in enumerate(new_states.items()):

@@ -11,6 +11,7 @@ def go_to_ple_target(target):
     #laser_scanner_logic.set_target_position({"a": target})
     time.sleep(0.5)
 
+
 def save_scan(name):
     scanner_gui.save_path_widget.saveTagLineEdit.setText(name)
     scanner_gui.scan_2d_dockwidgets[('x', 'y')].scan_widget.save_scan_button.clicked.emit() #saving
@@ -118,8 +119,10 @@ def measurement_mode(mode):
         time.sleep(0.5)
         if switchlogic.get_state("Green") != 'Off':
             switchlogic.set_state(switch = "Green", state = "Off")
-        time.sleep(0.5)
-        ibeam_remote.power = 0.5e3
+        if switchlogic.get_state("GreenAttodry") != 'Off':
+            switchlogic.set_state(switch = "GreenAttodry", state = "Off")
+        time.sleep(1.5)
+        # ibeam_remote.power = 0.01e3
         # blue_laser_repump(enable=True)
 
     elif mode == "Off-res":
@@ -132,7 +135,9 @@ def measurement_mode(mode):
             switchlogic.set_state(switch = "Mirror", state = "Off")
         if switchlogic.get_state("Green") != 'On':
             switchlogic.set_state(switch = "Green", state = "On")
-        ibeam_remote.power = 50e3
+        if switchlogic.get_state("GreenAttodry") != 'On':
+            switchlogic.set_state(switch = "GreenAttodry", state = "On")
+        #ibeam_remote.power = 50e3
     else:
         print("No mode by this name")
 
@@ -167,6 +172,11 @@ green_laser(False)
 #%%
 measurement_mode('PLE')
 #%%
+#%%
+measurement_mode('Off-res')
+#%%
+
+
 enable_laser_scanning(True)
 v0 = get_laser_offset()
 set_laser_offset(v0)
@@ -291,3 +301,8 @@ save_ple('narrow_range')
 # go_to_ple_target(res.best_values['center'])
 
 # %%
+with nidaqmx.Task('NISwitchTask' + 'APD'.replace(':', ' ')) as switch_task:
+    switch_task.do_channels.add_do_chan('/Dev1/port0/line29')
+    switch_task.write(True, auto_start=True)
+#%%
+'/Dev1/port0/line6'

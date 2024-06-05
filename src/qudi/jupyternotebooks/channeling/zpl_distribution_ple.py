@@ -22,12 +22,12 @@ def set_laser_offset(v):
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         dlc._laser1.dl.pc.voltage_set.set(v)
 
-high_finesse_wavemeter.start_acquisition()
+ws_wavemeter.start_acquisition()
 # %%
 # Parameters
 start_freq = 0  # GHz to Hz
 end_freq = 18500  # GHz to Hz
-step = 500  # GHz to Hz
+step = 100  # GHz to Hz
 num_steps = int((end_freq - start_freq) / step) + 1  # +1 for inclusive range
 resolution = (150, 150)  # x, y points
 
@@ -36,7 +36,7 @@ w0 = 484.130 #THz
 frequencies = np.linspace(start_freq, end_freq, num_steps)
 
 scan_names = {}
-experiment_name = "scan_10_10_178_80kev"
+experiment_name = "scan_10_10_158_170kev_p+"
 # Loop through frequencies
 for i, freq in enumerate(frequencies):
     # Set laser frequency
@@ -44,7 +44,7 @@ for i, freq in enumerate(frequencies):
     time.sleep(3)
 
     # Measure and record wavelength
-    wavelength = (high_finesse_wavemeter.get_current_wavelength() - w0) * 1e3   # to GHz
+    wavelength = (ws_wavemeter.get_current_wavelength() - w0) * 1e3   # to GHz
     print(wavelength)
 
     # Start scan and save data
@@ -61,8 +61,8 @@ with open(f"{experiment_name}.txt", 'w') as file:
     json.dump(scan_names, file, indent=4)
 
 # %%
-high_finesse_wavemeter.start_acquisition()
-(high_finesse_wavemeter.get_current_wavelength() - 484.130) * 1e3
+ws_wavemeter.start_acquisition()
+(ws_wavemeter.get_current_wavelength() - 484.130) * 1e3
 
 # %%
 
