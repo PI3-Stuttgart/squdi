@@ -5,20 +5,22 @@ import json
 import schedule
 import os
 from toptica.lasersdk.dlcpro.v2_0_3 import DLCpro,LaserHead,  NetworkConnection, DeviceNotFoundError
+
+#from 0 to 19650 MHz (max val defined by config) laser offset 
 def go_to_ple_target(target):
     ple_gui._mw.ple_widget.target_point.setValue(target)
     ple_gui._mw.ple_widget.target_point.sigPositionChangeFinished.emit(target)
     #laser_scanner_logic.set_target_position({"a": target})
     time.sleep(0.5)
 
-
+#save confocal map. It will be saved in the folder defined in the app
 def save_scan(name):
     scanner_gui.save_path_widget.saveTagLineEdit.setText(name)
     scanner_gui.scan_2d_dockwidgets[('x', 'y')].scan_widget.save_scan_button.clicked.emit() #saving
     dir_ = scanning_data_logic.module_default_data_dir
     return name, dir_
 
-#to be rapaired:
+#laser offset with the topica:
 def set_laser_offset(v):
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         dlc._laser1.dl.pc.voltage_set.set(v)
@@ -27,10 +29,12 @@ def get_laser_offset():
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         v0 = dlc._laser1.dl.pc.voltage_set.get()
     return v0
-
+#start scanning with toptica
 def enable_laser_scanning(enable):
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         dlc._laser1.scan.enabled.set(enable)
+
+
 def blue_quick_repump(dt = 0.01):
     # pulsestreamer._seq.setDigital(1, [(1000, 1)])
     pulsestreamer._seq.setDigital(2, [(1000, 1)])
@@ -38,7 +42,7 @@ def blue_quick_repump(dt = 0.01):
     pulsestreamer._seq.setDigital(2, [(1000, 0)])
     pulsestreamer.pulser_on()
 
-
+#add the trigger for ple checking to be able to process out it in timetagger dump
 def PLE_check_trigger(enable=True):
     # pulsestreamer._seq.setDigital(1, [(1000, 1)])
     pulsestreamer._seq.setDigital(5, [(100000000000, 0), (10, int(enable))])
@@ -95,6 +99,7 @@ def green_laser(turn_on = True):
     # timetagger.sigToggleHist.emit({'hist': (_hist_bin_width, _hist_record_length, int(hist_channel), False)})
     pulsestreamer.pulser_on()
     time.sleep(0.1)
+
 def blue_laser_repump(enable=True, res = True, on_t = 1e5, off_t = 1e9):
     pulsestreamer._seq = pulsestreamer.pulse_streamer.createSequence()
     pulse_pattern_cw_450 = [(int(off_t), 0), (int(on_t), 1)]
@@ -117,10 +122,10 @@ def measurement_mode(mode):
         if switchlogic.get_state("Shutter") != 'Off':
             switchlogic.set_state(switch = "Shutter", state = "Off")
         time.sleep(0.5)
-        if switchlogic.get_state("Green") != 'Off':
+        if switchlogic.get_state("GreenBF") != 'Off':
             switchlogic.set_state(switch = "Green", state = "Off")
-        if switchlogic.get_state("GreenAttodry") != 'Off':
-            switchlogic.set_state(switch = "GreenAttodry", state = "Off")
+        if switchlogic.get_state("GreenAtto3") != 'Off':
+            switchlogic.set_state(switch = "GreenAtto3", state = "Off")
         time.sleep(1.5)
         # ibeam_remote.power = 0.01e3
         # blue_laser_repump(enable=True)
@@ -133,10 +138,10 @@ def measurement_mode(mode):
         time.sleep(3)
         if switchlogic.get_state("Mirror") != 'Off':
             switchlogic.set_state(switch = "Mirror", state = "Off")
-        if switchlogic.get_state("Green") != 'On':
+        if switchlogic.get_state("GreenBF") != 'On':
             switchlogic.set_state(switch = "Green", state = "On")
-        if switchlogic.get_state("GreenAttodry") != 'On':
-            switchlogic.set_state(switch = "GreenAttodry", state = "On")
+        if switchlogic.get_state("GreenAtto3") != 'On':
+            switchlogic.set_state(switch = "GreenAtto3", state = "On")
         #ibeam_remote.power = 50e3
     else:
         print("No mode by this name")
@@ -185,7 +190,7 @@ set_laser_offset(v0 + 10)
 #%%
 enable_laser_scanning(False)
 #%%
-poi_manager_logic.go_to_poi("tin14")
+poi_manager_logic.go_to_poi("tin1")
 for i in range(2):
     scanning_optimize_logic.start_optimize()
     while scanning_optimize_logic.module_state()=='locked':
