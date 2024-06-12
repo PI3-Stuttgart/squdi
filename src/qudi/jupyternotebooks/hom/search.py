@@ -145,7 +145,7 @@ def measurement_mode(mode):
 
 #%%
 
-for i in range(20):
+for i in range(200):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
@@ -185,7 +185,7 @@ set_laser_offset(v0 + 10)
 #%%
 enable_laser_scanning(False)
 #%%
-poi_manager_logic.go_to_poi("tin14")
+poi_manager_logic.go_to_poi("tin1")
 for i in range(2):
     scanning_optimize_logic.start_optimize()
     while scanning_optimize_logic.module_state()=='locked':
