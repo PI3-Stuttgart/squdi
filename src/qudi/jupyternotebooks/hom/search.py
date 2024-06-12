@@ -145,7 +145,7 @@ def measurement_mode(mode):
 
 #%%
 
-for i in range(20):
+for i in range(2000):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
