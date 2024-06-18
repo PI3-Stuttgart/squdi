@@ -29,7 +29,7 @@ from qudi.interface.switch_interface import SwitchInterface
 from qudi.core.statusvariable import StatusVar
 from qudi.core.connector import Connector
 
-class DigitalSwitchPS(SwitchInterface):
+class DigitalSwitchIBeamSmart(SwitchInterface):
     """ This class enables to control a switch via the NI card.
     Control external hardware by the output of the digital channels of a NI card.
 
@@ -37,7 +37,6 @@ class DigitalSwitchPS(SwitchInterface):
 
     digital_switch_ps:
         module.Class: 'switches.digital_switch_ps.DigitalSwitchPS'
-        channels: [1, 2, 3, 4,]  # optional
         name: 'Pulse Streamer Bluefors'  # optional
         switch_time: 0.1
         remember_states: True
@@ -50,9 +49,8 @@ class DigitalSwitchPS(SwitchInterface):
     """
     # Channels of the NI Card to be used for switching.
     # Can either be a single channel or multiple lines.
-    pulsestreamer = Connector(interface = 'PulseStreamer')
-    _channels = ConfigOption(name='channels', default=[0 , 1, 2, 3], missing='warn')
-    _cw_on_t = 100000000 #random number for cw on or off
+    laser = Connector(interface = 'iBeamSmart')
+    
     # switch_time to wait after setting the states for the connected hardware to react
     _switch_time = ConfigOption(name='switch_time', default=0.1, missing='nothing')
     # optionally customize all switches in config. Each switch needs a tuple of 2 state names.
@@ -74,7 +72,7 @@ class DigitalSwitchPS(SwitchInterface):
         super().__init__(*args, **kwargs)
         self.lock = RecursiveMutex()
 
-        # self._channels = tuple()
+        self._channels = tuple()
 
     def on_activate(self):
         """ Prepare module, connect to hardware.
@@ -92,7 +90,7 @@ class DigitalSwitchPS(SwitchInterface):
         
         
         if self._hardware_name is None:
-            self._hardware_name = 'Pulse Streamer ' + (', '.join(map(str, self._channels)))
+            self._hardware_name = 'iBeamSmart ' + (', '.join(map(str, self._channels)))
 
         # # reset states if requested, otherwise use the saved states
         if self._remember_states and isinstance(self._states, dict) and \
@@ -154,8 +152,7 @@ class DigitalSwitchPS(SwitchInterface):
                    state_dict), f'Invalid switch name(s) encountered: {tuple(state_dict)}'
         assert all(isinstance(state, str) for state in
                    state_dict.values()), f'Invalid switch state(s) encountered: {tuple(state_dict.values())}'
-        if self.pulsestreamer()._seq is None:
-            self.pulsestreamer()._seq = self.pulsestreamer().pulse_streamer.createSequence()
+        
         if state_dict:
             with self.lock:
                 new_states = self._states.copy()
@@ -163,21 +160,11 @@ class DigitalSwitchPS(SwitchInterface):
                 
                 for channel_index, (switch, state) in enumerate(new_states.items()):
                   
-                    state_int = 1 if state == 'On' else 0
-
-                    if switch in self._pulsed_switches:
-                        state_int = 1
-                        self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
-                                    [(self._cw_on_t, state_int)])
-                        self.pulsestreamer().pulser_on()
-                        time.sleep(self._switch_time)
-                        self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
-                                    [(self._cw_on_t, int(not bool(state_int)))])
+                    if state == 'On':
+                    
+                        self.laser().enable()
                     else:
-                        self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
-                                    [(self._cw_on_t, int(state_int))])
-
-                    self.pulsestreamer().pulser_on()
+                        self.laser().disable()
                 
                 time.sleep(self._switch_time)
                 self._states = new_states

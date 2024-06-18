@@ -22,7 +22,7 @@ def set_laser_offset(v):
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         dlc._laser1.dl.pc.voltage_set.set(v)
 
-high_finesse_wavemeter.start_acquisition()
+ws_wavemeter.start_acquisition()
 
 
 
@@ -31,17 +31,17 @@ dl_pro
 # %%
 # %%
 # Parameters
-offset_min_v = 10  # GHz to Hz
-offset_max_v = 100  # GHz to Hz
-step = 10  # GHz to Hz
-num_steps = int((offset_max_v - offset_min_v) / step) + 1  # +1 for inclusive range
+offset_min_v = 45  # GHz to Hz
+offset_max_v = 95  # GHz to Hz
+steps =100
+# num_steps = int((offset_max_v - offset_min_v) / step) + 1  # +1 for inclusive range
 
 w0 = 484.130 #THz
 # Data structure for results
-offsets = np.linspace(offset_min_v, offset_max_v, num_steps)
+offsets = np.linspace(offset_min_v, offset_max_v, steps)
 #%%
 scan_names = {}
-experiment_name = "scan_10_10_178_80kev"
+experiment_name = "scan_10_10_158_170kev_Pplus"
 # Loop through frequencies
 for i, v in enumerate(offsets):
     # Set laser frequency
@@ -49,7 +49,7 @@ for i, v in enumerate(offsets):
     time.sleep(1)
 
     # Measure and record wavelength
-    wavelength = (high_finesse_wavemeter.get_current_wavelength() - w0) * 1e3   # to GHz
+    wavelength = (ws_wavemeter.get_current_wavelength() - w0) * 1e3   # to GHz
     print(wavelength)
 
     # Start scan and save data
@@ -60,7 +60,7 @@ for i, v in enumerate(offsets):
     name, dir_ = save_scan(f"{experiment_name}_{i}_{wavelength:.2f}GHz")
     scan_names.update({wavelength: os.path.join(dir_, name)})
 
-    print(f"Scan {i+1}/{num_steps} completed for {wavelength:.2f} GHz")
+    print(f"Scan {i+1}/{steps} completed for {wavelength:.2f} GHz")
 
 with open(f"{experiment_name}.txt", 'w') as file:
     json.dump(scan_names, file, indent=4)

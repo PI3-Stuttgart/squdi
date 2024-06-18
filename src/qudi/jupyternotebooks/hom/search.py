@@ -5,19 +5,22 @@ import json
 import schedule
 import os
 from toptica.lasersdk.dlcpro.v2_0_3 import DLCpro,LaserHead,  NetworkConnection, DeviceNotFoundError
+
+#from 0 to 19650 MHz (max val defined by config) laser offset 
 def go_to_ple_target(target):
     ple_gui._mw.ple_widget.target_point.setValue(target)
     ple_gui._mw.ple_widget.target_point.sigPositionChangeFinished.emit(target)
     #laser_scanner_logic.set_target_position({"a": target})
     time.sleep(0.5)
 
+#save confocal map. It will be saved in the folder defined in the app
 def save_scan(name):
     scanner_gui.save_path_widget.saveTagLineEdit.setText(name)
     scanner_gui.scan_2d_dockwidgets[('x', 'y')].scan_widget.save_scan_button.clicked.emit() #saving
     dir_ = scanning_data_logic.module_default_data_dir
     return name, dir_
 
-#to be rapaired:
+#laser offset with the topica:
 def set_laser_offset(v):
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         dlc._laser1.dl.pc.voltage_set.set(v)
@@ -26,10 +29,12 @@ def get_laser_offset():
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         v0 = dlc._laser1.dl.pc.voltage_set.get()
     return v0
-
+#start scanning with toptica
 def enable_laser_scanning(enable):
     with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
         dlc._laser1.scan.enabled.set(enable)
+
+
 def blue_quick_repump(dt = 0.01):
     # pulsestreamer._seq.setDigital(1, [(1000, 1)])
     pulsestreamer._seq.setDigital(2, [(1000, 1)])
@@ -37,7 +42,7 @@ def blue_quick_repump(dt = 0.01):
     pulsestreamer._seq.setDigital(2, [(1000, 0)])
     pulsestreamer.pulser_on()
 
-
+#add the trigger for ple checking to be able to process out it in timetagger dump
 def PLE_check_trigger(enable=True):
     # pulsestreamer._seq.setDigital(1, [(1000, 1)])
     pulsestreamer._seq.setDigital(5, [(100000000000, 0), (10, int(enable))])
@@ -80,7 +85,7 @@ def do_ple_scan(lines = 1, in_range = None, frequency=None, resolution=None):
     ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
     time.sleep(1)
     # self.ple_gui._accumulated_data.mean(axis=0)
-    print(f"Rsquared {res.rsquared}")
+    print(f"Rsquared {ple_gui.fit_result[1].rsquared}")
     # self.ple_gui.fit_result[1].params["center"].value
     return ple_gui.fit_result[1]
 
@@ -94,6 +99,7 @@ def green_laser(turn_on = True):
     # timetagger.sigToggleHist.emit({'hist': (_hist_bin_width, _hist_record_length, int(hist_channel), False)})
     pulsestreamer.pulser_on()
     time.sleep(0.1)
+
 def blue_laser_repump(enable=True, res = True, on_t = 1e5, off_t = 1e9):
     pulsestreamer._seq = pulsestreamer.pulse_streamer.createSequence()
     pulse_pattern_cw_450 = [(int(off_t), 0), (int(on_t), 1)]
@@ -116,10 +122,12 @@ def measurement_mode(mode):
         if switchlogic.get_state("Shutter") != 'Off':
             switchlogic.set_state(switch = "Shutter", state = "Off")
         time.sleep(0.5)
-        if switchlogic.get_state("Green") != 'Off':
+        if switchlogic.get_state("GreenBF") != 'Off':
             switchlogic.set_state(switch = "Green", state = "Off")
-        time.sleep(0.5)
-        ibeam_remote.power = 0.5e3
+        if switchlogic.get_state("GreenAtto3") != 'Off':
+            switchlogic.set_state(switch = "GreenAtto3", state = "Off")
+        time.sleep(1.5)
+        # ibeam_remote.power = 0.01e3
         # blue_laser_repump(enable=True)
 
     elif mode == "Off-res":
@@ -127,12 +135,14 @@ def measurement_mode(mode):
         
         if switchlogic.get_state("Shutter") != 'On':
             switchlogic.set_state(switch = "Shutter", state = "On")
-        time.sleep(1)
+        time.sleep(3)
         if switchlogic.get_state("Mirror") != 'Off':
             switchlogic.set_state(switch = "Mirror", state = "Off")
-        if switchlogic.get_state("Green") != 'On':
+        if switchlogic.get_state("GreenBF") != 'On':
             switchlogic.set_state(switch = "Green", state = "On")
-        ibeam_remote.power = 50e3
+        if switchlogic.get_state("GreenAtto3") != 'On':
+            switchlogic.set_state(switch = "GreenAtto3", state = "On")
+        #ibeam_remote.power = 50e3
     else:
         print("No mode by this name")
 
@@ -140,13 +150,13 @@ def measurement_mode(mode):
 
 #%%
 
-for i in range(2):
+for i in range(2000):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
             time.sleep(1)
     
-    name, dir_ = save_scan(f"pillar_scan_{i}")
+    name, dir_ = save_scan(f"bf_scan_{i}")
     
 # %%
 #Calibrate PLE scanner:
@@ -167,6 +177,11 @@ green_laser(False)
 #%%
 measurement_mode('PLE')
 #%%
+#%%
+measurement_mode('Off-res')
+#%%
+
+
 enable_laser_scanning(True)
 v0 = get_laser_offset()
 set_laser_offset(v0)
@@ -175,7 +190,7 @@ set_laser_offset(v0 + 10)
 #%%
 enable_laser_scanning(False)
 #%%
-poi_manager_logic.go_to_poi("tin14")
+poi_manager_logic.go_to_poi("tin1")
 for i in range(2):
     scanning_optimize_logic.start_optimize()
     while scanning_optimize_logic.module_state()=='locked':
@@ -234,7 +249,7 @@ def check_ple():
     measurement_mode('Off-res')
 #%%
 # Schedule the function
-# schedule.every(300).seconds.do(check_ple)
+schedule.every(600).seconds.do(check_ple)
 start_time = time.time()
 fw = tagger.write_into_file(os.path.join(folder, 'g2_1_5April.ttbin'), channels=[1,2,3, 5, 8, 6])
 
@@ -247,12 +262,6 @@ schedule.every(40).seconds.do(blast_green)
 while True:
     schedule.run_pending()
     time.sleep(1)  # Check for tasks more frequently (adjust if needed)
-#%%
-green_laser(True)
-time.sleep(1)
-blue_laser_repump(True, on_t=1e6)
-# %%
-
 
 # %%
 ch1_cts = timetaggerlogic.counter.getDataNormalized()[0, :]
@@ -264,3 +273,41 @@ timetaggerlogic.counter.getDataNormalized()[0, :]
 
 # %%
 
+measurement_mode('Off-res')
+# %%
+timetagger._mw.saveTagLineEdit.setText("def4")
+time.sleep(0.2)
+timetagger._mw.saveAllPushButton.clicked.emit()
+# %%
+measurement_mode('PLE')
+# %%
+res = do_ple_scan(lines=1) 
+                    #in_range = laser_scanner_logic.scan_ranges["a"])
+go_to_ple_target(res.best_values['center'])
+
+#%%
+ple_gui.toggle_optimize(True)
+while ple_optimize_logic.module_state()=='locked':
+        time.sleep(1)
+w1 = ws_wavemeter._current_wavelengths[4]
+
+res = ple_optimize_logic._last_fit_results
+
+fine_scan_range = (
+            res.best_values['center'] - res.best_values['sigma'] * 8,
+            res.best_values['center'] + res.best_values['sigma']  * 8
+        )
+
+save_ple(f"wide_range_c1_{str(w1).replace('.', '_')}")
+res = do_ple_scan(lines=3, 
+                    in_range = fine_scan_range)
+save_ple('narrow_range')
+# %%
+# go_to_ple_target(res.best_values['center'])
+
+# %%
+with nidaqmx.Task('NISwitchTask' + 'APD'.replace(':', ' ')) as switch_task:
+    switch_task.do_channels.add_do_chan('/Dev1/port0/line29')
+    switch_task.write(True, auto_start=True)
+#%%
+'/Dev1/port0/line6'
