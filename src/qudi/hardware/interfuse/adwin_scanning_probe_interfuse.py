@@ -301,7 +301,6 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
                 try:
 
                     self._scan_data = self._create_scan_data(axes, ranges, resolution, frequency)
-                    print(self._scan_data.data)
 
                     self.raw_data_container = RawDataContainer(self._scan_data.channels,
                                                                resolution[1] if self._scan_data.scan_dimension==2 else 1,
@@ -309,7 +308,6 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
                                                                self._backwards_line_resolution)
 
                     ni_scan_dict = self._init_ni_scan_arrays(self._scan_data)
-                    print(f"test of data{ni_scan_dict}")
 
                 except:
                     self.log.exception("")
@@ -420,8 +418,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             return pos
 
     def start_scan(self):
-        
-        print('start scan intefuse.')
+
         try:
 
             #self.log.debug(f"Start scan in thread {self.thread()}, QT.QThread {QtCore.QThread.currentThread()}... ")
@@ -565,7 +562,6 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     def _check_scan_end_reached(self):
         # not thread safe, call from thread_lock protected code only
         #FIx this shit
-        
         return self.raw_data_container.is_full and self.ni_finite_sampling_io._scanner_ready
 
     def _fetch_data_chunk(self):
@@ -777,7 +773,6 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
             if i_trial > 0:
                 ranges = self._shrink_scan_ranges(ranges)
-            print(f'Axis_in_hardware: {tuple(self._constraints.axes[ax] for ax in axes)}')
             scan_data = ScanData(
                 channels=tuple(self._constraints.channels.values()),
                 scan_axes=tuple(self._constraints.axes[ax] for ax in axes),
@@ -889,7 +884,6 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             self.log.exception("Error in ao write loop: ")
 
     def _start_hw_timed_scan(self):
-        print('interfuse bare: Starting the scan hw timed scan')
         self.log.debug("Starting hw timed scan")
         try:
             self.ni_finite_sampling_io.start_buffered_frame()
@@ -999,7 +993,7 @@ class RawDataContainer:
         self.forward_line_resolution = forward_line_resolution
         self.backwards_line_resolution = backwards_line_resolution
 
-        self.frame_size = number_of_scan_lines * (forward_line_resolution + backwards_line_resolution)
+        self.frame_size = number_of_scan_lines * (forward_line_resolution + backwards_line_resolution) 
         self._raw = {key: np.full(self.frame_size, np.nan) for key in channel_keys}
 
     def fill_container(self, samples_dict):

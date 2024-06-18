@@ -25,8 +25,6 @@ Dim total_time as Long
 
 
 
-
-
 Function get_vol(input) As Long   'input is in m'   
   Dim vol as Float
   vol = input'(1.0/0.07853981633) * arctan(input/2.1e-3) - 0.3 'Volts'
@@ -51,38 +49,34 @@ EndFunction
 Init:
   Conf_DIO(1111b)
   PAR_20 = 10000000
-  Digout(9, 0)
-  index = 1
+  Digout(9, 1)
+  index = 0
 Event:  
-  Processdelay = PAR_20*3
   If (PAR_24 = 1) Then
-    If (index < PAR_21) Then
-      'PAR_23 = index'
-      DAC(1, get_vol(data_1[index]))
-      DAC(2, get_vol(data_2[index]))
-      DAC(3, get_vol_z(data_3[index]))
-      'If (PAR_22 = 1) Then
-      'Digout(9, 0) 'TTL' - timetagger.we need to switch to the DO
-      'CPU_Sleep(rise_time)
-      Digout(9, 1)
-      'CPU_Sleep(low_time)
-      'Else      
-      'CPU_Sleep(rise_time)
-      'EndIf
-      index = index+1
+    If (index = 0) Then
+      Processdelay = 3 * 10000000
+      index = index + 1
       PAR_23 = index
     Else
-      'stop scan
-      PAR_24 = 0
+      Processdelay = PAR_20*3
+      If (index <= PAR_21) Then
+        'PAR_23 = index'
+        DAC(1, get_vol(data_1[index]))
+        DAC(2, get_vol(data_2[index]))
+        DAC(3, get_vol_z(data_3[index]))
+        index = index + 1
+        PAR_23 = index
+      
+      Else
+        PAR_24 = 0
+        index = 0
+        PAR_23 = 0
+      EndIf
+      Digout(9, 0)
+      CPU_Sleep(PAR_20/2)
+      Digout(9, 1)
     EndIf
-    
-  Else
-    index = 1
-    PAR_23 = 1
   EndIf
-  CPU_Sleep(100000)
-  Digout(9, 0)
-  'CPU_Sleep(100)
-  'End
+ 
   
 Finish:

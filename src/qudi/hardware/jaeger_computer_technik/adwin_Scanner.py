@@ -95,7 +95,7 @@ class Adwin_Scanning_Device(
 
     def stop_confocal_adwin_processes(self) -> AdwinStatus:
         adwin_status: AdwinStatus = self.stop_adwin_processes(
-            ["sweeping_1D.TB1"],
+            ["sweeping_1D_interaptable.TB6"],
             clear_processes = False
         )
         return adwin_status
@@ -140,7 +140,6 @@ class Adwin_Scanning_Device(
         # self.adwin.Stop_Process(3)
         # time.sleep(1)
         # self.start_adwin_processes(["sweeping_1D_interaptable.TB6"], load_processes=False)
-        # print('process is started')
         self._line_length = len(self.line_path[0])
         # self.adwin.Data_Length(2)
         try:
@@ -149,13 +148,11 @@ class Adwin_Scanning_Device(
             self.write_data_float(self.line_path[2], 3, 1, len(self.line_path[2]))
         except ADwinError as e:
             self.log.error(f"An Adwin Error occured in Adwin_Scanning_Device: {e}")
-        # print('-------------------Hellloooooo----------')
-        # print(self.adwin.GetData_Long(1, 1, len(self.line_path[0]))[0])
         # self.adwin.SetData_Float(line_path[3], 4, 1, len(line_path[3]))
 
         if pixel_clock == False:
             _ = self.write_par(22, 0)
-            _ = self.write_par(21, len(line_path[0]))
+            _ = self.write_par(21, len(self.line_path[0]))
             _ = self.write_par(20, 100)
 
         elif pixel_clock == True:
@@ -299,7 +296,7 @@ class Adwin_Scanning_Device(
             # update scanner position range to RT
             self.set_position_range(self._scanner_position_ranges_rt)
         else:
-            print("Limit needs to be either LT or RT")
+            self.log.error("Limit needs to be either LT or RT")
             return
         # signal to gui (via rest of the layers).
         # this provokes an update of the axes.
@@ -313,7 +310,7 @@ class Adwin_Scanning_Device(
         @return int: error code (0:OK, -1:error)
         """
         try:
-            print("todo")  # FIXME. make the old output when you start.
+            pass
         except:
             self.log.exception("Error starting analog output task.")
             return -1

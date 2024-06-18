@@ -138,7 +138,7 @@ class Adwin_AO(
     def map_channels(self):
 
         for ch_name in self._channels_config:
-            print(ch_name)
+            pass
             # self.adwin.Set_Par([11,12,13], int(ch_name))
             # TODO set integer parameters for channel indexing (now it is hardcoded!)
 
@@ -353,7 +353,6 @@ class Adwin_IO(
 
         if self.available_ports()["digital"][port]["IO"] == "out":
             par_idx = 8 if port == 0 else port
-            print(par_idx)
 
             if active:
                 self.write_par(par_idx, 1)
@@ -405,7 +404,6 @@ class AdwinTrigger(AdwinBase, Base):
     @sample_rate.setter
     def sample_rate(self, sample_rate: float):
         self.write_fpar(30, sample_rate)
-        print(sample_rate)
 
     @property
     def digi_out_port(self):

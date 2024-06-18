@@ -155,7 +155,6 @@ class ScanningProbeLogic(LogicBase):
 
     @property
     def scanner_axes(self):
-        print(self.scanner_constraints.axes)
         return self.scanner_constraints.axes
 
     @property
@@ -525,8 +524,6 @@ class ScanningProbeLogic(LogicBase):
                 return 0
 
             scan_axes = tuple(scan_axes)
-            print(scan_axes)
-            print('Hrllo World')
             self._curr_caller_id = self.module_uuid if caller_id is None else caller_id
 
             self.module_state.lock()
@@ -592,6 +589,7 @@ class ScanningProbeLogic(LogicBase):
                     return
                 # TODO Added the following line as a quick test; Maybe look at it with more caution if correct
                 self.sigScanStateChanged.emit(True, self.scan_data, self._curr_caller_id)
+                
 
                 # Queue next call to this slot
                 self.__scan_poll_timer.start()

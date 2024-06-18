@@ -169,7 +169,6 @@ class AdwinBase(Base):
         """
         try:
             self.__adwin.Set_Par(idx, value)
-            print(idx)
         except ADwinError as e:
             self.log.error(f"Could not set Par. Error:\n\n {e}")
             return AdwinStatus.BASE_ERROR
