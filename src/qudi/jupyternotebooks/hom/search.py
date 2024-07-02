@@ -150,13 +150,13 @@ def measurement_mode(mode):
 
 #%%
 
-for i in range(2000):
+for i in range(20000):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
             time.sleep(1)
     
-    name, dir_ = save_scan(f"bf_scan_{i}")
+    # name, dir_ = save_scan(f"bf_scan_{i}")
     
 # %%
 #Calibrate PLE scanner:
@@ -257,13 +257,8 @@ fw = tagger.write_into_file(os.path.join(folder, 'g2_1_5April.ttbin'), channels=
 while True:
     schedule.run_pending()
     time.sleep(1)  # Check for tasks more frequently (adjust if needed)
-# %%
-schedule.every(40).seconds.do(blast_green)
-while True:
-    schedule.run_pending()
-    time.sleep(1)  # Check for tasks more frequently (adjust if needed)
 
-# %%
+#%%
 ch1_cts = timetaggerlogic.counter.getDataNormalized()[0, :]
 
 # %%
@@ -311,3 +306,10 @@ with nidaqmx.Task('NISwitchTask' + 'APD'.replace(':', ' ')) as switch_task:
     switch_task.write(True, auto_start=True)
 #%%
 '/Dev1/port0/line6'
+
+#%%
+with nidaqmx.Task('NISwitchTask' + 'APD'.replace(':', ' ')) as switch_task:
+    switch_task.do_channels.add_do_chan('/Dev1/port0/line29')
+    switch_task.write(True, auto_start=True)
+
+
