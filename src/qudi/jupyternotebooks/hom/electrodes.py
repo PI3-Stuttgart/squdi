@@ -55,6 +55,7 @@ ao_task.ao_channels.add_ao_voltage_chan(physical_channel=ao_phys_ch,
                                         max_val=1.5)
 
 # %%
-ao_task.write(0)
+ao_task.write(-0)
 # %%
 res = do_ple_scan(lines=5, in_range=laser_scanner_logic.scan_ranges["a"])
+# %%

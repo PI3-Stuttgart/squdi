@@ -52,9 +52,9 @@ class iBeamSmart(Base):
         
         # put laser in a consistent mode
         if self.portOK:
-            self.port.write(("echo off" % EOL).encode())   # echo off
+            self.port.write(("echo off" + EOL).encode())   # echo off
             time.sleep(0.1)
-            self.port.write(("prompt off" % EOL).encode())   # prompt off
+            self.port.write(("prompt off" + EOL).encode())   # prompt off
             time.sleep(0.1)
                 
             # clear input buffer so ready to talk to laser
