@@ -116,33 +116,52 @@ def blue_laser_repump(enable=True, res = True, on_t = 1e5, off_t = 1e9):
 
 def measurement_mode(mode):
     if mode == "PLE":
+        # red on, blue on, green off
         if switchlogic.get_state("Mirror") != 'On':
             switchlogic.set_state(switch = "Mirror", state = "On")
-        time.sleep(1)
-        if switchlogic.get_state("Shutter") != 'Off':
-            switchlogic.set_state(switch = "Shutter", state = "Off")
-        time.sleep(0.5)
-        if switchlogic.get_state("GreenBF") != 'Off':
-            switchlogic.set_state(switch = "Green", state = "Off")
-        if switchlogic.get_state("GreenAtto3") != 'Off':
-            switchlogic.set_state(switch = "GreenAtto3", state = "Off")
-        time.sleep(1.5)
+        time.sleep(2)
+        if switchlogic.get_state("Mirror") == 'On':
+            if switchlogic.get_state("Shutter") != 'Off':
+                switchlogic.set_state(switch = "Shutter", state = "Off")
+            time.sleep(0.5)
+            if switchlogic.get_state("ResonantBF") != 'On':
+                switchlogic.set_state(switch = "ResonantBF", state = "On")
+            # if switchlogic.get_state("GreenBF") != 'Off':
+            #     switchlogic.set_state(switch = "GreenBF", state = "Off")
+            # if switchlogic.get_state("GreenAtto3") != 'Off':
+            #     switchlogic.set_state(switch = "GreenAtto3", state = "Off")
+            if switchlogic.get_state("BlueBF") != 'On':
+                switchlogic.set_state(switch = "BlueBF", state = "On")
+            if switchlogic.get_state("BlueAtto3") != 'On':
+                switchlogic.set_state(switch = "BlueAtto3", state = "On")
+            ibeam_smart_remote.power = 50
+            powercontroller_logic.motor_position = 240
+            time.sleep(1)
+        else:
+            print("Mirror not in, PLE would burn APDs")
+            raise BaseException
         # ibeam_remote.power = 0.01e3
         # blue_laser_repump(enable=True)
 
     elif mode == "Off-res":
-        green_laser(True)
-        
+        # green_laser(True)
+        if switchlogic.get_state("ResonantBF") != 'Off':
+                switchlogic.set_state(switch = "ResonantBF", state = "Off")
         if switchlogic.get_state("Shutter") != 'On':
             switchlogic.set_state(switch = "Shutter", state = "On")
-        time.sleep(3)
+        time.sleep(1)
         if switchlogic.get_state("Mirror") != 'Off':
             switchlogic.set_state(switch = "Mirror", state = "Off")
-        if switchlogic.get_state("GreenBF") != 'On':
-            switchlogic.set_state(switch = "Green", state = "On")
-        if switchlogic.get_state("GreenAtto3") != 'On':
-            switchlogic.set_state(switch = "GreenAtto3", state = "On")
-        #ibeam_remote.power = 50e3
+        # if switchlogic.get_state("GreenBF") != 'On':
+        #     switchlogic.set_state(switch = "Green", state = "On")
+        # if switchlogic.get_state("GreenAtto3") != 'On':
+        #     switchlogic.set_state(switch = "GreenAtto3", state = "On")
+        # if switchlogic.get_state("BlueBF") != 'Off':
+        #         switchlogic.set_state(switch = "BlueBF", state = "Off")
+        # if switchlogic.get_state("BlueAtto3") != 'Off':
+        #     switchlogic.set_state(switch = "BlueAtto3", state = "Off")
+        ibeam_smart_remote.power = 15e3
+        powercontroller_logic.motor_position = 360
     else:
         print("No mode by this name")
 
@@ -150,7 +169,7 @@ def measurement_mode(mode):
 
 #%%
 
-for i in range(2000):
+for i in range(50):
     # Start scan and save data
     scanning_probe_logic.toggle_scan(True, ('x', 'y'))
     while scanning_probe_logic.module_state()=='locked':
@@ -311,3 +330,15 @@ with nidaqmx.Task('NISwitchTask' + 'APD'.replace(':', ' ')) as switch_task:
     switch_task.write(True, auto_start=True)
 #%%
 '/Dev1/port0/line6'
+
+
+#%%
+w1 = ws_wavemeter._current_wavelengths[4]
+#%%
+w2 = ws_wavemeter._current_wavelengths[4]
+a1 = laser_scanner_logic.scan_ranges['a'][0]
+a2 = laser_scanner_logic.scan_ranges['a'][1]
+#%%
+
+1e6*(w2 - w1) / ((a2 - a1))
+•# %%
