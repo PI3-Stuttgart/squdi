@@ -175,7 +175,7 @@ for i in range(50):
     while scanning_probe_logic.module_state()=='locked':
             time.sleep(1)
     
-    name, dir_ = save_scan(f"bf_scan_{i}")
+    # name, dir_ = save_scan(f"bf_scan_{i}")
     
 # %%
 #Calibrate PLE scanner:
@@ -276,13 +276,8 @@ fw = tagger.write_into_file(os.path.join(folder, 'g2_1_5April.ttbin'), channels=
 while True:
     schedule.run_pending()
     time.sleep(1)  # Check for tasks more frequently (adjust if needed)
-# %%
-schedule.every(40).seconds.do(blast_green)
-while True:
-    schedule.run_pending()
-    time.sleep(1)  # Check for tasks more frequently (adjust if needed)
 
-# %%
+#%%
 ch1_cts = timetaggerlogic.counter.getDataNormalized()[0, :]
 
 # %%
