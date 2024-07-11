@@ -7,14 +7,14 @@ import os
 from toptica.lasersdk.dlcpro.v2_0_3 import DLCpro,LaserHead,  NetworkConnection, DeviceNotFoundError
 
 #from 0 to 19650 MHz (max val defined by config) laser offset 
-def go_to_ple_target(target):
+def go_to_ple_target(ple_gui, target):
     ple_gui._mw.ple_widget.target_point.setValue(target)
     ple_gui._mw.ple_widget.target_point.sigPositionChangeFinished.emit(target)
     #laser_scanner_logic.set_target_position({"a": target})
     time.sleep(0.5)
 
 #save confocal map. It will be saved in the folder defined in the app
-def save_scan(name):
+def save_scan(scanner_gui, scanning_data_logic, name):
     scanner_gui.save_path_widget.saveTagLineEdit.setText(name)
     scanner_gui.scan_2d_dockwidgets[('x', 'y')].scan_widget.save_scan_button.clicked.emit() #saving
     dir_ = scanning_data_logic.module_default_data_dir
@@ -35,7 +35,7 @@ def enable_laser_scanning(enable):
         dlc._laser1.scan.enabled.set(enable)
 
 
-def blue_quick_repump(dt = 0.01):
+def blue_quick_repump(pulsestreamer, dt = 0.01):
     # pulsestreamer._seq.setDigital(1, [(1000, 1)])
     pulsestreamer._seq.setDigital(2, [(1000, 1)])
     time.sleep(dt)
@@ -43,13 +43,13 @@ def blue_quick_repump(dt = 0.01):
     pulsestreamer.pulser_on()
 
 #add the trigger for ple checking to be able to process out it in timetagger dump
-def PLE_check_trigger(enable=True):
+def PLE_check_trigger(pulsestreamer, enable=True):
     # pulsestreamer._seq.setDigital(1, [(1000, 1)])
     pulsestreamer._seq.setDigital(5, [(100000000000, 0), (10, int(enable))])
     
     pulsestreamer.pulser_on()
 
-def save_ple(tag, poi_name=None, folder_name = None):
+def save_ple(ple_gui, tag, poi_name=None, folder_name = None):
         if folder_name:
             ple_gui._save_folderpath = folder_name
         ple_gui.save_path_widget.saveTagLineEdit.setText(
@@ -57,7 +57,7 @@ def save_ple(tag, poi_name=None, folder_name = None):
             )
         ple_gui._mw.actionSave.triggered.emit()
 
-def do_ple_scan(lines = 1, in_range = None, frequency=None, resolution=None):
+def do_ple_scan(ple_gui, lines = 1, in_range = None, frequency=None, resolution=None):
     """
     fine_scan_range = (
             self.ple_gui.fit_result[1].best_values['center'] - self.ple_gui.fit_result[1].best_values['sigma'] * 3,
@@ -114,7 +114,7 @@ def blue_laser_repump(enable=True, res = True, on_t = 1e5, off_t = 1e9):
 
 #PLE mode:
 
-def measurement_mode(mode):
+def measurement_mode(switchlogic,powercontroller_logic, ibeam_smart_remote,mode):
     if mode == "PLE":
         # red on, blue on, green off
         if switchlogic.get_state("Mirror") != 'On':
@@ -130,11 +130,12 @@ def measurement_mode(mode):
             #     switchlogic.set_state(switch = "GreenBF", state = "Off")
             # if switchlogic.get_state("GreenAtto3") != 'Off':
             #     switchlogic.set_state(switch = "GreenAtto3", state = "Off")
-            if switchlogic.get_state("BlueBF") != 'On':
-                switchlogic.set_state(switch = "BlueBF", state = "On")
-            if switchlogic.get_state("BlueAtto3") != 'On':
-                switchlogic.set_state(switch = "BlueAtto3", state = "On")
+            # if switchlogic.get_state("BlueBF") != 'On':
+            #     switchlogic.set_state(switch = "BlueBF", state = "On")
+            # if switchlogic.get_state("BlueAtto3") != 'On':
+            #     switchlogic.set_state(switch = "BlueAtto3", state = "On")
             ibeam_smart_remote.power = 50
+            powercontroller_logic._current_motor = 2
             powercontroller_logic.motor_position = 240
             time.sleep(1)
         else:
@@ -161,6 +162,7 @@ def measurement_mode(mode):
         # if switchlogic.get_state("BlueAtto3") != 'Off':
         #     switchlogic.set_state(switch = "BlueAtto3", state = "Off")
         ibeam_smart_remote.power = 15e3
+        powercontroller_logic._current_motor = 2
         powercontroller_logic.motor_position = 360
     else:
         print("No mode by this name")
@@ -199,8 +201,11 @@ measurement_mode('PLE')
 #%%
 measurement_mode('Off-res')
 #%%
+poi_manager_logic_remote._optimizelogic().start_optimize()
+#%%
 
 
+#%%
 enable_laser_scanning(True)
 v0 = get_laser_offset()
 set_laser_offset(v0)
