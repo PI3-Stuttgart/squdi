@@ -119,7 +119,7 @@ def measurement_mode(switchlogic,powercontroller_logic, ibeam_smart_remote,mode)
         # red on, blue on, green off
         if switchlogic.get_state("Mirror") != 'On':
             switchlogic.set_state(switch = "Mirror", state = "On")
-        time.sleep(2)
+        time.sleep(1)
         if switchlogic.get_state("Mirror") == 'On':
             if switchlogic.get_state("Shutter") != 'Off':
                 switchlogic.set_state(switch = "Shutter", state = "Off")
@@ -136,8 +136,8 @@ def measurement_mode(switchlogic,powercontroller_logic, ibeam_smart_remote,mode)
             #     switchlogic.set_state(switch = "BlueAtto3", state = "On")
             ibeam_smart_remote.power = 50
             powercontroller_logic._current_motor = 2
-            powercontroller_logic.motor_position = 240
-            time.sleep(1)
+            powercontroller_logic.motor_position = 45 # green dim
+            time.sleep(0.5)
         else:
             print("Mirror not in, PLE would burn APDs")
             raise BaseException
@@ -163,7 +163,7 @@ def measurement_mode(switchlogic,powercontroller_logic, ibeam_smart_remote,mode)
         #     switchlogic.set_state(switch = "BlueAtto3", state = "Off")
         ibeam_smart_remote.power = 15e3
         powercontroller_logic._current_motor = 2
-        powercontroller_logic.motor_position = 360
+        powercontroller_logic.motor_position = 175 # MAX green
     else:
         print("No mode by this name")
 
