@@ -49,7 +49,7 @@ def g2_value_dependent(func):
 
         self.value = self.values.pop()
         self.save_tagger_plots(os.path.join(self.folder_save, str(self.value).replace('.', '_')), str(self.value).replace('.', '_'))
-        
+
         self.toggle_tagger_counter_plot(False)
         self.toggle_tagger_corr_plot(False)
 
@@ -76,30 +76,7 @@ class MeasurementsBase:
     max_position = 210
     refocused_cts = None
 
-    def __init__(self, 
-                 timetaggerlogic, 
-                 timetagger, 
-                 poi_manager_logic_remote,
-                 powercontroller_logic,
-                 ibeam_smart_remote,
-                 switchlogic,
-                 current_cryo,
-                 non_active_cryo,
-                 folder_save,
-                 integrate_for_mins,
-                 values
-                 ) -> None:
-        self.timetaggerlogic = timetaggerlogic
-        self.timetagger = timetagger
-        self.poi_manager_logic_remote = poi_manager_logic_remote
-        self.switchlogic = switchlogic
-        self.ibeam_smart_remote = ibeam_smart_remote
-        self.powercontroller_logic = powercontroller_logic
-        self.integrate_for_mins = integrate_for_mins
-        self.current_cryo = current_cryo
-        self.non_active_cryo = non_active_cryo
-        self.folder_save = folder_save
-        self.values = values
+    def __init__(self, *args, **kwargs) -> None:
         self.power = None
 
     def start_periodic_refocus(self, refocus_period_mins = 25, count_check_period_sec = 60):
@@ -254,43 +231,10 @@ class CorrMeasurements(MeasurementsBase):
     max_position = 210
     refocused_cts = None
     
-    def __init__(self, timetaggerlogic, 
-                 timetagger, 
-                 poi_manager_logic_remote,
-                 powercontroller_logic,
-                 ibeam_smart_remote,
-                 switchlogic,
-                 current_cryo,
-                 non_active_cryo,
-                 folder_save,
-                 integrate_for_mins,
-                 values, 
-                 *args, **kwargs) -> None:
-        super().__init__(
-                 timetaggerlogic, 
-                 timetagger, 
-                 poi_manager_logic_remote,
-                 powercontroller_logic,
-                 ibeam_smart_remote,
-                 switchlogic,
-                 current_cryo,
-                 non_active_cryo,
-                 folder_save,
-                 integrate_for_mins,
-                 values, 
-                 *args, **kwargs)
-        self.timetaggerlogic = timetaggerlogic
-        self.timetagger = timetagger
-        self.poi_manager_logic_remote = poi_manager_logic_remote
-        self.switchlogic = switchlogic
-        self.ibeam_smart_remote = ibeam_smart_remote
-        self.powercontroller_logic = powercontroller_logic
-        self.integrate_for_mins = integrate_for_mins
-        self.current_cryo = current_cryo
-        self.non_active_cryo = non_active_cryo
-        self.folder_save = folder_save
-        self.values = values
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.power = None
+
 
     # function for doing power dependent measurement 
     @g2_value_dependent
@@ -368,10 +312,34 @@ class CorrMeasurements(MeasurementsBase):
     # ws_wavemeter.start_acquisition()
 
 
-class StarkHOM(CorrMeasurements):
-    def __init__(self, ao_electrodes, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.ao_electrodes = ao_electrodes
+class StarkHOM(MeasurementsBase):
+    def __init__(self, params, *args, **kwargs) -> None:
+        super().__init__(
+            params['timetaggerlogic'], 
+            params['timetagger'], 
+            params['poi_manager_logic_remote'],
+            params['powercontroller_logic'],
+            params['ibeam_smart_remote'],
+            params['switchlogic'],
+            params['current_cryo'],
+            params['non_active_cryo'],
+            params['folder_save'],
+            params['integrate_for_mins'],
+            params['values'],
+            *args, **kwargs
+        )
+        self.timetaggerlogic = params['timetaggerlogic']
+        self.timetagger = params['timetagger']
+        self.poi_manager_logic_remote = params['poi_manager_logic_remote']
+        self.switchlogic = params['switchlogic']
+        self.ibeam_smart_remote = params['ibeam_smart_remote']
+        self.powercontroller_logic = params['powercontroller_logic']
+        self.integrate_for_mins = params['integrate_for_mins']
+        self.current_cryo = params['current_cryo']
+        self.non_active_cryo = params['non_active_cryo']
+        self.folder_save = params['folder_save']
+        self.values = params['values']
+        self.power = None
 
 
     @g2_value_dependent
