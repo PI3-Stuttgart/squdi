@@ -34,7 +34,7 @@ def g2_value_dependent(func):
         self.toggle_tagger_corr_plot(False)
 
         self.toggle_tagger_counter_plot(True)
-        
+
         self.stop_dump()
         self.measurement_mode(mode='Off-res')
         self.refocus()
@@ -136,7 +136,7 @@ class CorrMeasurements:
         ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
         tot_cts = ch2_cts.mean() + ch3_cts.mean()
         
-        self.save_tagger_plots(self.folder_save, str(self.power))
+        self.save_tagger_plots(os.path.join(self.folder_save, str(self.power)), str(self.power))
 
         self.cts_refocus.append(tot_cts / 1e3)
         self.powercontroller_logic._current_motor = 0
