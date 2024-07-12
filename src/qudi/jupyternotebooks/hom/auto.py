@@ -4,7 +4,7 @@ import os
 import numpy as np
 from PySide2.QtCore import QTimer, QTime, Signal
 
-def return_to_measurement_powers(func):
+def return_to_measurement_powers_I_dependent_g2(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         result = func(self, *args, **kwargs)
@@ -12,6 +12,24 @@ def return_to_measurement_powers(func):
         self.set_green_power(cryo = self.non_active_cryo, value = 0)
         return result
     return wrapper
+
+def return_to_measurement_powers_E_dependent_hom(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        result = func(self, *args, **kwargs)
+        self.set_green_power(cryo = self.current_cryo, value = self.power)
+        self.set_green_power(cryo = self.non_active_cryo, value = self.power)
+        return result
+    return wrapper
+
+def return_to_measurement_powers(measurement_type):
+    def decorator_selector(func):
+        if measurement_type == 'I_g2':
+            return return_to_measurement_powers_I_dependent_g2(func)
+        elif measurement_type == 'E_hom':
+            return return_to_measurement_powers_E_dependent_hom(func)
+    return decorator_selector
+
 
 def g2_value_dependent(func):
     @wraps(func)
@@ -36,7 +54,7 @@ def g2_value_dependent(func):
         self.toggle_tagger_counter_plot(True)
 
         self.stop_dump()
-        self.measurement_mode(mode='Off-res')
+        self.measurement_mode(mode='Off-res', greens_on = False)
         self.refocus()
 
         # Function where the values are varied
@@ -49,8 +67,7 @@ def g2_value_dependent(func):
         self.integration_timer.start(self.integrate_for_mins * 60e3)  # integrate in minutes
         return result
     return wrapper
-
-class CorrMeasurements:
+class MeasurementsBase:
 
     cts_refocus = []
     min_position = 50
@@ -107,17 +124,6 @@ class CorrMeasurements:
         self.timer.stop()
         self.refocus_timer.stop()
         self.integration_timer.stop()
-
-    # function for doing power dependent measurement 
-    @g2_value_dependent
-    def change_power(self):
-        value = self.value
-        if self.current_cryo == 'atto3':
-            self.set_green_power('bf', 0)
-            self.set_green_power('atto3', value)
-        elif self.current_cryo == 'bf':
-            self.set_green_power('bf', value)
-            self.set_green_power('atto3', 0)
     
     #HELP functions
     def check_counts(self):
@@ -130,7 +136,6 @@ class CorrMeasurements:
             self.refocus()
         self.timer.start(200 * 1000)
 
-    @return_to_measurement_powers
     def refocus(self):
         ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
         ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
@@ -141,21 +146,20 @@ class CorrMeasurements:
         self.cts_refocus.append(tot_cts / 1e3)
         self.powercontroller_logic._current_motor = 0
         self.powercontroller_logic.motor_position = 5 # perpendicular pol
-        time.sleep(3)
+        time.sleep(2)
 
         self.poi_manager_logic_remote._optimizelogic().start_optimize()
         # poi_manager_logic._optimizelogic().start_optimize()
         while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
             time.sleep(1) # wait for a long time to 
-        time.sleep(20) # wait for a long time to avoid conflicts with the countrate checker
+        time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
 
         self.powercontroller_logic._current_motor = 0
         self.powercontroller_logic.motor_position = 22 # parallel pol
-        time.sleep(3)
+        time.sleep(2)
         ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
         ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
         self.refocused_cts = ch2_cts.mean() + ch3_cts.mean()
-
 
     def toggle_tagger_counter_plot(self, state):
         # start/ stop the counter measurement
@@ -192,7 +196,6 @@ class CorrMeasurements:
         elif cryo == 'atto3':
             self.ibeam_smart_remote.power = value
 
-
     def start_dump(self, folder, tag):
         pth = os.path.join(folder, str(tag))
         os.makedirs(pth, exist_ok = True)
@@ -207,8 +210,7 @@ class CorrMeasurements:
         self.timetagger._mw.dump_checkBox.setChecked(False)
         self.timetagger._dump_toggled()
 
-        
-    def measurement_mode(self, mode):
+    def measurement_mode(self, mode, greens_on=True):
         if mode == "PLE":
             if self.switchlogic.get_state("Mirror") != 'On':
                 self.switchlogic.set_state(switch = "Mirror", state = "On")
@@ -235,30 +237,138 @@ class CorrMeasurements:
             time.sleep(1)
             if self.switchlogic.get_state("Mirror") != 'Off':
                 self.switchlogic.set_state(switch = "Mirror", state = "Off")
-            self.ibeam_smart_remote.power = 30e3
-            self.powercontroller_logic._current_motor = 2
-            self.powercontroller_logic.motor_position = 205 # MAX green
+            if greens_on:
+                self.ibeam_smart_remote.power = 30e3
+                self.powercontroller_logic._current_motor = 2
+                self.powercontroller_logic.motor_position = 205 # MAX green
+
+        else:
+            print("No mode by this name")
+
+class CorrMeasurements(MeasurementsBase):
+
+    cts_refocus = []
+    min_position = 50
+    max_position = 210
+    refocused_cts = None
+    
+    def __init__(self, timetaggerlogic, 
+                 timetagger, 
+                 poi_manager_logic_remote,
+                 powercontroller_logic,
+                 ibeam_smart_remote,
+                 switchlogic,
+                 current_cryo,
+                 non_active_cryo,
+                 folder_save,
+                 integrate_for_mins,
+                 values, 
+                 *args, **kwargs) -> None:
+        super().__init__(
+                 timetaggerlogic, 
+                 timetagger, 
+                 poi_manager_logic_remote,
+                 powercontroller_logic,
+                 ibeam_smart_remote,
+                 switchlogic,
+                 current_cryo,
+                 non_active_cryo,
+                 folder_save,
+                 integrate_for_mins,
+                 values, 
+                 *args, **kwargs)
+        self.timetaggerlogic = timetaggerlogic
+        self.timetagger = timetagger
+        self.poi_manager_logic_remote = poi_manager_logic_remote
+        self.switchlogic = switchlogic
+        self.ibeam_smart_remote = ibeam_smart_remote
+        self.powercontroller_logic = powercontroller_logic
+        self.integrate_for_mins = integrate_for_mins
+        self.current_cryo = current_cryo
+        self.non_active_cryo = non_active_cryo
+        self.folder_save = folder_save
+        self.values = values
+        self.power = None
+
+    # function for doing power dependent measurement 
+    @g2_value_dependent
+    def change_power(self):
+        value = self.value
+        if self.current_cryo == 'atto3':
+            self.set_green_power('bf', 0)
+            self.set_green_power('atto3', value)
+        elif self.current_cryo == 'bf':
+            self.set_green_power('bf', value)
+            self.set_green_power('atto3', 0)
+
+    @return_to_measurement_powers(measurement_type='I_g2')
+    def refocus(self):
+        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
+        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
+        tot_cts = ch2_cts.mean() + ch3_cts.mean()
+        
+        self.save_tagger_plots(os.path.join(self.folder_save, str(self.value)), str(self.value))
+
+        self.cts_refocus.append(tot_cts / 1e3)
+        self.powercontroller_logic._current_motor = 0
+        self.powercontroller_logic.motor_position = 5 # perpendicular pol
+        time.sleep(2)
+
+        self.poi_manager_logic_remote._optimizelogic().start_optimize()
+        # poi_manager_logic._optimizelogic().start_optimize()
+        while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
+            time.sleep(1) # wait for a long time to 
+        time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
+
+        self.powercontroller_logic._current_motor = 0
+        self.powercontroller_logic.motor_position = 22 # parallel pol
+        time.sleep(2)
+        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
+        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
+        self.refocused_cts = ch2_cts.mean() + ch3_cts.mean()
+
+    @return_to_measurement_powers(measurement_type='I_g2')
+    def measurement_mode(self, mode, greens_on=True):
+        if mode == "PLE":
+            if self.switchlogic.get_state("Mirror") != 'On':
+                self.switchlogic.set_state(switch = "Mirror", state = "On")
+            time.sleep(1)
+            if self.switchlogic.get_state("Mirror") == 'On':
+                if self.switchlogic.get_state("Shutter") != 'Off':
+                    self.switchlogic.set_state(switch = "Shutter", state = "Off")
+                time.sleep(0.5)
+                if self.switchlogic.get_state("ResonantBF") != 'On':
+                    self.switchlogic.set_state(switch = "ResonantBF", state = "On")
+                self.ibeam_smart_remote.power = 50
+                self.powercontroller_logic._current_motor = 2
+                self.powercontroller_logic.motor_position = 45 # green dim
+                time.sleep(0.5)
+            else:
+                print("Mirror not in, PLE would burn APDs")
+                raise BaseException
+
+        elif mode == "Off-res":
+            if self.switchlogic.get_state("ResonantBF") != 'Off':
+                    self.switchlogic.set_state(switch = "ResonantBF", state = "Off")
+            if self.switchlogic.get_state("Shutter") != 'On':
+                self.switchlogic.set_state(switch = "Shutter", state = "On")
+            time.sleep(1)
+            if self.switchlogic.get_state("Mirror") != 'Off':
+                self.switchlogic.set_state(switch = "Mirror", state = "Off")
+            if greens_on:
+                self.ibeam_smart_remote.power = 30e3
+                self.powercontroller_logic._current_motor = 2
+                self.powercontroller_logic.motor_position = 205 # MAX green
+
         else:
             print("No mode by this name")
 
     # ws_wavemeter.start_acquisition()
 
 
-
 class StarkHOM(CorrMeasurements):
-    def __init__(self, timetaggerlogic, 
-                 timetagger, 
-                 poi_manager_logic_remote, 
-                 powercontroller_logic, 
-                 ibeam_smart_remote, 
-                 switchlogic,
-                 ao_electrodes) -> None:
-        super().__init__(timetaggerlogic, 
-                         timetagger, 
-                         poi_manager_logic_remote, 
-                         powercontroller_logic, 
-                         ibeam_smart_remote, 
-                         switchlogic)
+    def __init__(self, ao_electrodes, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.ao_electrodes = ao_electrodes
 
 
