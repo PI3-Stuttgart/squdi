@@ -48,6 +48,8 @@ def g2_value_dependent(func):
             return
 
         self.value = self.values.pop()
+        self.save_tagger_plots(os.path.join(self.folder_save, str(self.value).replace('.', '_')), str(self.value).replace('.', '_'))
+        
         self.toggle_tagger_counter_plot(False)
         self.toggle_tagger_corr_plot(False)
 
@@ -63,7 +65,7 @@ def g2_value_dependent(func):
         # Start the measurement:
         self.toggle_tagger_counter_plot(True)
         self.toggle_tagger_corr_plot(True)
-        self.start_dump(self.folder_save, str(self.value))
+        self.start_dump(self.folder_save, str(self.value).replace('.', '_'))
         self.integration_timer.start(self.integrate_for_mins * 60e3)  # integrate in minutes
         return result
     return wrapper
@@ -307,7 +309,7 @@ class CorrMeasurements(MeasurementsBase):
         ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
         tot_cts = ch2_cts.mean() + ch3_cts.mean()
         
-        self.save_tagger_plots(os.path.join(self.folder_save, str(self.value)), str(self.value))
+        self.save_tagger_plots(os.path.join(self.folder_save, str(self.value).replace('.', '_')), str(self.value).replace('.', '_'))
 
         self.cts_refocus.append(tot_cts / 1e3)
         self.powercontroller_logic._current_motor = 0
