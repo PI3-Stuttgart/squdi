@@ -48,6 +48,7 @@ def g2_value_dependent(func):
             return
 
         self.value = self.values.pop()
+        
         self.save_tagger_plots(os.path.join(self.folder_save, str(self.value).replace('.', '_')), str(self.value).replace('.', '_'))
 
         self.toggle_tagger_counter_plot(False)
@@ -76,8 +77,30 @@ class MeasurementsBase:
     max_position = 210
     refocused_cts = None
 
-    def __init__(self, *args, **kwargs) -> None:
-        self.power = None
+    def __init__(self, 
+                 timetaggerlogic, 
+                 timetagger, 
+                 poi_manager_logic_remote,
+                 powercontroller_logic,
+                 ibeam_smart_remote,
+                 switchlogic,
+                 current_cryo,
+                 non_active_cryo,
+                 folder_save,
+                 integrate_for_mins,
+                 values,
+                 *args, **kwargs) -> None:
+        self.timetaggerlogic = timetaggerlogic
+        self.timetagger = timetagger
+        self.poi_manager_logic_remote = poi_manager_logic_remote
+        self.switchlogic = switchlogic
+        self.ibeam_smart_remote = ibeam_smart_remote
+        self.powercontroller_logic = powercontroller_logic
+        self.integrate_for_mins = integrate_for_mins
+        self.current_cryo = current_cryo
+        self.non_active_cryo = non_active_cryo
+        self.folder_save = folder_save
+        self.values = values
 
     def start_periodic_refocus(self, refocus_period_mins = 25, count_check_period_sec = 60):
         self.timer = QTimer()
