@@ -336,35 +336,112 @@ class CorrMeasurements(MeasurementsBase):
 
 
 class StarkHOM(MeasurementsBase):
-    def __init__(self, params, *args, **kwargs) -> None:
+    def __init__(self, ao_electrodes, *args, **kwargs) -> None:
         super().__init__(
-            params['timetaggerlogic'], 
-            params['timetagger'], 
-            params['poi_manager_logic_remote'],
-            params['powercontroller_logic'],
-            params['ibeam_smart_remote'],
-            params['switchlogic'],
-            params['current_cryo'],
-            params['non_active_cryo'],
-            params['folder_save'],
-            params['integrate_for_mins'],
-            params['values'],
             *args, **kwargs
         )
-        self.timetaggerlogic = params['timetaggerlogic']
-        self.timetagger = params['timetagger']
-        self.poi_manager_logic_remote = params['poi_manager_logic_remote']
-        self.switchlogic = params['switchlogic']
-        self.ibeam_smart_remote = params['ibeam_smart_remote']
-        self.powercontroller_logic = params['powercontroller_logic']
-        self.integrate_for_mins = params['integrate_for_mins']
-        self.current_cryo = params['current_cryo']
-        self.non_active_cryo = params['non_active_cryo']
-        self.folder_save = params['folder_save']
-        self.values = params['values']
-        self.power = None
+        self.ao_electrodes = ao_electrodes
+        self.power = 40e3 #max out the power 
+        self.bf_needs_refocus = False
+        self._measurement_done = False
 
+    def set_bf_needs_refocus(self):
+        self.bf_needs_refocus = True
+
+    def bluefors_periodic_refocus(self, refocus_period_mins = 360):
+
+        self.bf_refocus_timer = QTimer()
+        self.bf_refocus_timer.setInterval(refocus_period_mins * 60000)
+        self.bf_refocus_timer.timeout.connect(self.set_bf_needs_refocus)
+        self.bf_refocus_timer.start(refocus_period_mins * 60000)
+
+    def start_periodic_refocus(self, refocus_period_mins = 30, count_check_period_sec = 60):
+        self.timer = QTimer()
+        self.timer.setInterval(count_check_period_sec * 1000)
+        self.timer.timeout.connect(self.check_counts)
+        self.timer.start(count_check_period_sec * 1000)
+
+        self.refocus_timer = QTimer()
+        self.refocus_timer.setInterval(refocus_period_mins * 60000)
+        self.refocus_timer.timeout.connect(self.refocus)
+        self.refocus_timer.start(refocus_period_mins * 60000)
+
+        self.bluefors_periodic_refocus()
 
     @g2_value_dependent
     def set_voltage(self, value):
         self.ao_electrodes.setpoint = value
+
+    @return_to_measurement_powers(measurement_type='E_hom')
+    def refocus(self):
+        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
+        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
+        tot_cts = ch2_cts.mean() + ch3_cts.mean()
+        
+        self.save_tagger_plots(os.path.join(self.folder_save, str(self.value).replace('.', '_')), str(self.value).replace('.', '_'))
+
+        self.cts_refocus.append(tot_cts / 1e3)
+        self.powercontroller_logic._current_motor = 0
+        self.powercontroller_logic.motor_position = 5 # perpendicular pol
+        time.sleep(2)
+
+        self.poi_manager_logic_remote._optimizelogic().start_optimize()
+        if self.bf_needs_refocus:
+            self.poi_manager_logic._optimizelogic().start_optimize() # CONSIDER THAT BF refocus is also necesarry but less frequently
+            while self.poi_manager_logic._optimizelogic().module_state()=='locked':
+                time.sleep(2) 
+            self.bf_needs_refocus = False
+        while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
+            time.sleep(1) # wait for a long time to 
+        time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
+
+        self.powercontroller_logic._current_motor = 0
+        self.powercontroller_logic.motor_position = 22 # parallel pol
+        time.sleep(2)
+        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
+        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
+        self.refocused_cts = ch2_cts.mean() + ch3_cts.mean()
+
+    @return_to_measurement_powers(measurement_type='E_hom')
+    def measurement_mode(self, mode, greens_on=True):
+        if mode == "PLE":
+            if self.switchlogic.get_state("Mirror") != 'On':
+                self.switchlogic.set_state(switch = "Mirror", state = "On")
+            time.sleep(1)
+            if self.switchlogic.get_state("Mirror") == 'On':
+                if self.switchlogic.get_state("Shutter") != 'Off':
+                    self.switchlogic.set_state(switch = "Shutter", state = "Off")
+                time.sleep(0.5)
+                if self.switchlogic.get_state("ResonantBF") != 'On':
+                    self.switchlogic.set_state(switch = "ResonantBF", state = "On")
+                self.ibeam_smart_remote.power = 50
+                self.powercontroller_logic._current_motor = 2
+                self.powercontroller_logic.motor_position = 45 # green dim
+                time.sleep(0.5)
+            else:
+                print("Mirror not in, PLE would burn APDs")
+                raise BaseException
+
+        elif mode == "Off-res":
+            if self.switchlogic.get_state("ResonantBF") != 'Off':
+                    self.switchlogic.set_state(switch = "ResonantBF", state = "Off")
+            if self.switchlogic.get_state("Shutter") != 'On':
+                self.switchlogic.set_state(switch = "Shutter", state = "On")
+            time.sleep(1)
+            if self.switchlogic.get_state("Mirror") != 'Off':
+                self.switchlogic.set_state(switch = "Mirror", state = "Off")
+            if greens_on:
+                self.ibeam_smart_remote.power = 30e3
+                self.powercontroller_logic._current_motor = 2
+                self.powercontroller_logic.motor_position = 205 # MAX green
+
+        else:
+            print("No mode by this name")
+
+    def equilize_powers(self):
+        pass
+
+    def check_ples(self):
+        pass
+
+    
