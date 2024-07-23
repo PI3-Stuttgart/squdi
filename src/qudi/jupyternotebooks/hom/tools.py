@@ -57,7 +57,7 @@ def save_ple(ple_gui, tag, poi_name=None, folder_name = None):
             )
         ple_gui._mw.actionSave.triggered.emit()
 
-def do_ple_scan(ple_gui, lines = 1, in_range = None, frequency=None, resolution=None):
+def do_ple_scan(laser_scanner_logic, ple_gui, lines = 1, in_range = None, frequency=None, resolution=None):
     """
     fine_scan_range = (
             self.ple_gui.fit_result[1].best_values['center'] - self.ple_gui.fit_result[1].best_values['sigma'] * 3,

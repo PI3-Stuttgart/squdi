@@ -452,9 +452,11 @@ class StarkHOM(MeasurementsBase):
         #before the measuerement calibrate the coutns
         # self.calibrate_counts('atto3', 'bf')
         # self.calibrate_counts('bf', 'atto3')
-        self.powers_cal = np.linspace(0, 40e3, 40)
+        
         self.counts_calibration[cryo] = []
-        for _power in self.powers_cal:
+        self.counts_calibration['powers'] = np.linspace(0, 50e3, 40)
+        powers_cal = self.counts_calibration['powers']
+        for _power in powers_cal:
             self.set_green_power(cryo, _power)
             self.set_green_power(cryo_off, 0)
             time.sleep(1)
@@ -466,28 +468,55 @@ class StarkHOM(MeasurementsBase):
     def equilize_powers(self):
         if self.counts_calibration == {}:
             return
-        self.ibeam_smart_remote.power = 40e3 # exite on max attory
+        self.ibeam_smart_remote.power = 50e3 # exite on max attory
         ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
         ch3_cts = self.timetaggerlogic.trace_data[3][1] 
         # set the bluefors power to match the counts
         self.set_green_power('bf', 
                              self.counts_calibration[np.argmin(np.abs(ch3_cts - self.counts_calibration))])
     
-    def calibrate_stark_shift(self, v0, dv):
-        self.zpl_calibration['setpoint'] = np.linspace(v0 - dv/2, v0 + dv/2, 10)
+    def calibrate_stark_shift(self, v0, dv, calibration_range = None, calibration_channel='APD4', steps = 20):
+        if calibration_range is None:
+            current_range = self.laser_scanner_logic.scan_ranges['a']
         self.zpl_calibration['freq'] = []
-        for _setpoint in self.zpl_calibration['setpoint']:
+        for _setpoint in np.linspace(v0 - dv/2, v0 + dv/2, steps):
             self.ao_electrodes.setpoint = _setpoint
-            res_atto3 = self.do_ple('bf', dw = 1.2) #1.2 GHz
-            self.zpl_calibration['freq'].append(res_atto3.freq)
-            
+            res_atto3 = self.do_ple_scan(lines=1, 
+                                          in_range=current_range,
+                                          channel=calibration_channel)
+            if res_atto3.rsquared > 0.6:
+                self.zpl_calibration['freq'].append(res_atto3.best_values['center'])
+                self.zpl_calibration['setpoint'].append(_setpoint)
         self.zpl_calibration['freq'] = np.array(self.zpl_calibration['freq'])
+        self.zpl_calibration['setpoint'] = np.array(self.zpl_calibration['setpoint'])
 
     def align_resonances(self):
-        res_bf = self.do_ple_scan('bf', dw = 1.2, ) #1.2 GHz
-        res_atto3 = self.do_ple_scan('bf', dw = 1.2) #1.2 GHz
-        
-        self.ao_electrodes.setpoint = self.zpl_calibration['setpoint'][np.argmin(self.zpl_calibration['freq'] - (zpl2 - zpl1))]
+        current_range = self.laser_scanner_logic.scan_ranges['a']
+        res_bf = self.do_ple_scan(lines=1, 
+                                          in_range=current_range,
+                                          channel='APD1')
+        zpl1 = res_bf.best_values['center']
+
+        self.ple_gui._mw.ple_widget.channel_comboBox.setCurrentText('APD4')
+        time.sleep(0.3)
+        self.ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
+        time.sleep(0.5)
+        # self.ple_gui._accumulated_data.mean(axis=0)
+        # print(f"Rsquared {self.ple_gui.fit_result[1].rsquared}")
+        # self.ple_gui.fit_result[1].params["center"].value
+        res_atto3 = self.ple_gui.fit_result[1]
+    
+        # res_atto3 = self.do_ple_scan(lines=1, 
+        #                                   in_range=current_range,
+        #                                   channel='APD4')
+        zpl2 = res_atto3.best_values['center']
+        dzpl_real = zpl2 - zpl1
+        dzpl_cal = self.zpl_calibration['freq'] - zpl2
+       
+
+        # Adjust the setpoint to align resonance 2 with resonance 1
+        closest_setpoint_index = np.argmin(np.abs(dzpl_cal - (zpl1 - zpl2)))
+        self.ao_electrodes.setpoint = self.zpl_calibration['setpoint'][closest_setpoint_index]
 
        
 
@@ -546,7 +575,8 @@ class StarkHOM(MeasurementsBase):
             )
         """
         if channel is not None:
-            self.ple_gui._mw.ple_widget.channel_comboBox.setCurrentIndex(channel) ## MAY BE MISTAKEN
+            self.ple_gui._mw.ple_widget.channel_comboBox.setCurrentText(channel) ## MAY BE MISTAKEN
+            # ple_gui._mw.channel_comboBox.setCurrentText('APD4')
         #laser_scanner_logic.scan_ranges["a"]
         if in_range is None:
             self.ple_gui._mw.actionFull_range.triggered.emit()
