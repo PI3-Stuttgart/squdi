@@ -27,8 +27,8 @@ from configuration import *
 # The QUA program #
 ###################
 
-t_vec = np.arange(4, int(1500/4), 1)  # Pulse durations in clock cycles (4ns)
-n_avg = 10_000_000 # Number of averaging loops
+t_vec = np.arange(4, int(2000/4), 2)  # Pulse durations in clock cycles (4ns)
+n_avg = 500_000_000 # Number of averaging loops
 
 with program() as time_rabi:
     counts = declare(int)  # variable for number of counts

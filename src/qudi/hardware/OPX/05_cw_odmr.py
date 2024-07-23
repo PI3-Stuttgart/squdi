@@ -27,8 +27,8 @@ from configuration import *
 ###################
 
 # Frequency vector
-f_vec = np.arange(80 * u.MHz, 120 * u.MHz, 0.5 * u.MHz)
-n_avg = 4_000_000  # number of averages
+f_vec = np.arange(80 * u.MHz, 130 * u.MHz, 1 * u.MHz)
+n_avg = 200_000_000  # number of averages
 readout_len = long_meas_len_1  # Readout duration for this experiment
 
 with program() as cw_odmr:

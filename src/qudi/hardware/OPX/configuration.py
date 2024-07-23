@@ -36,7 +36,7 @@ qop_port = None  # Write the QOP port if version < QOP220
 octave_config = None
 
 # Frequencies
-NV_IF_freq = 100.6867 * u.MHz
+NV_IF_freq = 108.2180 * u.MHz
 NV_LO_freq = 2.77 * u.GHz
 
 # Pulses lengths
@@ -47,6 +47,8 @@ long_meas_len_1 = 5_000 * u.ns
 initialization_len_2 = 3000 * u.ns
 meas_len_2 = 500 * u.ns
 long_meas_len_2 = 5_000 * u.ns
+
+initialization_len_575 = 3_000 * u.ns
 
 # Relaxation time from the metastable state to the ground state after during initialization
 relaxation_time = 300 * u.ns
@@ -78,6 +80,9 @@ ple_step_length_red = 1 * u.us
 detection_delay_1 = 144 * u.ns # 144
 detection_delay_2 = 80 * u.ns
 laser_delay_green = 0 * u.ns
+AOM_delay_575 = 0 * u.ns
+AOM_575_power_delay = 0 * u.ns
+AOM_power_len_575 = 80 * u.ns
 laser_delay_2 = 0 * u.ns
 mw_delay = 0 * u.ns
 rf_delay = 0 * u.ns
@@ -94,13 +99,15 @@ config = {
                 1: {"offset": 0.0, "delay": mw_delay},  # NV I
                 2: {"offset": 0.0, "delay": mw_delay},  # NV Q
                 3: {"offset": 0.0, "delay": rf_delay},  # RF
-                4: {"offset": 0.0, "delay": LaserScanner_delay}
+                4: {"offset": 0.0, "delay": LaserScanner_delay},
+                7: {"offset": 0.0, "delay": AOM_575_power_delay} # AOM 575 power
             },
             "digital_outputs": {
                 1: {},  # indicator 
                 2: {},  # AOM/green Laser
                 3: {},  # AOM/orange Laser
                 4: {},  # AOM/red Laser
+                7: {}, # AOM/yellow (575) laseer
             },
             "analog_inputs": {
                 1: {"offset": 0, 'gain_db': -3},  # SPCM1
@@ -138,6 +145,26 @@ config = {
             },
             "operations": {
                 "laser_ON": "laser_ON_green",
+            },
+        },
+        "AOM_575_TTL": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 7),
+                    "delay": AOM_delay_575,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "laser_ON": "AOM_ON_575",
+            },
+        },
+         "AOM_575_MOD": {
+            "singleInput": {
+                "port": ("con1", 7),
+            },
+            "operations": {
+                "power": "power_AOM_575",
             },
         },
          "LaserScanner_red": {
@@ -254,6 +281,19 @@ config = {
             "length": initialization_len_green,
             "digital_marker": "ON",
         },
+        "AOM_ON_575": {
+            "operation": "control",
+            "length": initialization_len_575,
+            "digital_marker": "ON",
+        },
+        "AOM_power_575": {
+            "operation": "control",
+            "length": AOM_power_len_575,
+            "waveforms": {
+                "single": "const_piezo_offset",
+            },        
+        },
+        
         "laser_ON_2": {
             "operation": "control",
             "length": initialization_len_2,
@@ -288,7 +328,14 @@ config = {
             "length": ple_step_length_red,
             "waveforms": {
                 "single": "const_piezo_offset",
-            },        
+            },   
+        },
+        "power_AOM_575": {
+            "operation": "control",
+            "length": 0* u.ns,
+            "waveforms": {
+                "single": "const_piezo_offset",
+            },  
         },
     },
     "waveforms": {
