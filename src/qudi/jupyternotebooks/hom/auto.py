@@ -2,6 +2,7 @@ from functools import partial, wraps
 import time
 import os
 import numpy as np
+import copy
 from PySide2.QtCore import QTimer, QTime, Signal
 
 def return_to_measurement_powers_I_dependent_g2(func):
@@ -102,6 +103,9 @@ class MeasurementsBase:
         self.folder_save = folder_save
         self.values = values
 
+        self.min_position = 70
+        self.max_position = 190
+
     def start_periodic_refocus(self, refocus_period_mins = 25, count_check_period_sec = 60):
         self.timer = QTimer()
         self.timer.setInterval(count_check_period_sec * 1000)
@@ -186,12 +190,10 @@ class MeasurementsBase:
         power_max = 40000
         power_min = 0
         if cryo == 'bf':
-            min_position = 50
-            max_position = 210
             # Ensure power is within bounds
             value = max(power_min, min(value, power_max))
             # Map power to the motor position range
-            motor_position = min_position + (max_position - min_position) * (value - power_min) / (power_max - power_min)
+            motor_position = self.min_position + (self.max_position - self.min_position) * (value - power_min) / (power_max - power_min)
             self.powercontroller_logic._current_motor = 2
             self.powercontroller_logic.motor_position = motor_position
             
@@ -351,6 +353,9 @@ class StarkHOM(MeasurementsBase):
         self.bf_needs_refocus = False
         self._measurement_done = False
         self.counts_calibration = dict()
+        self.zpl_calibration = dict()
+        self._bf_power = 40e3
+        self._atto3_power = 40e3
 
     def set_bf_needs_refocus(self):
         self.bf_needs_refocus = True
@@ -361,6 +366,13 @@ class StarkHOM(MeasurementsBase):
         self.bf_refocus_timer.setInterval(refocus_period_mins * 60000)
         self.bf_refocus_timer.timeout.connect(self.set_bf_needs_refocus)
         self.bf_refocus_timer.start(refocus_period_mins * 60000)
+
+    def zpl_periodic_refocus(self, refocus_period_mins = 360):
+
+        self.zpl_refocus_timer = QTimer()
+        self.zpl_refocus_timer.setInterval(refocus_period_mins * 60000)
+        self.zpl_refocus_timer.timeout.connect(self.set_bf_needs_refocus)
+        self.zpl_refocus_timer.start(refocus_period_mins * 60000)
 
     def start_periodic_refocus(self, refocus_period_mins = 30, count_check_period_sec = 60):
         self.timer = QTimer()
@@ -409,10 +421,11 @@ class StarkHOM(MeasurementsBase):
         ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
         self.refocused_cts = ch2_cts.mean() + ch3_cts.mean()
 
-        self.check_ple()
+        self.check_ple(do_ple_refocus=True)
 
+        self.equilize_powers()
 
-    @return_to_measurement_powers(measurement_type='E_hom')
+    # @return_to_measurement_powers(measurement_type='E_hom')
     def measurement_mode(self, mode, greens_on=True):
         if mode == "PLE":
             if self.switchlogic.get_state("Mirror") != 'On':
@@ -448,79 +461,86 @@ class StarkHOM(MeasurementsBase):
         else:
             print("No mode by this name")
 
-    def calibrate_counts(self, cryo, cryo_off):
+    def calibrate_counts(self, cryo, cryo_off, steps = 40):
         #before the measuerement calibrate the coutns
         # self.calibrate_counts('atto3', 'bf')
         # self.calibrate_counts('bf', 'atto3')
         
         self.counts_calibration[cryo] = []
-        self.counts_calibration['powers'] = np.linspace(0, 50e3, 40)
+        self.counts_calibration['powers'] = np.linspace(50, 40e3, steps)
         powers_cal = self.counts_calibration['powers']
-        for _power in powers_cal:
+        
+        self.set_green_power(cryo, powers_cal[0])
+        self.set_green_power(cryo_off, 0)
+        time.sleep(2)
+
+        for _power in powers_cal[1:]:
+           
             self.set_green_power(cryo, _power)
             self.set_green_power(cryo_off, 0)
-            time.sleep(1)
+            time.sleep(0.2)
             ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
             ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-            self.counts_calibration.append(ch2_cts.mean() + ch3_cts.mean())
+            self.counts_calibration[cryo].append(float(ch2_cts.mean() + ch3_cts.mean()))
         self.counts_calibration[cryo] = np.array(self.counts_calibration[cryo])
 
     def equilize_powers(self):
         if self.counts_calibration == {}:
             return
-        self.ibeam_smart_remote.power = 50e3 # exite on max attory
+        self.ibeam_smart_remote.power = 40e3 # exite on max attory
         ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
         ch3_cts = self.timetaggerlogic.trace_data[3][1] 
         # set the bluefors power to match the counts
         self.set_green_power('bf', 
-                             self.counts_calibration[np.argmin(np.abs(ch3_cts - self.counts_calibration))])
+                             self.counts_calibration['bf'][np.argmin(np.abs(ch3_cts.mean() - self.counts_calibration['bf']))])
     
-    def calibrate_stark_shift(self, v0, dv, calibration_range = None, calibration_channel='APD4', steps = 20):
+    def calibrate_stark_shift(self, v0, dv, 
+                              calibration_range = None, 
+                              calibration_channel='APD4', steps = 20):
         if calibration_range is None:
             current_range = self.laser_scanner_logic.scan_ranges['a']
         self.zpl_calibration['freq'] = []
+        self.zpl_calibration['setpoint'] = []
         for _setpoint in np.linspace(v0 - dv/2, v0 + dv/2, steps):
             self.ao_electrodes.setpoint = _setpoint
             res_atto3 = self.do_ple_scan(lines=1, 
                                           in_range=current_range,
                                           channel=calibration_channel)
             if res_atto3.rsquared > 0.6:
-                self.zpl_calibration['freq'].append(res_atto3.best_values['center'])
-                self.zpl_calibration['setpoint'].append(_setpoint)
+                self.zpl_calibration['freq'].append(float(res_atto3.best_values['center']))
+                self.zpl_calibration['setpoint'].append(float(_setpoint))
         self.zpl_calibration['freq'] = np.array(self.zpl_calibration['freq'])
         self.zpl_calibration['setpoint'] = np.array(self.zpl_calibration['setpoint'])
 
     def align_resonances(self):
+
         current_range = self.laser_scanner_logic.scan_ranges['a']
         res_bf = self.do_ple_scan(lines=1, 
-                                          in_range=current_range,
-                                          channel='APD1')
-        zpl1 = res_bf.best_values['center']
+                                            in_range=current_range,
+                                            channel='APD1')
 
-        self.ple_gui._mw.ple_widget.channel_comboBox.setCurrentText('APD4')
+
+        self.ple_gui._mw.channel_comboBox.setCurrentText('APD4')
         time.sleep(0.3)
         self.ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
         time.sleep(0.5)
-        # self.ple_gui._accumulated_data.mean(axis=0)
-        # print(f"Rsquared {self.ple_gui.fit_result[1].rsquared}")
-        # self.ple_gui.fit_result[1].params["center"].value
+
         res_atto3 = self.ple_gui.fit_result[1]
-    
-        # res_atto3 = self.do_ple_scan(lines=1, 
-        #                                   in_range=current_range,
-        #                                   channel='APD4')
-        zpl2 = res_atto3.best_values['center']
+
+        zpl1 = float(res_bf.best_values['center'])
+        zpl2 = float(res_atto3.best_values['center'])
+        closest_setpoint_1 = np.argmin(np.abs(self.zpl_calibration['freq'] - zpl2))
+        self.zpl_calibration_upd = copy.deepcopy(self.zpl_calibration)
+        self.zpl_calibration_upd['freq'] = self.zpl_calibration['freq'] - (self.zpl_calibration['freq'][closest_setpoint_1] - zpl2)
+
         dzpl_real = zpl2 - zpl1
-        dzpl_cal = self.zpl_calibration['freq'] - zpl2
-       
-
-        # Adjust the setpoint to align resonance 2 with resonance 1
-        closest_setpoint_index = np.argmin(np.abs(dzpl_cal - (zpl1 - zpl2)))
-        self.ao_electrodes.setpoint = self.zpl_calibration['setpoint'][closest_setpoint_index]
+        dzpl_cal = self.zpl_calibration_upd['freq'] - zpl1
+        closest_setpoint_index = np.argmin(np.abs(dzpl_cal))
+        self.ao_electrodes.setpoint = self.zpl_calibration_upd['setpoint'][closest_setpoint_index]
 
        
 
-    def check_ple(self):
+    def check_ple(self, do_ple_refocus = False):
         self.PLE_check_trigger(enable=True)
         self.measurement_mode('PLE')
         
@@ -528,14 +548,25 @@ class StarkHOM(MeasurementsBase):
             res = self.do_ple_scan(lines=1, 
                             in_range = self.laser_scanner_logic.scan_ranges["a"])
             if res.rsquared > 0.5:
-                self.save_ple(tag=f'{self.refocus_timer.elapsed_time}', poi_name='')
+                self.save_ple(tag=f'asdd', poi_name='', folder_name=self.folder_save) #{self.refocus_timer.elapsed_time}
                 break
+        
+        if do_ple_refocus:
+            self.align_resonances()
+            for i in range(3):
+                res = self.do_ple_scan(lines=1, 
+                                in_range = self.laser_scanner_logic.scan_ranges["a"])
+                if res.rsquared > 0.5:
+                    self.save_ple(tag=f'refocused_{0}', poi_name='', folder_name=self.folder_save) #self.refocus_timer.elapsed_time
+                    break
 
         self.PLE_check_trigger(enable=False)
         self.measurement_mode('Off-res')
 
-        self.set_green_power('bf', self._bf_power)
-        self.set_green_power('atto3', self._atto3_power)
+        # self.set_green_power('bf', self._bf_power)
+        # self.set_green_power('atto3', self._atto3_power)
+
+        
 
         #add the trigger for ple checking to be able to process out it in timetagger dump
     def PLE_check_trigger(self, enable=True):
@@ -575,7 +606,7 @@ class StarkHOM(MeasurementsBase):
             )
         """
         if channel is not None:
-            self.ple_gui._mw.ple_widget.channel_comboBox.setCurrentText(channel) ## MAY BE MISTAKEN
+            self.ple_gui._mw.channel_comboBox.setCurrentText(channel) ## MAY BE MISTAKEN
             # ple_gui._mw.channel_comboBox.setCurrentText('APD4')
         #laser_scanner_logic.scan_ranges["a"]
         if in_range is None:
@@ -597,6 +628,6 @@ class StarkHOM(MeasurementsBase):
         self.ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
         time.sleep(1)
         # self.ple_gui._accumulated_data.mean(axis=0)
-        print(f"Rsquared {self.ple_gui.fit_result[1].rsquared}")
+        # print(f"Rsquared {self.ple_gui.fit_result[1].rsquared}")
         # self.ple_gui.fit_result[1].params["center"].value
         return self.ple_gui.fit_result[1]
