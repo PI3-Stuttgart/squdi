@@ -57,7 +57,7 @@ class ScanningOptimizeLogic(LogicBase):
 
     # status variables
     _scan_sequence = StatusVar(name='scan_sequence', default=None)
-    _min_r_squared = StatusVar(name='min_r_squared', default=0.1)
+    _min_r_squared = StatusVar(name='min_r_squared', default=0.6)
     _data_channel = StatusVar(name='data_channel', default=None)
     _scan_frequency = StatusVar(name='scan_frequency', default=None)
     _scan_range = StatusVar(name='scan_range', default=None)
@@ -386,7 +386,7 @@ class ScanningOptimizeLogic(LogicBase):
                     self._last_fit_results = fit_res
                     # Abort optimize if fit failed
                     if ((fit_data is None) 
-                        or (fit_res is None)): 
+                        or (fit_res is None) or (fit_res.rsquared < self._min_r_squared)): 
                         # or (fit_res is not None and fit_res.rsquared < self._min_r_squared)):
                         self.log.warning("Stopping optimization due to failed fit.")
                         self.stop_optimize()
