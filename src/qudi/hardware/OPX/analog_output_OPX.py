@@ -1,5 +1,5 @@
 import importlib
-from typing import Dict, Tuple, Any, _Real
+from typing import Dict, Tuple, Any
 
 from qualang_tools.control_panel import ManualOutputControl
 
@@ -38,6 +38,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         self._qm_manual_output_control = ManualOutputControl(
             self._configuration.config, host=self._configuration.qop_ip
         )
+        self._set_constraints()
 
     def on_deactivate(self) -> None:
         """TODO: disconnect from OPX?"""
@@ -90,11 +91,11 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         else:
             return True
 
-    def set_setpoint(self, channel: str, value: _Real) -> None:
+    def set_setpoint(self, channel: str, value: float) -> None:
         """Set new setpoint for a single channel"""
         self._qm_manual_output_control.set_amplitude(channel, value)
 
-    def get_setpoint(self, channel: str) -> _Real:
+    def get_setpoint(self, channel: str) -> float:
         """Get current setpoint for a single channel"""
         ao_status: dict[str, dict[str, float]] = (
             self._qm_manual_output_control.analog_status()
