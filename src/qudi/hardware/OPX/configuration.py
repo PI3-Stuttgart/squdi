@@ -41,7 +41,7 @@ NV_LO_freq = 2.77 * u.GHz
 
 # Pulses lengths
 initialization_len_green = 3_000 * u.ns
-meas_len_1 = 500 * u.ns # 500
+meas_len_1 = 500 * u.ns  # 500
 long_meas_len_1 = 5_000 * u.ns
 
 initialization_len_2 = 3000 * u.ns
@@ -70,14 +70,18 @@ rf_amp = 0.1
 rf_length = 1000
 
 # Readout parameters
-signal_threshold_1 = -1_000  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
-signal_threshold_2 = -1_000  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
+signal_threshold_1 = (
+    -1_000
+)  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
+signal_threshold_2 = (
+    -1_000
+)  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
 
 # PLE parameters
 ple_step_length_red = 1 * u.us
 
 # Delays
-detection_delay_1 = 144 * u.ns # 144
+detection_delay_1 = 144 * u.ns  # 144
 detection_delay_2 = 80 * u.ns
 laser_delay_green = 0 * u.ns
 AOM_delay_575 = 0 * u.ns
@@ -100,23 +104,28 @@ config = {
                 2: {"offset": 0.0, "delay": mw_delay},  # NV Q
                 3: {"offset": 0.0, "delay": rf_delay},  # RF
                 4: {"offset": 0.0, "delay": LaserScanner_delay},
-                7: {"offset": 0.0, "delay": AOM_575_power_delay} # AOM 575 power
+                7: {"offset": 0.0, "delay": AOM_575_power_delay},  # AOM 575 power
             },
             "digital_outputs": {
-                1: {},  # indicator 
+                1: {},  # indicator
                 2: {},  # AOM/green Laser
                 3: {},  # AOM/orange Laser
                 4: {},  # AOM/red Laser
-                7: {}, # AOM/yellow (575) laseer
+                7: {},  # AOM/yellow (575) laseer
             },
             "analog_inputs": {
-                1: {"offset": 0, 'gain_db': -3},  # SPCM1
+                1: {"offset": 0, "gain_db": -3},  # SPCM1
             },
         }
     },
     "elements": {
         "NV": {
-            "mixInputs": {"I": ("con1", 1), "Q": ("con1", 2), "lo_frequency": NV_LO_freq, "mixer": "mixer_NV"},
+            "mixInputs": {
+                "I": ("con1", 1),
+                "Q": ("con1", 2),
+                "lo_frequency": NV_LO_freq,
+                "mixer": "mixer_NV",
+            },
             "intermediate_frequency": NV_IF_freq,
             "operations": {
                 "cw": "const_pulse",
@@ -147,7 +156,7 @@ config = {
                 "laser_ON": "laser_ON_green",
             },
         },
-        "AOM_575_TTL": {
+        "AOM_575": {
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 7),
@@ -155,19 +164,15 @@ config = {
                     "buffer": 0,
                 },
             },
-            "operations": {
-                "laser_ON": "AOM_ON_575",
-            },
-        },
-         "AOM_575_MOD": {
             "singleInput": {
                 "port": ("con1", 7),
             },
             "operations": {
+                "active": "AOM_ON_575",
                 "power": "power_AOM_575",
             },
         },
-         "LaserScanner_red": {
+        "LaserScanner_red": {
             "singleInput": {
                 "port": ("con1", 4),
             },
@@ -210,7 +215,6 @@ config = {
             "time_of_flight": detection_delay_1,
             "smearing": 0,
         },
-
         # "SPCM2": {
         #     "singleInput": {"port": ("con1", 1)},  # not used
         #     "digitalInputs": {  # for visualization in simulation
@@ -291,9 +295,8 @@ config = {
             "length": AOM_power_len_575,
             "waveforms": {
                 "single": "const_piezo_offset",
-            },        
+            },
         },
-        
         "laser_ON_2": {
             "operation": "control",
             "length": initialization_len_2,
@@ -328,14 +331,14 @@ config = {
             "length": ple_step_length_red,
             "waveforms": {
                 "single": "const_piezo_offset",
-            },   
+            },
         },
         "power_AOM_575": {
             "operation": "control",
-            "length": 0* u.ns,
+            "length": 0 * u.ns,
             "waveforms": {
                 "single": "const_piezo_offset",
-            },  
+            },
         },
     },
     "waveforms": {
@@ -345,7 +348,10 @@ config = {
         "x90_wf": {"type": "constant", "sample": x90_amp_NV},
         "minus_x90_wf": {"type": "constant", "sample": -x90_amp_NV},
         "zero_wf": {"type": "constant", "sample": 0.0},
-        "const_piezo_offset": {"type": "constant", "sample": 0.5} # Piezo offset puls for PLE
+        "const_piezo_offset": {
+            "type": "constant",
+            "sample": 0.5,
+        },  # Piezo offset puls for PLE
     },
     "digital_waveforms": {
         "ON": {"samples": [(1, 0)]},  # [(on/off, ns)]
@@ -353,7 +359,11 @@ config = {
     },
     "mixers": {
         "mixer_NV": [
-            {"intermediate_frequency": NV_IF_freq, "lo_frequency": NV_LO_freq, "correction": IQ_imbalance(0.0, 0.0)},
+            {
+                "intermediate_frequency": NV_IF_freq,
+                "lo_frequency": NV_LO_freq,
+                "correction": IQ_imbalance(0.0, 0.0),
+            },
         ],
     },
 }
