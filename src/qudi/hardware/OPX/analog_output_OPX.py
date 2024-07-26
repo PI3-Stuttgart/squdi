@@ -1,0 +1,103 @@
+import importlib
+from typing import Dict, Tuple, Any, _Real
+
+from qualang_tools.control_panel import ManualOutputControl
+
+from qudi.core.configoption import ConfigOption
+from qudi.interface.process_control_interface import (
+    ProcessSetpointInterface,
+    ProcessControlConstraints,
+)
+
+
+class AnalogOutputOPX(ProcessSetpointInterface):
+    """Module to set the manually set the Analog Outputs of the QuantumMachines OPX+.
+    Channels are defined by the OPXs own config file and not using qudi.
+    Example config for copy-paste:
+    AO_OPX:
+        module.Class: 'OPX.analog_output_OPX.AnalogOutputOPX'
+        options:
+            qm_config_file: "configuration"
+    """
+
+    _qm_config_file = ConfigOption(
+        name="qm_config_file", default="configuration", missing="nothing"
+    )
+
+    _configuration = None
+    _qm_manual_output_control = None
+    _constraints = None
+
+    def on_activate(self) -> None:
+        """Loads QM config and establishs connection to OPX+"""
+        # import QuantumMachines configuration python file
+        self._configuration = importlib.import_module(
+            f"qudi.hardware.OPX.{self._qm_config_file}"
+        )
+        # Establish connection to OPX+
+        self._qm_manual_output_control = ManualOutputControl(
+            self._configuration.config, host=self._configuration.qop_ip
+        )
+
+    def on_deactivate(self) -> None:
+        """TODO: disconnect from OPX?"""
+
+    def _set_constraints(self):
+        _channels: list = []
+        for name, qm_element in self._configuration.config["elements"].items():
+            if "singleInput" in qm_element.keys():
+                _channels.append(name)
+
+        self._constraints = ProcessControlConstraints(
+            setpoint_channels=_channels,
+            units={ch: "V" for ch in _channels},
+            #  limits=limits,
+            dtypes={ch: float for ch in _channels},
+        )
+
+    @property
+    def constraints(self) -> ProcessControlConstraints:
+        """Read-Only property holding the constraints for this hardware module.
+        See class ProcessControlConstraints for more details.
+        """
+        return self._constraints
+
+    def set_activity_state(self, channel: str, active: bool) -> None:
+        """Set activity state for given channel.
+        State is bool type and refers to active (True) and inactive (False).
+        OPX channels are always active, only setting the amplitude to zero deines them as
+        inactive. This means it the active input is False, the amplitude is set to zero,
+        but if it is set to True an warning is raised, as with this method no amplitude
+        value is defined.
+        """
+        if active:
+            self.log.warning(
+                "OPX AO is always active, amplitude only can be set to zero for inactive state"
+            )
+        if not active:
+            self._qm_manual_output_control.set_amplitude(channel, 0)
+
+    def get_activity_state(self, channel: str) -> bool:
+        """Get activity state for given channel.
+        State is bool type and refers to active (True) and inactive (False).
+        """
+        ao_status: dict[str, dict[str, float]] = (
+            self._qm_manual_output_control.analog_status()
+        )
+
+        if ao_status[channel]["amplitude"] == 0:
+            return False
+        else:
+            return True
+
+    def set_setpoint(self, channel: str, value: _Real) -> None:
+        """Set new setpoint for a single channel"""
+        self._qm_manual_output_control.set_amplitude(channel, value)
+
+    def get_setpoint(self, channel: str) -> _Real:
+        """Get current setpoint for a single channel"""
+        ao_status: dict[str, dict[str, float]] = (
+            self._qm_manual_output_control.analog_status()
+        )
+
+        return ao_status[channel]["amplitude"]
