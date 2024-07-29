@@ -571,7 +571,7 @@ class StarkHOM(MeasurementsBase):
         self.zpl_calibration['freq'] = np.array(self.zpl_calibration['freq'])
         self.zpl_calibration['setpoint'] = np.array(self.zpl_calibration['setpoint'])
 
-    def align_resonances(self, offset=0, dv = 0.2, steps = 30):
+    def align_resonances(self, offset=0, dv = 0.2, steps = 20):
         #First refocus to the max of APD1
         self.ple_gui.toggle_optimize(True)
         while self.laser_scanner_logic.module_state()=='locked':
