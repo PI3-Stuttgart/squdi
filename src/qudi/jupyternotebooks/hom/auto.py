@@ -354,6 +354,8 @@ class StarkHOM(MeasurementsBase):
         self.scanning_data_logic = scanning_data_logic
         self.pulsestreamer = pulsestreamer
         self.max_power = 40e3 #max out the power 
+        self.perpendicular = 19
+        self.parallel = 30
         self._reference_power = 40e3
         self.bf_needs_refocus = False
         self._measurement_done = False
@@ -364,6 +366,9 @@ class StarkHOM(MeasurementsBase):
         self._ple_to_refocus = False
         self._elapsed_time = 0
         self.equilize_cryo = 'bf'
+
+    def start_measurement(self):
+        return 
 
     def set_bf_needs_refocus(self):
         self.bf_needs_refocus = True
@@ -409,16 +414,15 @@ class StarkHOM(MeasurementsBase):
 
     @return_to_measurement_powers(measurement_type='E_hom')
     def refocus(self):
-        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
-        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-        tot_cts = ch2_cts.mean() + ch3_cts.mean()
         
         self._elapsed_time = time.time() - self._start_time
-        self.save_tagger_plots(os.path.join(self.folder_save, str(self._elapsed_time).replace('.', '_')), str(self._elapsed_time).replace('.', '_'))
+        self.save_tagger_plots(os.path.join(self.folder_save, 
+                                            str(self._elapsed_time).replace('.', '_')), 
+                                            str(self._elapsed_time).replace('.', '_'))
 
-        self.cts_refocus.append(tot_cts / 1e3)
+        
         self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = 5 # perpendicular pol
+        self.powercontroller_logic.motor_position = self.per # perpendicular pol
         time.sleep(2)
 
         self.poi_manager_logic_remote._optimizelogic().start_optimize()

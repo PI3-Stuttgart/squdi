@@ -52,6 +52,8 @@ measurement_e_hom.max_position = 190
 #Define the max attorty green power
 measurement_e_hom.max_power = 30e3
 #Define perpendicular polarizations
+measurement_e_hom.perpendicular = 17
+measurement_e_hom.parallel = 31 ???
 
 # %%
- 
+#Record g2 for atto3
