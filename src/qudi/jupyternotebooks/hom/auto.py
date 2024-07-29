@@ -256,6 +256,8 @@ class CorrMeasurements(MeasurementsBase):
     cts_refocus = []
     min_position = 50
     max_position = 210
+    perpendicular_position = 19
+    parallel_position = 30
     refocused_cts = None
     
     def __init__(self, *args, **kwargs) -> None:
@@ -284,7 +286,7 @@ class CorrMeasurements(MeasurementsBase):
 
         self.cts_refocus.append(tot_cts / 1e3)
         self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = 5 # perpendicular pol
+        self.powercontroller_logic.motor_position = self.perpendicular_position # perpendicular pol
         time.sleep(2)
 
         self.poi_manager_logic_remote._optimizelogic().start_optimize()
@@ -294,7 +296,7 @@ class CorrMeasurements(MeasurementsBase):
         time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
 
         self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = 22 # parallel pol
+        self.powercontroller_logic.motor_position = self.parallel_position # parallel pol
         time.sleep(2)
         ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
         ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
@@ -314,7 +316,7 @@ class CorrMeasurements(MeasurementsBase):
                     self.switchlogic.set_state(switch = "ResonantBF", state = "On")
                 self.ibeam_smart_remote.power = 50
                 self.powercontroller_logic._current_motor = 2
-                self.powercontroller_logic.motor_position = 45 # green dim
+                self.powercontroller_logic.motor_position = self.min_position # green dim
                 time.sleep(0.5)
             else:
                 print("Mirror not in, PLE would burn APDs")
@@ -329,9 +331,9 @@ class CorrMeasurements(MeasurementsBase):
             if self.switchlogic.get_state("Mirror") != 'Off':
                 self.switchlogic.set_state(switch = "Mirror", state = "Off")
             if greens_on:
-                self.ibeam_smart_remote.power = 30e3
+                self.ibeam_smart_remote.power = self.max_position
                 self.powercontroller_logic._current_motor = 2
-                self.powercontroller_logic.motor_position = 205 # MAX green
+                self.powercontroller_logic.motor_position = self.max_position # MAX green
 
         else:
             print("No mode by this name")
