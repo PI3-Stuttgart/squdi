@@ -76,6 +76,9 @@ class MeasurementsBase:
     cts_refocus = []
     min_position = 50
     max_position = 210
+    max_power = 40e3 #max out the power 
+    perpendicular_position = 19
+    parallel_position = 30
     refocused_cts = None
 
     def __init__(self, 
@@ -85,6 +88,10 @@ class MeasurementsBase:
                  poi_manager_logic_remote,
                  powercontroller_logic,
                  ibeam_smart_remote,
+                 ple_gui,
+                 laser_scanner_logic,
+                 scanner_gui, 
+                 scanning_data_logic,
                  switchlogic,
                  current_cryo,
                  non_active_cryo,
@@ -98,6 +105,10 @@ class MeasurementsBase:
         self.poi_manager_logic_remote = poi_manager_logic_remote
         self.switchlogic = switchlogic
         self.ibeam_smart_remote = ibeam_smart_remote
+        self.ple_gui = ple_gui
+        self.laser_scanner_logic = laser_scanner_logic
+        self.scanner_gui = scanner_gui
+        self.scanning_data_logic = scanning_data_logic
         self.powercontroller_logic = powercontroller_logic
         self.integrate_for_mins = integrate_for_mins
         self.current_cryo = current_cryo
@@ -105,8 +116,7 @@ class MeasurementsBase:
         self.folder_save = folder_save
         self.values = values
 
-        self.min_position = 70
-        self.max_position = 190
+
 
     def start_periodic_refocus(self, refocus_period_mins = 25, count_check_period_sec = 60):
         self.timer = QTimer()
@@ -133,41 +143,70 @@ class MeasurementsBase:
         self.refocus_timer.stop()
         self.integration_timer.stop()
     
+    def get_counts(self, integrate_sec = 0.1, samples = 30, return_ple = False):
+
+        self.timetagger._mw.count_display_comboBox.setCurrentIndex(1)
+        time.sleep(0.1)
+        ch_cts0 = 0
+        for i in range(samples):
+            ch_cts0 += float(self.timetagger._mw.count_display_label.text()[:5])
+            time.sleep(integrate_sec)
+        ch_cts0 = ch_cts0 / samples
+
+        self.timetagger._mw.count_display_comboBox.setCurrentIndex(2)
+        ch_cts1 = 0
+        for i in range(samples):
+            ch_cts1 += float(self.timetagger._mw.count_display_label.text()[:5])
+            time.sleep(integrate_sec)
+        ch_cts1 = ch_cts1 / samples
+
+        self.timetagger._mw.count_display_comboBox.setCurrentIndex(3)
+        time.sleep(0.1)
+        ch_cts2 = 0
+        for i in range(samples):
+            ch_cts2 += float(self.timetagger._mw.count_display_label.text()[:5])
+            time.sleep(integrate_sec)
+        ch_cts2 = ch_cts2 / samples
+        tot_cts = ch_cts1 + ch_cts2
+        if return_ple:
+            return ch_cts0, ch_cts1, ch_cts2, tot_cts
+        else:
+            return ch_cts1, ch_cts2, tot_cts
     #HELP functions
     def check_counts(self):
-        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
-        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-        tot_cts = ch2_cts.mean() + ch3_cts.mean()
+        tot_cts = self.get_counts()[-1]
         self.refocused_cts = tot_cts if self.refocused_cts is None else self.refocused_cts
 
         if tot_cts <= self.refocused_cts * 0.75:
             self.refocus()
+
         self.timer.start(200 * 1000)
 
-    def refocus(self):
-        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
-        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-        tot_cts = ch2_cts.mean() + ch3_cts.mean()
+    def refocus(self, optimize_both = False):
         
-        self.save_tagger_plots(os.path.join(self.folder_save, str(self.power)), str(self.power))
+        self.save_tagger_plots(os.path.join(self.folder_save, 
+                                            str(self.power)), 
+                                            str(self.power))
 
-        self.cts_refocus.append(tot_cts / 1e3)
         self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = 5 # perpendicular pol
+        self.powercontroller_logic.motor_position = self.perpendicular_position # perpendicular pol
         time.sleep(2)
-
+        if optimize_both:
+            self.poi_manager_logic._optimizelogic().start_optimize()
         self.poi_manager_logic_remote._optimizelogic().start_optimize()
         # poi_manager_logic._optimizelogic().start_optimize()
+        while self.poi_manager_logic._optimizelogic().module_state()=='locked':
+            time.sleep(1) # wait for a long time to 
         while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
             time.sleep(1) # wait for a long time to 
         time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
 
         self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = 22 # parallel pol
+        self.powercontroller_logic.motor_position = self.parallel_position # parallel pol
         time.sleep(2)
-        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
-        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-        self.refocused_cts = ch2_cts.mean() + ch3_cts.mean()
+        
+        tot_cts = self.get_counts()[-1]
+        self.refocused_cts = tot_cts
 
     def toggle_tagger_counter_plot(self, state):
         # start/ stop the counter measurement
@@ -229,7 +268,7 @@ class MeasurementsBase:
                     self.switchlogic.set_state(switch = "ResonantBF", state = "On")
                 self.ibeam_smart_remote.power = 50
                 self.powercontroller_logic._current_motor = 2
-                self.powercontroller_logic.motor_position = 45 # green dim
+                self.powercontroller_logic.motor_position = self.min_position # green dim
                 time.sleep(0.5)
             else:
                 print("Mirror not in, PLE would burn APDs")
@@ -244,20 +283,80 @@ class MeasurementsBase:
             if self.switchlogic.get_state("Mirror") != 'Off':
                 self.switchlogic.set_state(switch = "Mirror", state = "Off")
             if greens_on:
-                self.ibeam_smart_remote.power = 30e3
+                self.ibeam_smart_remote.power = self.max_power
                 self.powercontroller_logic._current_motor = 2
-                self.powercontroller_logic.motor_position = 205 # MAX green
+                self.powercontroller_logic.motor_position = self.max_position # MAX green
 
         else:
             print("No mode by this name")
 
+    def do_ple_scan(self, lines = 1, in_range = None, frequency=None, resolution=None, channel = None):
+        """
+        fine_scan_range = (
+                self.ple_gui.fit_result[1].best_values['center'] - self.ple_gui.fit_result[1].best_values['sigma'] * 3,
+                self.ple_gui.fit_result[1].best_values['center'] + self.ple_gui.fit_result[1].best_values['sigma']  * 3
+            )
+        """
+        if channel is not None:
+            self.ple_gui._mw.channel_comboBox.setCurrentText(channel) ## MAY BE MISTAKEN
+            # ple_gui._mw.channel_comboBox.setCurrentText('APD4')
+        #laser_scanner_logic.scan_ranges["a"]
+        if in_range is None:
+            self.ple_gui._mw.actionFull_range.triggered.emit()
+        else:
+            self.ple_gui.sigScanSettingsChanged.emit(
+                {
+                'range': {self.ple_gui.scan_axis: in_range}
+                }
+            )
+        self.ple_gui._mw.number_of_repeats_SpinBox.setValue(lines)
+        self.ple_gui._mw.number_of_repeats_SpinBox.editingFinished.emit()
+        time.sleep(0.5)
+        self.ple_gui._mw.actionToggle_scan.setChecked(True)
+        self.ple_gui.toggle_scan()
+        while self.laser_scanner_logic.module_state()=='locked':
+                time.sleep(1)
+        time.sleep(1)
+        self.ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
+        time.sleep(1)
+        # self.ple_gui._accumulated_data.mean(axis=0)
+        # print(f"Rsquared {self.ple_gui.fit_result[1].rsquared}")
+        # self.ple_gui.fit_result[1].params["center"].value
+        return self.ple_gui.fit_result[1]
+    
+    def PLE_check_trigger(self, enable=True):
+        # pulsestreamer._seq.setDigital(1, [(1000, 1)])
+        self.pulsestreamer._seq.setDigital(5, [(100000000000, 0), (10, int(enable))])
+        
+        self.pulsestreamer.pulser_on()
+    
+        #from 0 to 19650 MHz (max val defined by config) laser offset 
+    def go_to_ple_target(self, target):
+        self.ple_gui._mw.ple_widget.target_point.setValue(target)
+        self.ple_gui._mw.ple_widget.target_point.sigPositionChangeFinished.emit(target)
+        #laser_scanner_logic.set_target_position({"a": target})
+        time.sleep(0.5)
+
+    #save confocal map. It will be saved in the folder defined in the app
+    def save_scan(self, name):
+        self.scanner_gui.save_path_widget.saveTagLineEdit.setText(name)
+        self.scanner_gui.scan_2d_dockwidgets[('x', 'y')].scan_widget.save_scan_button.clicked.emit() #saving
+        dir_ = self.scanning_data_logic.module_default_data_dir
+        return name, dir_
+
+
+    def save_ple(self, tag, poi_name=None, folder_name = None):
+            if folder_name:
+                self.ple_gui._save_folderpath = folder_name
+            self.ple_gui.save_path_widget.saveTagLineEdit.setText(
+                f"{poi_name}_{tag}"
+                )
+            self.ple_gui._mw.actionSave.triggered.emit()
+
 class CorrMeasurements(MeasurementsBase):
 
     cts_refocus = []
-    min_position = 50
-    max_position = 210
-    perpendicular_position = 19
-    parallel_position = 30
+
     refocused_cts = None
     
     def __init__(self, *args, **kwargs) -> None:
@@ -276,70 +375,6 @@ class CorrMeasurements(MeasurementsBase):
             self.set_green_power('bf', value)
             self.set_green_power('atto3', 0)
 
-    @return_to_measurement_powers(measurement_type='I_g2')
-    def refocus(self):
-        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
-        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-        tot_cts = ch2_cts.mean() + ch3_cts.mean()
-        
-        self.save_tagger_plots(os.path.join(self.folder_save, str(self.value).replace('.', '_')), str(self.value).replace('.', '_'))
-
-        self.cts_refocus.append(tot_cts / 1e3)
-        self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = self.perpendicular_position # perpendicular pol
-        time.sleep(2)
-
-        self.poi_manager_logic_remote._optimizelogic().start_optimize()
-        # poi_manager_logic._optimizelogic().start_optimize()
-        while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
-            time.sleep(1) # wait for a long time to 
-        time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
-
-        self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = self.parallel_position # parallel pol
-        time.sleep(2)
-        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
-        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-        self.refocused_cts = ch2_cts.mean() + ch3_cts.mean()
-
-    @return_to_measurement_powers(measurement_type='I_g2')
-    def measurement_mode(self, mode, greens_on=True):
-        if mode == "PLE":
-            if self.switchlogic.get_state("Mirror") != 'On':
-                self.switchlogic.set_state(switch = "Mirror", state = "On")
-            time.sleep(1)
-            if self.switchlogic.get_state("Mirror") == 'On':
-                if self.switchlogic.get_state("Shutter") != 'Off':
-                    self.switchlogic.set_state(switch = "Shutter", state = "Off")
-                time.sleep(0.5)
-                if self.switchlogic.get_state("ResonantBF") != 'On':
-                    self.switchlogic.set_state(switch = "ResonantBF", state = "On")
-                self.ibeam_smart_remote.power = 50
-                self.powercontroller_logic._current_motor = 2
-                self.powercontroller_logic.motor_position = self.min_position # green dim
-                time.sleep(0.5)
-            else:
-                print("Mirror not in, PLE would burn APDs")
-                raise BaseException
-
-        elif mode == "Off-res":
-            if self.switchlogic.get_state("ResonantBF") != 'Off':
-                    self.switchlogic.set_state(switch = "ResonantBF", state = "Off")
-            if self.switchlogic.get_state("Shutter") != 'On':
-                self.switchlogic.set_state(switch = "Shutter", state = "On")
-            time.sleep(1)
-            if self.switchlogic.get_state("Mirror") != 'Off':
-                self.switchlogic.set_state(switch = "Mirror", state = "Off")
-            if greens_on:
-                self.ibeam_smart_remote.power = self.max_position
-                self.powercontroller_logic._current_motor = 2
-                self.powercontroller_logic.motor_position = self.max_position # MAX green
-
-        else:
-            print("No mode by this name")
-
-    # ws_wavemeter.start_acquisition()
-
 
 class StarkHOM(MeasurementsBase):
     def __init__(self, ao_electrodes, ple_gui, laser_scanner_logic,scanner_gui, scanning_data_logic, pulsestreamer,
@@ -348,14 +383,11 @@ class StarkHOM(MeasurementsBase):
             *args, **kwargs
         )
         self.ao_electrodes = ao_electrodes
-        self.ple_gui = ple_gui
-        self.laser_scanner_logic = laser_scanner_logic
         self.scanner_gui = scanner_gui
         self.scanning_data_logic = scanning_data_logic
         self.pulsestreamer = pulsestreamer
-        self.max_power = 40e3 #max out the power 
-        self.perpendicular = 19
-        self.parallel = 30
+        
+
         self._reference_power = 40e3
         self.bf_needs_refocus = False
         self._measurement_done = False
@@ -412,39 +444,20 @@ class StarkHOM(MeasurementsBase):
     def set_voltage(self, value):
         self.ao_electrodes.setpoint = value
 
-    @return_to_measurement_powers(measurement_type='E_hom')
-    def refocus(self):
-        
+
+    def _refocus_hom(self):
+        #save to the timed folders
         self._elapsed_time = time.time() - self._start_time
         self.save_tagger_plots(os.path.join(self.folder_save, 
                                             str(self._elapsed_time).replace('.', '_')), 
                                             str(self._elapsed_time).replace('.', '_'))
-
         
-        self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = self.per # perpendicular pol
-        time.sleep(2)
-
-        self.poi_manager_logic_remote._optimizelogic().start_optimize()
-        if self.bf_needs_refocus:
-            self.poi_manager_logic._optimizelogic().start_optimize() # CONSIDER THAT BF refocus is also necesarry but less frequently
-            while self.poi_manager_logic._optimizelogic().module_state()=='locked':
-                time.sleep(2) 
-            self.bf_needs_refocus = False
-        while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
-            time.sleep(1) # wait for a long time to 
-        time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
-
-        self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = 22 # parallel pol
-        time.sleep(2)
-        ch2_cts = self.timetaggerlogic.trace_data[2][1] #timetaggerlogic.counter.getDataNormalized()[0, :]
-        ch3_cts = self.timetaggerlogic.trace_data[3][1]  #timetaggerlogic.counter.getDataNormalized()[1, :]
-        self.refocused_cts = ch2_cts.mean() + ch3_cts.mean()
+        self.refocus(optimize_both = True)
 
         self.check_ple(do_ple_refocus=True)
 
         self.equilize_powers()
+        
 
     # @return_to_measurement_powers(measurement_type='E_hom')
     def measurement_mode(self, mode, greens_on=True):
@@ -506,29 +519,14 @@ class StarkHOM(MeasurementsBase):
             self.counts_calibration[cryo].append(ch2_cts + ch3_cts)
         self.counts_calibration[cryo] = np.array(self.counts_calibration[cryo])
 
-    def equilize_powers(self):
+    def equilize_powers(self, power_integration_steps = 30):
  
         # self.ibeam_smart_remote.power = self._reference_power # exite on max attory
         self.set_green_power('bf', self.max_power)
         self.set_green_power('atto3', self.max_power)
         
 
-        self.timetagger._mw.count_display_comboBox.setCurrentIndex(2)
-        time.sleep(0.1)
-        ch_cts1 = 0
-        for i in range(30):
-            ch_cts1 += float(self.timetagger._mw.count_display_label.text()[:5])
-            time.sleep(0.1)
-        ch_cts1 = ch_cts1 / 30
-
-        self.timetagger._mw.count_display_comboBox.setCurrentIndex(3)
-        time.sleep(0.1)
-        ch_cts2 = 0
-        for i in range(30):
-            ch_cts2 += float(self.timetagger._mw.count_display_label.text()[:5])
-            time.sleep(0.1)
-        ch_cts2 = ch_cts2 / 30
-       
+        ch_cts1, ch_cts2, tot_cts = self.get_counts()
         
         # set the bluefors power to match the counts
 
@@ -540,6 +538,7 @@ class StarkHOM(MeasurementsBase):
             equilize_cryo = 'bf'
             cryo_index = 2
             cts_min = ch_cts2
+
         self.timetagger._mw.count_display_comboBox.setCurrentIndex(cryo_index)
         time.sleep(0.1)
         self.set_green_power(equilize_cryo, self.max_power*0.5)
@@ -549,33 +548,16 @@ class StarkHOM(MeasurementsBase):
         for _power in (powers:=np.linspace(self.max_power*0.5, self.max_power, 10)):
             self.set_green_power(equilize_cryo, _power)
             ch_cts = 0
-            for i in range(30):
+            for i in range(power_integration_steps):
                 ch_cts += float(self.timetagger._mw.count_display_label.text()[:5])
                 time.sleep(0.1)
-            ch_cts = ch_cts / 30
+            ch_cts = ch_cts / power_integration_steps
             counts_diff = np.append(counts_diff, np.abs(ch_cts - cts_min))
 
         self.set_green_power(equilize_cryo, powers[np.argmin(counts_diff)])
 
         return ch_cts, ch_cts1, ch_cts2
 
-    def calibrate_stark_shift(self, v0, dv, 
-                              calibration_range = None, 
-                              calibration_channel='APD4', steps = 20):
-        if calibration_range is None:
-            current_range = self.laser_scanner_logic.scan_ranges['a']
-        self.zpl_calibration['freq'] = []
-        self.zpl_calibration['setpoint'] = []
-        for _setpoint in np.linspace(v0 - dv/2, v0 + dv/2, steps):
-            self.ao_electrodes.setpoint = _setpoint
-            res_atto3 = self.do_ple_scan(lines=1, 
-                                          in_range=current_range,
-                                          channel=calibration_channel)
-            if res_atto3.rsquared > 0.6:
-                self.zpl_calibration['freq'].append(float(res_atto3.best_values['center']))
-                self.zpl_calibration['setpoint'].append(float(_setpoint))
-        self.zpl_calibration['freq'] = np.array(self.zpl_calibration['freq'])
-        self.zpl_calibration['setpoint'] = np.array(self.zpl_calibration['setpoint'])
 
     def align_resonances(self, offset=0, dv = 0.2, steps = 20):
         #First refocus to the max of APD1
@@ -597,51 +579,7 @@ class StarkHOM(MeasurementsBase):
         # ao_electrodes_remote.setpoint = v0
         self.ao_electrodes.setpoint = setpoints[np.argmax(counts)]
         return counts, setpoints
-        # """
-        # Aligns two ZPL lines to have a predefined offset.
-
-        # Parameters:
-        # offset (float): The desired offset between the two ZPL lines. Default is 0 for resonance.
-        # """
-
-        # # Perform initial PLE scan
-        # current_range = self.laser_scanner_logic.scan_ranges['a']
-        # res_bf = self.do_ple_scan(lines=1, 
-        #                         in_range=current_range,
-        #                         channel='APD1')
-        
-        # # Switch to a different channel and perform fitting
-        # self.ple_gui._mw.channel_comboBox.setCurrentText('APD4')
-        # time.sleep(0.3)
-        # self.ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
-        # time.sleep(0.5)
-
-        # # Get the fit results for the second scan
-        # res_atto3 = self.ple_gui.fit_result[1]
-
-        # # Extract the ZPL centers from the fit results
-        # zpl1 = float(res_bf.best_values['center'])
-        # zpl2 = float(res_atto3.best_values['center'])
-
-        # # Find the closest setpoint index for the second ZPL center
-        # closest_setpoint_1 = np.argmin(np.abs(self.zpl_calibration['freq'] - zpl2))
-
-        # # Update the ZPL calibration frequencies
-        # self.zpl_calibration_upd = copy.deepcopy(self.zpl_calibration)
-        # self.zpl_calibration_upd['freq'] = self.zpl_calibration['freq'] - (self.zpl_calibration['freq'][closest_setpoint_1] - zpl2)
-
-        # # Calculate the real and calibrated ZPL differences
-        # dzpl_real = zpl2 - zpl1
-        # dzpl_cal = self.zpl_calibration_upd['freq'] - (zpl1 + offset)  # Apply the offset here
-
-        # # Find the closest setpoint index for the desired alignment
-        # closest_setpoint_index = np.argmin(np.abs(dzpl_cal))
-
-        # # Set the AO electrodes setpoint to the updated value
-        # self.ao_electrodes.setpoint = self.zpl_calibration_upd['setpoint'][closest_setpoint_index]
-
-       
-
+    
     def check_ple(self, do_ple_refocus = False):
         self.PLE_check_trigger(enable=True)
         self.measurement_mode('PLE')
@@ -672,65 +610,6 @@ class StarkHOM(MeasurementsBase):
         
 
         #add the trigger for ple checking to be able to process out it in timetagger dump
-    def PLE_check_trigger(self, enable=True):
-        # pulsestreamer._seq.setDigital(1, [(1000, 1)])
-        self.pulsestreamer._seq.setDigital(5, [(100000000000, 0), (10, int(enable))])
-        
-        self.pulsestreamer.pulser_on()
+
+
     
-        #from 0 to 19650 MHz (max val defined by config) laser offset 
-    def go_to_ple_target(self, target):
-        self.ple_gui._mw.ple_widget.target_point.setValue(target)
-        self.ple_gui._mw.ple_widget.target_point.sigPositionChangeFinished.emit(target)
-        #laser_scanner_logic.set_target_position({"a": target})
-        time.sleep(0.5)
-
-    #save confocal map. It will be saved in the folder defined in the app
-    def save_scan(self, name):
-        self.scanner_gui.save_path_widget.saveTagLineEdit.setText(name)
-        self.scanner_gui.scan_2d_dockwidgets[('x', 'y')].scan_widget.save_scan_button.clicked.emit() #saving
-        dir_ = self.scanning_data_logic.module_default_data_dir
-        return name, dir_
-
-
-    def save_ple(self, tag, poi_name=None, folder_name = None):
-            if folder_name:
-                self.ple_gui._save_folderpath = folder_name
-            self.ple_gui.save_path_widget.saveTagLineEdit.setText(
-                f"{poi_name}_{tag}"
-                )
-            self.ple_gui._mw.actionSave.triggered.emit()
-
-    def do_ple_scan(self, lines = 1, in_range = None, frequency=None, resolution=None, channel = None):
-        """
-        fine_scan_range = (
-                self.ple_gui.fit_result[1].best_values['center'] - self.ple_gui.fit_result[1].best_values['sigma'] * 3,
-                self.ple_gui.fit_result[1].best_values['center'] + self.ple_gui.fit_result[1].best_values['sigma']  * 3
-            )
-        """
-        if channel is not None:
-            self.ple_gui._mw.channel_comboBox.setCurrentText(channel) ## MAY BE MISTAKEN
-            # ple_gui._mw.channel_comboBox.setCurrentText('APD4')
-        #laser_scanner_logic.scan_ranges["a"]
-        if in_range is None:
-            self.ple_gui._mw.actionFull_range.triggered.emit()
-        else:
-            self.ple_gui.sigScanSettingsChanged.emit(
-                {
-                'range': {self.ple_gui.scan_axis: in_range}
-                }
-            )
-        self.ple_gui._mw.number_of_repeats_SpinBox.setValue(lines)
-        self.ple_gui._mw.number_of_repeats_SpinBox.editingFinished.emit()
-        time.sleep(0.5)
-        self.ple_gui._mw.actionToggle_scan.setChecked(True)
-        self.ple_gui.toggle_scan()
-        while self.laser_scanner_logic.module_state()=='locked':
-                time.sleep(1)
-        time.sleep(1)
-        self.ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
-        time.sleep(1)
-        # self.ple_gui._accumulated_data.mean(axis=0)
-        # print(f"Rsquared {self.ple_gui.fit_result[1].rsquared}")
-        # self.ple_gui.fit_result[1].params["center"].value
-        return self.ple_gui.fit_result[1]
