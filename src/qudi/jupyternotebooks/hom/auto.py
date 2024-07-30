@@ -152,41 +152,24 @@ class MeasurementsBase:
         self.refocus_timer.stop()
         self.integration_timer.stop()
     
-    def get_counts(self, integrate_sec = 0.1, samples = 10, return_ple = False):
+    def get_counts(self, integrate_sec = 0.1, samples = 10, return_ple = False, channels=[2,3]):
+        cts = []
+        for channel in channels:
 
-        
-
-        self.timetagger._mw.count_display_comboBox.setCurrentIndex(2)
-        ch_cts1 = 0
-        for i in range(samples):
-            ch_cts1 += float(self.timetagger._mw.count_display_label.text()[:5])
-            time.sleep(integrate_sec)
-        ch_cts1 = ch_cts1 / samples
-
-        self.timetagger._mw.count_display_comboBox.setCurrentIndex(3)
-        time.sleep(0.1)
-        ch_cts2 = 0
-        for i in range(samples):
-            ch_cts2 += float(self.timetagger._mw.count_display_label.text()[:5])
-            time.sleep(integrate_sec)
-        ch_cts2 = ch_cts2 / samples
-
-        tot_cts = ch_cts1 + ch_cts2
-
-        if return_ple:
-            self.timetagger._mw.count_display_comboBox.setCurrentIndex(1)
-            time.sleep(0.1)
-            ch_cts0 = 0
+            self.timetagger._mw.count_display_comboBox.setCurrentIndex(channel)
+            ch_cts = 0
             for i in range(samples):
-                ch_cts0 += float(self.timetagger._mw.count_display_label.text()[:5])
+                ch_cts += float(self.timetagger._mw.count_display_label.text()[:5])
                 time.sleep(integrate_sec)
-            ch_cts0 = ch_cts0 / samples
-            return ch_cts0, ch_cts1, ch_cts2, tot_cts
-        else:
-            return ch_cts1, ch_cts2, tot_cts
+            ch_cts = ch_cts / samples
+
+            cts.append(ch_cts)
+        return np.array(cts)
+
+       
     #HELP functions
     def check_counts(self):
-        tot_cts = self.get_counts()[-1]
+        tot_cts = self.get_counts(channels=[2,3]).mean()
         self.refocused_cts = tot_cts if self.refocused_cts is None else self.refocused_cts
 
         if tot_cts <= self.refocused_cts * 0.75:
@@ -212,7 +195,7 @@ class MeasurementsBase:
       
         time.sleep(2)
         
-        tot_cts = self.get_counts()[-1]
+        tot_cts = self.get_counts(channels=[2,3]).mean()
         self.refocused_cts = tot_cts
 
     @property
@@ -545,25 +528,33 @@ class StarkHOM(MeasurementsBase):
 
     def equilize_powers(self, power_integration_steps = 5):
 
-        self.polarization_is_parallel = False
+        self.polarization_is_parallel = True
 
         # self.ibeam_smart_remote.power = self._reference_power # exite on max attory
-        self.set_green_power('bf', self.max_power)
+        self.set_green_power('bf', 0)
         self.set_green_power('atto3', self.max_power)
-        
 
-        ch_cts1, ch_cts2, tot_cts = self.get_counts()
+        ch_cts1 = self.get_counts(channels=[1]).mean()
+
+        self.set_green_power('bf', self.max_power)
+        self.set_green_power('atto3', 0)
+
+        ch_cts2 = self.get_counts(channels=[1]).mean()
         
         # set the bluefors power to match the counts
-
+        ch_min = min(ch_cts1, ch_cts2)
         if ch_cts1 > ch_cts2:
             equilize_cryo = 'atto3'
             cryo_index = 3
-            cts_min = ch_cts1
+            
+            self.set_green_power('bf', 0)
+            self.set_green_power('atto3', self.max_power)
         else:
             equilize_cryo = 'bf'
             cryo_index = 2
-            cts_min = ch_cts2
+            
+            self.set_green_power('bf', self.max_power)
+            self.set_green_power('atto3', 0)
 
         self.timetagger._mw.count_display_comboBox.setCurrentIndex(cryo_index)
         time.sleep(0.1)
