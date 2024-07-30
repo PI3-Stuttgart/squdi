@@ -1,5 +1,6 @@
 import importlib
 from typing import Dict, Tuple, Any
+import time
 
 from qualang_tools.control_panel import ManualOutputControl
 
@@ -23,6 +24,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     _qm_config_file = ConfigOption(
         name="qm_config_file", default="configuration", missing="nothing"
     )
+    _switch_time = ConfigOption(name='switch_time', default=1, missing='nothing')
 
     _configuration = None
     _qm_manual_output_control = None
@@ -94,6 +96,8 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     def set_setpoint(self, channel: str, value: float) -> None:
         """Set new setpoint for a single channel"""
         self._qm_manual_output_control.set_amplitude(channel, value)
+        # time.sleep(self._switch_time)
+        
 
     def get_setpoint(self, channel: str) -> float:
         """Get current setpoint for a single channel"""

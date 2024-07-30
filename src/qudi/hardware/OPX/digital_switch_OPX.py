@@ -1,5 +1,5 @@
 import importlib
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, Union
 
 from qualang_tools.control_panel import ManualOutputControl
 
