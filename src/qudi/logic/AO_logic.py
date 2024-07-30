@@ -20,6 +20,7 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 import time
+from typing import Any
 
 from PySide2 import QtCore
 
@@ -47,6 +48,7 @@ class AOLogic(LogicBase):
     """
 
     ao_hardware = Connector(interface="ProcessSetpointInterface")
+    ao_parameters: dict[str, dict[str, Any]] = ConfigOption(name="AO_parameters", missing="nothing")  # type: ignore
 
     _watchdog_interval: float = ConfigOption(
         name="watchdog_interval", default=1.0, missing="nothing"
@@ -65,7 +67,7 @@ class AOLogic(LogicBase):
     sigWatchdogToggled = QtCore.Signal(bool)
 
     # directly wrapped attributes from hardware module
-    __wrapped_hw_attributes = frozenset({"ao_names", "number_of_aos"})
+    __wrapped_hw_attributes = frozenset({"constraints"})
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -96,6 +98,32 @@ class AOLogic(LogicBase):
         if item in self.__wrapped_hw_attributes:
             return getattr(self.ao_hardware(), item)
         raise AttributeError(f'SwitchLogic has no attribute with name "{item}"')
+
+    def use_conversion(self, channel: str) -> bool:
+        """Checks if conversion is used"""
+        if not self.ao_parameters:
+            return False
+
+        if channel not in self.ao_parameters:
+            return False
+
+        if "conv_bounds" not in self.ao_parameters[channel]:
+            return False
+
+        return True
+
+    def use_unit(self, channel: str) -> bool:
+        """Checks if unit is used"""
+        if not self.ao_parameters:
+            return False
+
+        if channel not in self.ao_parameters:
+            return False
+
+        if "unit" not in self.ao_parameters[channel]:
+            return False
+
+        return True
 
     @property
     def watchdog_active(self) -> bool:
@@ -168,7 +196,7 @@ class AOLogic(LogicBase):
                 if get_hardware_value:
                     setpoint = setpoint_hw.copy()
                 else:
-                    setpoint = self.conv_setpoint(channel, setpoint_hw, invert=True)
+                    setpoint = self.convert_setpoint(channel, setpoint_hw, invert=True)
             except BaseException:
                 self.log.exception(
                     f'Error while trying to query setpoint of channel "{channel}".'
@@ -190,41 +218,39 @@ class AOLogic(LogicBase):
                 #
                 if use_hardware_value:
                     self.ao_hardware().set_setpoint(channel, value)
-                    # self.sigSetpointsChanged.emit(self.setpoints)
                 else:
                     self.ao_hardware().set_setpoint(
-                        channel, self.conv_setpoint(channel, value)
+                        channel, self.convert_setpoint(channel, value)
                     )
             except BaseException:
                 self.log.exception(
                     f'Error while trying to set channel "{channel}" to setpoint "{value}".'
                 )
 
-    def conv_setpoint(self, channel: str, value: float, invert: bool = False):
+    def convert_setpoint(self, channel: str, value: float, invert: bool = False):
+        """Converts setpoint value in arbitrary value to hardware value"""
 
         # check if convertion is defined, otherwise just returns input value as output
-        if channel in self._hw_params:
-            if "conv_bounds" in self._hw_params[channel]:
-                source_min, source_max = (
-                    self._hw_params[channel]["conv_bounds"]
-                    if not invert
-                    else self._hardware_bounds
-                )
-                target_min, target_max = (
-                    self._hardware_bounds
-                    if not invert
-                    else self._hw_params[channel]["conv_bounds"]
-                )
-        # returns input value if no convartion bounds are define in qudi config file
+        if self.use_conversion(channel):
+            source_min, source_max = (
+                self.ao_parameters[channel]["conv_bounds"]
+                if not invert
+                else self._hardware_bounds
+            )
+            target_min, target_max = (
+                self._hardware_bounds
+                if not invert
+                else self.ao_parameters[channel]["conv_bounds"]
+            )
+
+            # normalize value
+            normalized_value = (value - source_min) / (source_max - source_min)
+            # Scale the normalized value to the target bounds
+            converted_value = normalized_value * (target_max - target_min) + target_min
+
+            return converted_value
         else:
             return value
-
-        # normalize value
-        normalized_value = (value - source_min) / (source_max - source_min)
-        # Scale the normalized value to the target bounds
-        converted_value = normalized_value * (target_max - target_min) + target_min
-
-        return converted_value
 
     def convert_setpoints_dict(
         self, setpoints_dict: dict[str, float], invert: bool = False

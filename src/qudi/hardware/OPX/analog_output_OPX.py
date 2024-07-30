@@ -54,7 +54,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         self._constraints = ProcessControlConstraints(
             setpoint_channels=_channels,
             units={ch: "V" for ch in _channels},
-            #  limits=limits,
+            limits={ch: (-0.5, 0.5) for ch in _channels},
             dtypes={ch: float for ch in _channels},
         )
 
