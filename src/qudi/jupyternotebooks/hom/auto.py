@@ -1,6 +1,7 @@
 from functools import partial, wraps
 import time
 import os
+from datetime import datetime
 import numpy as np
 import copy
 from PySide2.QtCore import QTimer, QTime, Signal
@@ -49,8 +50,9 @@ def g2_value_dependent(func):
             return
 
         self.value = self.values.pop()
-        
-        self.save_tagger_plots(os.path.join(self.folder_save, str(self.value).replace('.', '_')), str(self.value).replace('.', '_'))
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.save_tagger_plots(tag=f'{timestamp}')
 
         self.toggle_tagger_counter_plot(False)
         self.toggle_tagger_corr_plot(False)
@@ -90,6 +92,7 @@ class MeasurementsBase:
                  poi_manager_logic_remote=None,
                  poi_manager_logic=None,
                  powercontroller_logic=None,
+                 pulsestreamer = None,
                  ibeam_smart_remote=None,
                  ple_gui=None,
                  laser_scanner_logic=None,
@@ -116,11 +119,16 @@ class MeasurementsBase:
         self.scanner_gui = scanner_gui
         self.scanning_data_logic = scanning_data_logic
         self.powercontroller_logic = powercontroller_logic
+        self.pulsestreamer = pulsestreamer
         self.integrate_for_mins = integrate_for_mins
         self.current_cryo = current_cryo
         self.non_active_cryo = non_active_cryo
         self.folder_save = folder_save
+        self.folder_save_papa = folder_save
         self.values = values
+        self.start_time = datetime.now()
+        self.folder_interval = 20 #folder_interval_minutes  # Set the folder saving interval in minutes
+
 
         self.powercontroller_logic._current_motor = 0
         self.powercontroller_logic.motor_position = self.perpendicular_position
@@ -157,6 +165,7 @@ class MeasurementsBase:
         for channel in channels:
 
             self.timetagger._mw.count_display_comboBox.setCurrentIndex(channel)
+            time.sleep(0.5)
             ch_cts = 0
             for i in range(samples):
                 ch_cts += float(self.timetagger._mw.count_display_label.text()[:5])
@@ -172,7 +181,7 @@ class MeasurementsBase:
         tot_cts = self.get_counts(channels=[2,3]).mean()
         self.refocused_cts = tot_cts if self.refocused_cts is None else self.refocused_cts
 
-        if tot_cts <= self.refocused_cts * 0.75:
+        if tot_cts <= self.refocused_cts * 0.55:
             self.refocus()
 
         self.timer.start(200 * 1000)
@@ -225,9 +234,12 @@ class MeasurementsBase:
         self.timetagger._mw.toggleCorrPushButton.setChecked(state)
         self.timetagger._mw.toggleCorrPushButton.toggled.emit(state)
 
-    def save_tagger_plots(self, folder, tag):
-        self.timetagger._save_folderpath = folder
-        self.timetagger._mw.currPathLabel.setText(folder)
+    def save_tagger_plots(self, tag,  folder_path=None):
+        if folder_path is None:
+            folder_path = self.timed_folder
+
+        self.timetagger._save_folderpath = folder_path
+        self.timetagger._mw.currPathLabel.setText(folder_path)
         self.timetagger._mw.saveTagLineEdit.setText(tag)     
         self.timetagger._mw.counter_checkBox.setChecked(True)
         self.timetagger._save_data_clicked()
@@ -355,6 +367,7 @@ class MeasurementsBase:
     def save_ple(self, tag, poi_name=None, folder_name = None):
             if folder_name:
                 self.ple_gui._save_folderpath = folder_name
+                self.ple_gui.save_path_widget.currPathLabel.setText(self.ple_gui._save_folderpath)
             self.ple_gui.save_path_widget.saveTagLineEdit.setText(
                 f"{poi_name}_{tag}"
                 )
@@ -384,17 +397,16 @@ class CorrMeasurements(MeasurementsBase):
 
 
 class StarkHOM(MeasurementsBase):
-    def __init__(self, ao_electrodes, ple_gui, laser_scanner_logic,scanner_gui, scanning_data_logic, pulsestreamer,
+    def __init__(self, ao_electrodes,
                  *args, **kwargs) -> None:
         super().__init__(
             *args, **kwargs
         )
         self.ao_electrodes = ao_electrodes
-        self.scanner_gui = scanner_gui
-        self.scanning_data_logic = scanning_data_logic
-        self.pulsestreamer = pulsestreamer
+        ao_electrodes._constraints._channel_limits = {'ao3': [-1.38, 1.38]}
         
-
+        self.to_refocus_ple = False
+        self._setpoint_offset = 0
         self._reference_power = 40e3
         self.bf_needs_refocus = False
         self._measurement_done = False
@@ -405,47 +417,107 @@ class StarkHOM(MeasurementsBase):
         self._ple_to_refocus = False
         self._elapsed_time = 0
         self.equilize_cryo = 'bf'
+        self.check_fresh = 1
+        self.refocus_timer = QTimer()
+        self.bf_refocus_timer = QTimer()
+        self.zpl_refocus_timer = QTimer()
+        self.timer = QTimer()
 
-    def start_measurement(self):
-        return 
+        self.measurement_setpoints = [0] #, -0.3, -0.6]
 
     def set_bf_needs_refocus(self):
         self.bf_needs_refocus = True
 
     def bluefors_periodic_refocus(self, refocus_period_mins = 360):
 
-        self.bf_refocus_timer = QTimer()
+        
         self.bf_refocus_timer.setInterval(refocus_period_mins * 60000)
         self.bf_refocus_timer.timeout.connect(self.set_bf_needs_refocus)
         self.bf_refocus_timer.start(refocus_period_mins * 60000)
 
     def zpl_periodic_refocus(self, refocus_period_mins = 360):
 
-        self.zpl_refocus_timer = QTimer()
+        
         self.zpl_refocus_timer.setInterval(refocus_period_mins * 60000)
         self._ple_to_refocus = True
         self.zpl_refocus_timer.timeout.connect(self.check_ple)
         self.zpl_refocus_timer.start(refocus_period_mins * 60000)
 
     def start_periodic_refocus(self, refocus_period_mins = 30, 
-                               count_check_period_sec = 60, 
-                               resonance_refocus_mins = 5,
+                               count_check_period_sec = None, 
+                               resonance_refocus_mins = None,
                                bf_refocus_mins = 360):
-        self._start_time = time.time()
         
-        self.timer = QTimer()
-        self.timer.setInterval(count_check_period_sec * 1000)
-        self.timer.timeout.connect(self.check_counts)
-        self.timer.start(count_check_period_sec * 1000)
+        if count_check_period_sec is not None:
+            
+            self.timer.setInterval(count_check_period_sec * 1000)
+            self.timer.timeout.connect(self.check_counts)
+            self.timer.start(count_check_period_sec * 1000)
 
-        self.refocus_timer = QTimer()
+        
         self.refocus_timer.setInterval(refocus_period_mins * 60000)
-        self.refocus_timer.timeout.connect(self.refocus)
+        self.refocus_timer.timeout.connect(self._refocus_hom)
         self.refocus_timer.start(refocus_period_mins * 60000)
 
         self.bluefors_periodic_refocus(refocus_period_mins = bf_refocus_mins)
+        if resonance_refocus_mins is not None:
+         self.zpl_periodic_refocus(refocus_period_mins = resonance_refocus_mins)
 
-        self.zpl_periodic_refocus(refocus_period_mins = resonance_refocus_mins)
+    def start_measurement(self):
+        self.start_time = datetime.now()
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.save_tagger_plots(tag=f'{timestamp}')
+
+        self.toggle_tagger_counter_plot(False)
+        self.toggle_tagger_corr_plot(False)
+
+        self.toggle_tagger_counter_plot(True)
+
+        self.stop_dump()
+
+        self.toggle_tagger_counter_plot(True)
+        self.toggle_tagger_corr_plot(True)
+        self.start_dump(self.folder_save, f'{timestamp}'.replace('.', '_'))
+
+        self.start_periodic_refocus(refocus_period_mins = 15, 
+                               count_check_period_sec = 360,
+                               resonance_refocus_mins=10, 
+                               bf_refocus_mins = 360)  # integrate in minutes
+
+    def hom_start_integration(self, integrate_for_mins = None, start_delay = 10e3):
+        self.integrate_for_mins = integrate_for_mins if integrate_for_mins is not None else self.integrate_for_mins
+        
+
+        self.integration_timer = QTimer()
+        self.integration_timer.timeout.connect(self.change_setpoin)
+        self.integration_timer.setSingleShot(True)
+        self.integration_timer.start(start_delay)
+
+    def change_setpoint(self):
+        self.stop_all()
+
+        if len(self.measurement_setpoints) > 0:
+
+            
+
+            self._setpoint_offset = self.measurement_setpoints.pop()
+           
+            self.folder_save = os.path.join(self.folder_save_papa, f"setpoint_{int(self._setpoint_offset * 100)}_V")
+
+            os.makedirs(self.folder_save, exist_ok=True)
+
+            self.start_measurement()
+        
+         
+
+    def stop_all(self):
+        self.refocus_timer.stop()
+        self.bf_refocus_timer.stop()
+        self.zpl_refocus_timer.stop()
+        self.timer.stop()
+
+
 
     @g2_value_dependent
     def set_voltage(self, value):
@@ -455,15 +527,13 @@ class StarkHOM(MeasurementsBase):
     def _refocus_hom(self):
         #save to the timed folders
         self._elapsed_time = time.time() - self._start_time
-        self.save_tagger_plots(os.path.join(self.folder_save, 
-                                            str(self._elapsed_time).replace('.', '_')), 
-                                            str(self._elapsed_time).replace('.', '_'))
+        self.save_tagger_plots(folder_path=self.timed_folder)
         
         self.refocus(optimize_both = True)
 
-        self.check_ple(do_ple_refocus=True)
+        self.check_ple(do_ple_refocus=self.to_refocus_ple)
 
-        self.equilize_powers()
+        self.equalize_powers()
         
 
     # @return_to_measurement_powers(measurement_type='E_hom')
@@ -526,7 +596,8 @@ class StarkHOM(MeasurementsBase):
             self.counts_calibration[cryo].append(ch2_cts + ch3_cts)
         self.counts_calibration[cryo] = np.array(self.counts_calibration[cryo])
 
-    def equilize_powers(self, power_integration_steps = 5):
+
+    def equalize_powers(self):
 
         self.polarization_is_parallel = True
 
@@ -534,51 +605,53 @@ class StarkHOM(MeasurementsBase):
         self.set_green_power('bf', 0)
         self.set_green_power('atto3', self.max_power)
 
-        ch_cts1 = self.get_counts(channels=[1]).mean()
+        ch_cts1 = self.get_counts(channels=[2,3]).mean()
 
         self.set_green_power('bf', self.max_power)
         self.set_green_power('atto3', 0)
 
-        ch_cts2 = self.get_counts(channels=[1]).mean()
+        ch_cts2 = self.get_counts(channels=[2,3]).mean()
         
         # set the bluefors power to match the counts
-        ch_min = min(ch_cts1, ch_cts2)
+        cts_min = min(ch_cts1, ch_cts2)
+        if np.abs(ch_cts1 - ch_cts2) < self.check_fresh:
+            self.set_green_power('bf', self.max_power)
+            self.set_green_power('atto3', self.max_power)
+            return
         if ch_cts1 > ch_cts2:
             equilize_cryo = 'atto3'
+            nonq = 'bf'
             cryo_index = 3
             
             self.set_green_power('bf', 0)
             self.set_green_power('atto3', self.max_power)
         else:
             equilize_cryo = 'bf'
+            nonq = 'atto3'
             cryo_index = 2
             
             self.set_green_power('bf', self.max_power)
             self.set_green_power('atto3', 0)
 
-        self.timetagger._mw.count_display_comboBox.setCurrentIndex(cryo_index)
-        time.sleep(0.1)
+        
         self.set_green_power(equilize_cryo, self.max_power*0.5)
-        time.sleep(2)
+        time.sleep(0.5)
         counts_diff = np.array([])
-        ch_cts = 0
+      
         for _power in (powers := np.linspace(self.max_power*0.5, self.max_power, 20)):
             self.set_green_power(equilize_cryo, _power)
-            ch_cts = 0
-            for i in range(power_integration_steps):
-                ch_cts += float(self.timetagger._mw.count_display_label.text()[:5])
-                time.sleep(0.1)
-            ch_cts = ch_cts / power_integration_steps
+            ch_cts = self.get_counts(channels=[2,3]).mean()
             counts_diff = np.append(counts_diff, np.abs(ch_cts - cts_min))
 
         self.set_green_power(equilize_cryo, powers[np.argmin(counts_diff)])
-
+        
+        self.set_green_power(nonq, self.max_power)
         self.polarization_is_parallel = True
 
         return ch_cts, ch_cts1, ch_cts2
 
 
-    def align_resonances(self, offset=0, dv = 0.2, steps = 20):
+    def align_resonances(self, offset=0, dv = 0.5, steps = 50):
         #First refocus to the max of APD1
         self.ple_gui.toggle_optimize(True)
         while self.laser_scanner_logic.module_state()=='locked':
@@ -586,7 +659,10 @@ class StarkHOM(MeasurementsBase):
         #TODO: add the line switching to the required channel ('APD1')
         v0 = self.ao_electrodes.setpoint
         counts = np.array([])
-        for _setpoint in (setpoints := np.linspace(v0 - dv/2, v0 + dv/2, steps)):
+        for _setpoint in (setpoints := np.linspace(v0 - dv, v0 + dv, steps)):
+            if np.abs(_setpoint) > 1.4:
+                print("AA danger danger high voltage! ")
+                return
             self.ao_electrodes.setpoint = _setpoint
             time.sleep(0.2)
             if self.timetagger_remote._mw.count_display_label.text()[-4:] != 'kc/s':
@@ -596,7 +672,7 @@ class StarkHOM(MeasurementsBase):
             counts = np.append(counts, cts)
             time.sleep(0.2)
         # ao_electrodes_remote.setpoint = v0
-        self.ao_electrodes.setpoint = setpoints[np.argmax(counts)]
+        self.ao_electrodes.setpoint = setpoints[np.argmax(counts)] + offset
         return counts, setpoints
     
     def check_ple(self, do_ple_refocus = False):
@@ -608,21 +684,35 @@ class StarkHOM(MeasurementsBase):
             res = self.do_ple_scan(lines=1, 
                             in_range = self.laser_scanner_logic.scan_ranges["a"])
             if res.rsquared > 0.5:
-                self.save_ple(tag=f'{self._elapsed_time}', poi_name='', folder_name=self.folder_save) #{self.refocus_timer.elapsed_time}
+                self.save_ple(tag=f'{self._elapsed_time}', poi_name='', folder_name=self.timed_folder) #{self.refocus_timer.elapsed_time}
                 break
         
         if do_ple_refocus:
-            self.align_resonances()
+            self.go_to_ple_target(target=res.best_values['center'])
+            self.align_resonances(offset=self._setpoint_offset)
             for i in range(3):
                 res = self.do_ple_scan(lines=1, 
                                 in_range = self.laser_scanner_logic.scan_ranges["a"])
                 if res.rsquared > 0.5:
-                    self.save_ple(tag=f'refocused_{self._elapsed_time}', poi_name='', folder_name=self.folder_save) #self.refocus_timer.elapsed_time
+
+                    
+
+                    self.save_ple(tag=f'refocused_{self._elapsed_time}', poi_name='', folder_name=self.timed_folder) #self.refocus_timer.elapsed_time
                     break
 
         self.PLE_check_trigger(enable=False)
         self.measurement_mode('Off-res')
 
+    @property
+    def timed_folder(self):
+        elapsed_time = datetime.now() - self.start_time
+        folder_index = int(elapsed_time.total_seconds() // (self.folder_interval * 60))  # Folder interval in seconds
+        folder_path = os.path.join(self.folder_save, f"interval_{self.folder_interval * folder_index}_min")
+
+        os.makedirs(folder_path, exist_ok=True)
+        return folder_path
+    
+        
         # self.set_green_power('bf', self._bf_power)
         # self.set_green_power('atto3', self._atto3_power)
 
