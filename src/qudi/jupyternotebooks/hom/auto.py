@@ -80,29 +80,35 @@ class MeasurementsBase:
     perpendicular_position = 19
     parallel_position = 30
     refocused_cts = None
+    _polarization_is_parallel = None
+
 
     def __init__(self, 
-                 timetaggerlogic, 
-                 timetagger, 
-                 timetagger_remote,
-                 poi_manager_logic_remote,
-                 powercontroller_logic,
-                 ibeam_smart_remote,
-                 ple_gui,
-                 laser_scanner_logic,
-                 scanner_gui, 
-                 scanning_data_logic,
-                 switchlogic,
-                 current_cryo,
-                 non_active_cryo,
-                 folder_save,
-                 integrate_for_mins,
-                 values,
+                 timetaggerlogic=None, 
+                 timetagger=None, 
+                 timetagger_remote=None,
+                 poi_manager_logic_remote=None,
+                 poi_manager_logic=None,
+                 powercontroller_logic=None,
+                 ibeam_smart_remote=None,
+                 ple_gui=None,
+                 laser_scanner_logic=None,
+                 scanner_gui=None, 
+                 scanning_data_logic=None,
+                 switchlogic=None,
+                 current_cryo=None,
+                 non_active_cryo=None,
+                 folder_save=None,
+                 integrate_for_mins=None,
+                 values=None,
                  *args, **kwargs) -> None:
+        #WARNING IF NONE!
+        
         self.timetaggerlogic = timetaggerlogic
         self.timetagger = timetagger
         self.timetagger_remote = timetagger_remote
         self.poi_manager_logic_remote = poi_manager_logic_remote
+        self.poi_manager_logic = poi_manager_logic
         self.switchlogic = switchlogic
         self.ibeam_smart_remote = ibeam_smart_remote
         self.ple_gui = ple_gui
@@ -116,6 +122,9 @@ class MeasurementsBase:
         self.folder_save = folder_save
         self.values = values
 
+        self.powercontroller_logic._current_motor = 0
+        self.powercontroller_logic.motor_position = self.perpendicular_position
+        self._polarization_is_parallel = False
 
 
     def start_periodic_refocus(self, refocus_period_mins = 25, count_check_period_sec = 60):
@@ -143,15 +152,9 @@ class MeasurementsBase:
         self.refocus_timer.stop()
         self.integration_timer.stop()
     
-    def get_counts(self, integrate_sec = 0.1, samples = 30, return_ple = False):
+    def get_counts(self, integrate_sec = 0.1, samples = 10, return_ple = False):
 
-        self.timetagger._mw.count_display_comboBox.setCurrentIndex(1)
-        time.sleep(0.1)
-        ch_cts0 = 0
-        for i in range(samples):
-            ch_cts0 += float(self.timetagger._mw.count_display_label.text()[:5])
-            time.sleep(integrate_sec)
-        ch_cts0 = ch_cts0 / samples
+        
 
         self.timetagger._mw.count_display_comboBox.setCurrentIndex(2)
         ch_cts1 = 0
@@ -167,8 +170,17 @@ class MeasurementsBase:
             ch_cts2 += float(self.timetagger._mw.count_display_label.text()[:5])
             time.sleep(integrate_sec)
         ch_cts2 = ch_cts2 / samples
+
         tot_cts = ch_cts1 + ch_cts2
+
         if return_ple:
+            self.timetagger._mw.count_display_comboBox.setCurrentIndex(1)
+            time.sleep(0.1)
+            ch_cts0 = 0
+            for i in range(samples):
+                ch_cts0 += float(self.timetagger._mw.count_display_label.text()[:5])
+                time.sleep(integrate_sec)
+            ch_cts0 = ch_cts0 / samples
             return ch_cts0, ch_cts1, ch_cts2, tot_cts
         else:
             return ch_cts1, ch_cts2, tot_cts
@@ -184,30 +196,42 @@ class MeasurementsBase:
 
     def refocus(self, optimize_both = False):
         
-        self.save_tagger_plots(os.path.join(self.folder_save, 
-                                            str(self.power)), 
-                                            str(self.power))
+        self.polarization_is_parallel = False
 
-        self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = self.perpendicular_position # perpendicular pol
         time.sleep(2)
+        self.poi_manager_logic_remote._optimizelogic().start_optimize()
         if optimize_both:
             self.poi_manager_logic._optimizelogic().start_optimize()
-        self.poi_manager_logic_remote._optimizelogic().start_optimize()
-        # poi_manager_logic._optimizelogic().start_optimize()
-        while self.poi_manager_logic._optimizelogic().module_state()=='locked':
-            time.sleep(1) # wait for a long time to 
+            while self.poi_manager_logic._optimizelogic().module_state()=='locked':
+                time.sleep(1) # wait for a long time to 
         while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
             time.sleep(1) # wait for a long time to 
         time.sleep(5) # wait for a long time to avoid conflicts with the countrate checker
 
-        self.powercontroller_logic._current_motor = 0
-        self.powercontroller_logic.motor_position = self.parallel_position # parallel pol
+        self.polarization_is_parallel = True
+      
         time.sleep(2)
         
         tot_cts = self.get_counts()[-1]
         self.refocused_cts = tot_cts
 
+    @property
+    def polarization_is_parallel(self):
+        return self._polarization_is_parallel
+    
+    @polarization_is_parallel.setter
+    def polarization_is_parallel(self, is_parallel):
+        if is_parallel:
+            self.powercontroller_logic._current_motor = 0
+            self.powercontroller_logic.motor_position = self.parallel_position # parallel pol
+            self._polarization_is_parallel = True
+        else:
+            self.powercontroller_logic._current_motor = 0
+            self.powercontroller_logic.motor_position = self.perpendicular_position # parallel pol
+            self._polarization_is_parallel = False
+
+
+    
     def toggle_tagger_counter_plot(self, state):
         # start/ stop the counter measurement
         self.timetagger._mw.toggleCounterPushButton.setChecked(state)
@@ -519,8 +543,10 @@ class StarkHOM(MeasurementsBase):
             self.counts_calibration[cryo].append(ch2_cts + ch3_cts)
         self.counts_calibration[cryo] = np.array(self.counts_calibration[cryo])
 
-    def equilize_powers(self, power_integration_steps = 30):
- 
+    def equilize_powers(self, power_integration_steps = 5):
+
+        self.polarization_is_parallel = False
+
         # self.ibeam_smart_remote.power = self._reference_power # exite on max attory
         self.set_green_power('bf', self.max_power)
         self.set_green_power('atto3', self.max_power)
@@ -530,7 +556,7 @@ class StarkHOM(MeasurementsBase):
         
         # set the bluefors power to match the counts
 
-        if ch_cts2 > ch_cts1:
+        if ch_cts1 > ch_cts2:
             equilize_cryo = 'atto3'
             cryo_index = 3
             cts_min = ch_cts1
@@ -545,7 +571,7 @@ class StarkHOM(MeasurementsBase):
         time.sleep(2)
         counts_diff = np.array([])
         ch_cts = 0
-        for _power in (powers:=np.linspace(self.max_power*0.5, self.max_power, 10)):
+        for _power in (powers := np.linspace(self.max_power*0.5, self.max_power, 20)):
             self.set_green_power(equilize_cryo, _power)
             ch_cts = 0
             for i in range(power_integration_steps):
@@ -555,6 +581,8 @@ class StarkHOM(MeasurementsBase):
             counts_diff = np.append(counts_diff, np.abs(ch_cts - cts_min))
 
         self.set_green_power(equilize_cryo, powers[np.argmin(counts_diff)])
+
+        self.polarization_is_parallel = True
 
         return ch_cts, ch_cts1, ch_cts2
 
