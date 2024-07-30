@@ -422,6 +422,7 @@ class StarkHOM(MeasurementsBase):
         self.bf_refocus_timer = QTimer()
         self.zpl_refocus_timer = QTimer()
         self.timer = QTimer()
+        self.integration_timer = QTimer()
 
         self.measurement_setpoints = [0] #, -0.3, -0.6]
 
@@ -478,6 +479,9 @@ class StarkHOM(MeasurementsBase):
 
         self.toggle_tagger_counter_plot(True)
         self.toggle_tagger_corr_plot(True)
+
+        self.polarization_is_parallel = True
+        
         self.start_dump(self.folder_save, f'{timestamp}'.replace('.', '_'))
 
         self.start_periodic_refocus(refocus_period_mins = 15, 
@@ -490,7 +494,7 @@ class StarkHOM(MeasurementsBase):
         
 
         self.integration_timer = QTimer()
-        self.integration_timer.timeout.connect(self.change_setpoin)
+        self.integration_timer.timeout.connect(self.change_setpoint)
         self.integration_timer.setSingleShot(True)
         self.integration_timer.start(start_delay)
 
@@ -516,7 +520,8 @@ class StarkHOM(MeasurementsBase):
         self.bf_refocus_timer.stop()
         self.zpl_refocus_timer.stop()
         self.timer.stop()
-
+        self.integration_timer.stop()
+        self.stop_dump()
 
 
     @g2_value_dependent
@@ -651,7 +656,7 @@ class StarkHOM(MeasurementsBase):
         return ch_cts, ch_cts1, ch_cts2
 
 
-    def align_resonances(self, offset=0, dv = 0.5, steps = 50):
+    def align_resonances(self, offset=0, dv = 0.8, steps = 100):
         #First refocus to the max of APD1
         self.ple_gui.toggle_optimize(True)
         while self.laser_scanner_logic.module_state()=='locked':
@@ -662,7 +667,8 @@ class StarkHOM(MeasurementsBase):
         for _setpoint in (setpoints := np.linspace(v0 - dv, v0 + dv, steps)):
             if np.abs(_setpoint) > 1.4:
                 print("AA danger danger high voltage! ")
-                return
+                _setpoint = 1.38
+
             self.ao_electrodes.setpoint = _setpoint
             time.sleep(0.2)
             if self.timetagger_remote._mw.count_display_label.text()[-4:] != 'kc/s':
