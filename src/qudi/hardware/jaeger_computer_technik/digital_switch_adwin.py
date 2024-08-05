@@ -21,7 +21,7 @@ class DigitalSwitchAdwin(SwitchInterface, AdwinBase):
                 laser_550:
                     port: 3
                     pulsed_output: True # optional (for example for flipp mirrors)
-                    states: ('out', 'in') # optional, default is ('off', 'on')
+                    states: ['out', 'in'] # optional, default is ('off', 'on')
     """
 
     switch_states_pulsed_outputs = {}
@@ -37,14 +37,12 @@ class DigitalSwitchAdwin(SwitchInterface, AdwinBase):
 
     def on_activate(self) -> None:
         self.boot_adwin()
-        self.start_adwin_processes(["control_analog_out.TB9", "control_digout.TB0"])
+        self.start_adwin_processes(["control_digout.TB0"])
         self._init_pulsed_output_switches()
 
     def on_deactivate(self) -> None:
         """Stops all adwin process needed for the script"""
-        self.stop_adwin_processes(
-            ["control_analog_out.TB9", "control_digout.TB0"], clear_processes=True
-        )
+        self.stop_adwin_processes(["control_digout.TB0"], clear_processes=True)
 
     def _init_pulsed_output_switches(self) -> None:
         for switch, element in self.switches.items():
