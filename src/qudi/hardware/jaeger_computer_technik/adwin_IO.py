@@ -144,10 +144,7 @@ class Adwin_AO(
 
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
-        self.stop_adwin_processes(
-            ["set_channel_out.TB3"],
-            clear_processes = True
-        )
+        self.stop_adwin_processes(["set_channel_out.TB3"], clear_processes=True)
         pass
 
     ## THIS FOLLOWING FUNCTIONS HAVE TO BE WRITTEN TO MAP TO NI_AO class from Bluefors.cfg
@@ -327,7 +324,9 @@ class Adwin_IO(
 
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
-        self.stop_adwin_processes(["control_analog_out.TB9", "control_digout.TB0"], clear_processes = True)
+        self.stop_adwin_processes(
+            ["control_analog_out.TB9", "control_digout.TB0"], clear_processes=True
+        )
         pass
 
     ## THIS FOLLOWING FUNCTIONS HAVE TO BE WRITTEN TO MAP TO NI_AO class from Bluefors.cfg
