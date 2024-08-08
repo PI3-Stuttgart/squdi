@@ -70,11 +70,8 @@ class MeasurementsBase:
                  scanner_gui=None, 
                  scanning_data_logic=None,
                  switchlogic=None,
-                 current_cryo=None,
-                 non_active_cryo=None,
                  folder_save=None,
-                 integrate_for_mins=None,
-                 values=None,
+                
                  *args, **kwargs) -> None:
         #WARNING IF NONE!
         
@@ -92,12 +89,8 @@ class MeasurementsBase:
         self.scanning_data_logic = scanning_data_logic
         self.powercontroller_logic = powercontroller_logic
         self.pulsestreamer = pulsestreamer
-        self.integrate_for_mins = integrate_for_mins
-        self.current_cryo = current_cryo
-        self.non_active_cryo = non_active_cryo
         self.folder_save = folder_save
         self.folder_save_papa = folder_save
-        self.values = values
         self.start_time = datetime.now()
         self.folder_interval = 20 #folder_interval_minutes  # Set the folder saving interval in minutes
 
