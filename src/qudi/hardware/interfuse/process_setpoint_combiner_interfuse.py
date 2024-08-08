@@ -65,6 +65,14 @@ class ProcessSetpointCombinerInterfuse(ProcessSetpointInterface):
         if self._hardware_name is None:
             self._hardware_name = self.module_name
 
+        self._constraints = ProcessControlConstraints(
+            setpoint_channels=self.ao_device1().setpoint_channels
+            + self.ao_device2().setpoint_channels,
+            units=self.ao_device1().units.update(self.ao_device2().units),
+            limits=self.ao_device1().limits.update(self.ao_device2().limits),
+            dtypes=self.ao_device1().dtypes.update(self.ao_device2().dtypes),
+        )
+
     def on_deactivate(self):
         """TODO: Deactivate the module and clean up."""
 
@@ -73,13 +81,13 @@ class ProcessSetpointCombinerInterfuse(ProcessSetpointInterface):
         """Read-Only property holding the constraints for this hardware module.
         See class ProcessControlConstraints for more details.
         """
-        return self.ao_device1().constraints.update(self.ao_device2().constraints)
+        return self._constraints
 
     def set_activity_state(self, channel: str, active: bool) -> None:
         """TODO: Documentation"""
-        if channel in self.ao_device1().constraints:
+        if channel in self.ao_device1().constraints.setpoint_channels:
             self.ao_device1().set_activity_state(channel, active)
-        elif channel in self.ao_device2().constraints:
+        elif channel in self.ao_device2().constraints.setpoint_channels:
             self.ao_device2().set_activity_state(channel, active)
         else:
             self.log.warning("no such channel")
@@ -88,9 +96,9 @@ class ProcessSetpointCombinerInterfuse(ProcessSetpointInterface):
         """Get activity state for given channel.
         State is bool type and refers to active (True) and inactive (False).
         """
-        if channel in self.ao_device1().constraints:
+        if channel in self.ao_device1().constraints.setpoint_channels:
             return self.ao_device1().get_activity_state(channel)
-        elif channel in self.ao_device2().constraints:
+        elif channel in self.ao_device2().constraints.setpoint_channels:
             return self.ao_device2().get_activity_state(channel)
         else:
             self.log.warning("no such channel")
@@ -98,18 +106,18 @@ class ProcessSetpointCombinerInterfuse(ProcessSetpointInterface):
 
     def set_setpoint(self, channel: str, value: float) -> None:
         """Set new setpoint for a single channel"""
-        if channel in self.ao_device1().constraints:
+        if channel in self.ao_device1().constraints.setpoint_channels:
             self.ao_device1().set_setpoint(channel, value)
-        elif channel in self.ao_device2().constraints:
+        elif channel in self.ao_device2().constraints.setpoint_channels:
             self.ao_device2().set_setpoint(channel, value)
         else:
             self.log.warning("no such channel")
 
     def get_setpoint(self, channel: str) -> float:
         """Get current setpoint for a single channel"""
-        if channel in self.ao_device1().constraints:
+        if channel in self.ao_device1().constraints.setpoint_channels:
             return self.ao_device1().get_setpoint(channel)
-        elif channel in self.ao_device2().constraints:
+        elif channel in self.ao_device2().constraints.setpoint_channels:
             return self.ao_device2().get_setpoint(channel)
         else:
             self.log.warning("no such channel")
