@@ -70,6 +70,8 @@ class AOGui(GuiBase):
         module.Class: 'AO.AO_gui.AOGui'
         connect:
             AOlogic: 'AOlogic'
+        options:
+            ignore_aos: ["ao1", "ao2", "ao3"]
 
     """
 
@@ -80,6 +82,9 @@ class AOGui(GuiBase):
     _slider_row_num_max = ConfigOption(name="_slider_row_num_max", default=None)
     _nr_slider_positions = 1000
     default_unit: str = "V"
+
+    # options
+    _ignore_aos: list = ConfigOption(name="ignore_aos", default=[], missing="nothing")
 
     # declare signals
     sigSetpointChanged = QtCore.Signal(str, float)
@@ -135,6 +140,9 @@ class AOGui(GuiBase):
     def _populate_sliders(self):
         """Dynamically build the gui"""
         self._widgets = dict()
+        channels: dict = self.aologic().setpoints
+        for remove_channel in self._ignore_aos:
+            channels.pop(remove_channel, None)
         for ii, (channel, _) in enumerate(self.aologic().setpoints.items()):
             label: QtWidgets.QLabel = self._get_channel_label(channel)
 
