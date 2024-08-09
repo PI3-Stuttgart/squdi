@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 import numpy as np
 import copy
-from PySide2.QtCore import QTimer, QTime, Signal
+from PySide2.QtCore import QTimer, QTime, Signal, QElapsedTimer
 from scipy.interpolate import splrep, splev
 from scipy.optimize import curve_fit
 
@@ -320,7 +320,7 @@ class StarkHOM(MeasurementsBase):
         self.equilize_cryo = 'bf'
         self.check_fresh = 1
 
-        self.folder_save = folder_save
+        
         self.polarization_is_parallel = False
         self.query_time = 3  # minutes
         self.next_time = 2 * 60 * 60 * 1000  # N hours in milliseconds
@@ -358,6 +358,8 @@ class StarkHOM(MeasurementsBase):
 
         self.polarization_is_parallel = True
 
+        self.iteration = 0
+
         self.start_dump(folder, 
                     f'dump'.replace('.', '_'))
 
@@ -367,9 +369,7 @@ class StarkHOM(MeasurementsBase):
         print("Measurement", self.current_measurement)
         print("Iteraion", self.iteration)
         current_save_folder = os.path.join(self.folder_save, 
-                                                current_measurement)
-        if self.iteration == 0:
-            self.start_measurement(current_save_folder)
+                                                self.current_measurement)
 
         self.save_tagger_plots(f'iter_{self.iteration}', 
                                 folder_path=current_save_folder)
@@ -424,7 +424,7 @@ class StarkHOM(MeasurementsBase):
             
         self.polarization_is_parallel = True
         self.iteration = self.iteration + 1
-        print("Measurement", self.current_measurement)
+       
         print("New Iteraion", self.iteration)
         
     def next_measurement(self):
@@ -434,39 +434,24 @@ class StarkHOM(MeasurementsBase):
         
         self.current_measurement = self.measurements.pop()
         self.iteration = 0
-        timer.start(self.query_time * 60 * 1000)
         
+
+        current_save_folder = os.path.join(self.folder_save, 
+                                                self.current_measurement)
+       
+        self.start_measurement(current_save_folder)
 
         if len(self.measurements) < 1:
             self.timer.stop()
             self.next_measurement_timer.stop()
             return 
-        
-        self.next_measurement_timer.start(self.next_time)
-
-    def start_experiment(self):
-        self.polarization_is_parallel = False
+        self.polarization_is_parallel = True
         self.measurement_mode('Off-res')
-
-        self.timer.setInterval(self.query_time * 60 * 1000)
-        self.timer.timeout.connect(self.refocus_and_realign)
-
-        self.measurements = ['hom', 'hom_detuned', 'g2_bf', 'g2_atto3'][::-1]
-        
-        self.next_measurement_timer.setInterval(self.next_time)
-        self.next_measurement_timer.setSingleShot(True)  # Ensure the timer only fires once
-        self.next_measurement_timer.timeout.connect(self.next_measurement)
-
-        
 
         self.elapsed_timer.start()
         self.timer.start(self.query_time * 60 * 1000)
-        self.current_measurement = self.measurements.pop()
         self.next_measurement_timer.start(self.next_time)
-
-        self.start_measurement(os.path.join(self..folder_save, self.current_measurement))
-        iteration = 1
-    
+        
     def time_left(self):
         # Time left for the current timer (in milliseconds)
         elapsed = self.elapsed_timer.elapsed()
