@@ -319,11 +319,19 @@ class StarkHOM(MeasurementsBase):
         self._elapsed_time = 0
         self.equilize_cryo = 'bf'
         self.check_fresh = 1
-        self.refocus_timer = QTimer()
-        self.bf_refocus_timer = QTimer()
-        self.zpl_refocus_timer = QTimer()
+
+        self.folder_save = folder_save
+        self.polarization_is_parallel = False
+        self.query_time = 3  # minutes
+        self.next_time = 2 * 60 * 60 * 1000  # N hours in milliseconds
+        self.measurements = ['hom', 'hom_detuned', 'g2_bf', 'g2_atto3'][::-1]
+        self.setpoint_story = []
+        self.iteration = 0
+
+        # Initialize timers
         self.timer = QTimer()
-        self.integration_timer = QTimer()
+        self.next_measurement_timer = QTimer()
+        self.elapsed_timer = QElapsedTimer()
 
         self.scanning_probe_logic_remote = self.poi_manager_logic_remote._optimizelogic()._scan_logic()
         self.scanning_probe_logic = self.poi_manager_logic._optimizelogic()._scan_logic()
@@ -331,14 +339,15 @@ class StarkHOM(MeasurementsBase):
 
         self.measurement_setpoints = [0] #, -0.3, -0.6]
 
-    def start_measurement(self):
+    def start_measurement(self, folder):
         self.start_time = datetime.now()
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.save_tagger_plots(tag=f'{timestamp}')
+        self.save_tagger_plots(tag=f'iter_{self.iteration}', folder_path=folder)
 
         self.toggle_tagger_counter_plot(False)
         self.toggle_tagger_corr_plot(False)
+
 
         self.toggle_tagger_counter_plot(True)
 
@@ -348,9 +357,126 @@ class StarkHOM(MeasurementsBase):
         self.toggle_tagger_corr_plot(True)
 
         self.polarization_is_parallel = True
-        
-        self.start_dump(self.folder_save, f'{timestamp}'.replace('.', '_'))
 
+        self.start_dump(folder, 
+                    f'dump'.replace('.', '_'))
+
+
+    def refocus_and_realign(self):
+        
+        print("Measurement", self.current_measurement)
+        print("Iteraion", self.iteration)
+        current_save_folder = os.path.join(self.folder_save, 
+                                                current_measurement)
+        if self.iteration == 0:
+            self.start_measurement(current_save_folder)
+
+        self.save_tagger_plots(f'iter_{self.iteration}', 
+                                folder_path=current_save_folder)
+        if self.iteration % 2 == 0:
+                self.measurement_mode('Off-res')
+                self.refocus(optimize_both=True) 
+                time.sleep(1)
+        
+        if self.current_measurement == 'hom':
+
+            if selfiteration % 4 == 0:
+                target_laser = self.laser_scanner_logic.scanner_target
+
+                self.measurement_mode('PLE')
+
+                self.do_ple_scan(lines=5, 
+                                    in_range = self.laser_scanner_logic.scan_ranges["a"])
+
+                self.laser_scanner_logic.set_target_position(
+                            {key: float(value) for key, value in target_laser.items()}
+                        )
+                
+                self.save_ple(tag=f'iter_{self.iteration}', 
+                                                folder_name=current_save_folder)
+
+                self.ple_gui.toggle_optimize(True)
+                time.sleep(0.5)
+                while self.laser_scanner_logic.module_state() == 'locked':
+                    time.sleep(1)
+            
+            if self.iteration % 1 == 0:
+                self.measurement_mode('PLE')
+                time.sleep(0.5)
+                self.set_green_power('atto3', 5e3)
+                self.align_resonances(dv=0.2, steps=40)
+                time.sleep(1)
+                self.setpoint_story.append(self.ao_electrodes.setpoint)
+
+        self.measurement_mode('Off-res')
+        time.sleep(0.2)
+
+        if self.current_measurement == 'hom_detuned':
+            self.ao_electrodes.setpoint = -0.05
+
+        if self.current_measurement == 'g2_atto3':
+            self.set_green_power('atto3', self.max_power)
+            self.set_green_power('bf', 0)
+        
+        if self.current_measurement == 'g2_bf':
+            self.set_green_power('bf', self.max_power)
+            self.set_green_power('atto3', 0)
+            
+        self.polarization_is_parallel = True
+        self.iteration = self.iteration + 1
+        print("Measurement", self.current_measurement)
+        print("New Iteraion", self.iteration)
+        
+    def next_measurement(self):
+        
+        self.timer.stop()
+        self.next_measurement_timer.stop()
+        
+        self.current_measurement = self.measurements.pop()
+        self.iteration = 0
+        timer.start(self.query_time * 60 * 1000)
+        
+
+        if len(self.measurements) < 1:
+            self.timer.stop()
+            self.next_measurement_timer.stop()
+            return 
+        
+        self.next_measurement_timer.start(self.next_time)
+
+    def start_experiment(self):
+        self.polarization_is_parallel = False
+        self.measurement_mode('Off-res')
+
+        self.timer.setInterval(self.query_time * 60 * 1000)
+        self.timer.timeout.connect(self.refocus_and_realign)
+
+        self.measurements = ['hom', 'hom_detuned', 'g2_bf', 'g2_atto3'][::-1]
+        
+        self.next_measurement_timer.setInterval(self.next_time)
+        self.next_measurement_timer.setSingleShot(True)  # Ensure the timer only fires once
+        self.next_measurement_timer.timeout.connect(self.next_measurement)
+
+        
+
+        self.elapsed_timer.start()
+        self.timer.start(self.query_time * 60 * 1000)
+        self.current_measurement = self.measurements.pop()
+        self.next_measurement_timer.start(self.next_time)
+
+        self.start_measurement(os.path.join(self..folder_save, self.current_measurement))
+        iteration = 1
+    
+    def time_left(self):
+        # Time left for the current timer (in milliseconds)
+        elapsed = self.elapsed_timer.elapsed()
+        return max(0, self.timer.interval() - elapsed)
+
+    def next_measurement_time_left(self):
+        # Time left for the next measurement timer (in milliseconds)
+        elapsed = self.elapsed_timer.elapsed()
+        return max(0, self.next_measurement_timer.interval() - elapsed)
+    
     def change_setpoint(self):
         self.stop_dump()
 
