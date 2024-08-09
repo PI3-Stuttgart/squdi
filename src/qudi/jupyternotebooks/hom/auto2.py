@@ -330,7 +330,9 @@ class StarkHOM(MeasurementsBase):
 
         # Initialize timers
         self.timer = QTimer()
+        self.timer.setSingleShot(True)
         self.next_measurement_timer = QTimer()
+        self.next_measurement_timer.setSingleShot(True)
         self.elapsed_timer = QElapsedTimer()
 
         self.scanning_probe_logic_remote = self.poi_manager_logic_remote._optimizelogic()._scan_logic()
@@ -424,7 +426,9 @@ class StarkHOM(MeasurementsBase):
             
         self.polarization_is_parallel = True
         self.iteration = self.iteration + 1
-       
+        self.elapsed_timer.start()
+        self.timer.start(self.query_time * 60 * 1000)
+    
         print("New Iteraion", self.iteration)
         
     def next_measurement(self):
@@ -448,9 +452,8 @@ class StarkHOM(MeasurementsBase):
         self.polarization_is_parallel = True
         self.measurement_mode('Off-res')
 
-        self.elapsed_timer.start()
-        self.timer.start(self.query_time * 60 * 1000)
         self.next_measurement_timer.start(self.next_time)
+        self.refocus_and_realign()
         
     def time_left(self):
         # Time left for the current timer (in milliseconds)
