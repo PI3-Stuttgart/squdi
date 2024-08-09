@@ -98,30 +98,31 @@ class AnalogOutputAdwin(ProcessSetpointInterface):
                 "Adwin AO is always active, amplitude only can be set to zero for inactive state"
             )
         if not active:
-            self._qm_manual_output_control.set_amplitude(channel, 0)
+            self.s_   .set_amplitude(channel, 0)
 
     def get_activity_state(self, channel: str) -> bool:
         """Get activity state for given channel.
         State is bool type and refers to active (True) and inactive (False).
         """
-        ao_status: dict[str, dict[str, float]] = (
-            self._qm_manual_output_control.analog_status()
-        )
-
-        if ao_status[channel]["amplitude"] == 0:
+        value = get_setpoint(channel)
+        if value == 0:
             return False
         else:
             return True
 
-    def set_setpoint(self, channel: str, value: float) -> None:
-        """Set new setpoint for a single channel"""
-        self._qm_manual_output_control.set_amplitude(channel, value)
-        # time.sleep(self._switch_time)
-
     def get_setpoint(self, channel: str) -> float:
-        """Get current setpoint for a single channel"""
-        ao_status: dict[str, dict[str, float]] = (
-            self._qm_manual_output_control.analog_status()
-        )
+        """Set new setpoint for a single channel"""
+        port = self._aos[channel]["port"]
+        fpar_idx = 8 if port == 0 else port
+        value, _ = self.read_fpar(fpar_idx)
+        return value
 
-        return ao_status[channel]["amplitude"]
+    def set_setpoint(self, channel: str, value: float) -> None:
+        """Get current setpoint for a single channel"""
+        port = self._aos[channel]["port"]
+        fpar_idx = 8 if port == 0 else port
+
+        if self._aos[channel]['limits'][0] < value < self._aos[channel]['limits'][1]:
+            self.log.warning('Voltage out of limits for Adwin Channel')
+        else:
+            _ = self.write_fpar(fpar_idx, value)
