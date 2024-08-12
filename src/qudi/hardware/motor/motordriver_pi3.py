@@ -38,7 +38,9 @@ class Motordriver(Base):
     CCW = "CCW"
     STOP = "STOP"
 
-
+    _current_motor = None
+    _motor_position = {}
+    _current_positions = {}
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.ser = serial.Serial(
@@ -386,3 +388,28 @@ class Motordriver(Base):
     def stopAllMovements(self):
         self.__sendCommand("STOPALL")
         return
+
+
+    @property
+    def current_motor(self):
+        return self._current_motor
+    
+    @current_motor.setter
+    def current_motor(self, motor):
+        self._current_motor = motor
+        return motor
+    
+    @property
+    def motor_position(self):
+        return self._current_positions.get(self._current_motor, 0)
+        
+    @motor_position.setter
+    def motor_position(self, pos):
+        if self._current_motor is not None:
+            relative_move = pos - self._current_positions.get(self._current_motor, 0)
+            self._motor_pi3.moveRelative(motor=self._current_motor, pos=relative_move)
+            
+            while self.isMoving(motor=self._current_motor):
+                time.sleep(0.02)  # Adjust the sleep time as necessary
+            
+            self._current_positions[self._current_motor] = pos
