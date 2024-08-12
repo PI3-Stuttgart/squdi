@@ -27,6 +27,8 @@ from qudi.core.statusvariable import StatusVar
 from qudi.core.module import GuiBase
 from qudi.core.configoption import ConfigOption
 
+from qudi.util.widgets.scientific_spinbox import ScienDSpinBox
+
 
 class AOMainWindow(QtWidgets.QMainWindow):
     """Main Window for the SwitchGui module"""
@@ -140,10 +142,15 @@ class AOGui(GuiBase):
     def _populate_sliders(self):
         """Dynamically build the gui"""
         self._widgets = dict()
-        channels: dict = self.aologic().setpoints
-        for remove_channel in self._ignore_aos:
-            channels.pop(remove_channel, None)
-        for ii, (channel, _) in enumerate(self.aologic().setpoints.items()):
+        channels: tuple[str, ...] = self.aologic().constraints.setpoint_channels
+        channels = tuple(
+            channel for channel in channels if channel not in self._ignore_aos
+        )
+
+        # for remove_channel in self._ignore_aos:
+        #    channels.pop(remove_channel, None)
+        print(channels)
+        for ii, channel in enumerate(channels):
             label: QtWidgets.QLabel = self._get_channel_label(channel)
 
             if self._slider_row_num_max is None:
@@ -159,7 +166,12 @@ class AOGui(GuiBase):
             else:
                 value_range = self.aologic().constraints.channel_limits[channel]
 
-            _curr_widget = QSliderWithSpinBox(value_range)
+            if self.aologic().use_unit(channel):
+                unit: str = self.aologic().ao_parameters[channel]["unit"]
+            else:
+                unit = self.default_unit
+
+            _curr_widget = QSliderWithSpinBox(value_range, unit=unit)
 
             self._widgets[channel] = (label, _curr_widget)
             self._mw.main_layout.addWidget(
@@ -180,12 +192,7 @@ class AOGui(GuiBase):
         @return QWidget: QLabel with switch name
         """
 
-        if self.aologic().use_unit(channel):
-            unit: str = self.aologic().ao_parameters[channel]["unit"]
-        else:
-            unit = self.default_unit
-
-        label = QtWidgets.QLabel(f"{channel} [{unit}]:")
+        label = QtWidgets.QLabel(f"{channel}".replace("_", " "))
         font: QtGui.QFont = label.font()
         font.setBold(True)
         font.setPointSize(11)
@@ -218,11 +225,9 @@ class AOGui(GuiBase):
         @param dict states: The state dict of the form {"channel": "setpoint"}
         @return: None
         """
-        print(setpoints)
         for channel, setpoint in setpoints.items():
-            print(channel)
-            print(setpoint)
-            self._widgets[channel][1].set_value(setpoint)
+            if not channel in self._ignore_aos:
+                self._widgets[channel][1].set_value(setpoint)
 
     @QtCore.Slot(bool)
     def _watchdog_updated(self, enabled):
@@ -262,6 +267,7 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
         value_range: tuple[float, float],
         num_slider_points: int = int(1e3),
         parent: QtWidgets.QWidget | None = None,
+        unit: str = "",
     ) -> None:
         """
         Initialize the SliderWithSpinBox widget.
@@ -282,10 +288,16 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
         self.slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self.slider.setTickInterval(1)
 
-        self.spin_box = QtWidgets.QDoubleSpinBox(self)
-        self.spin_box.setDecimals(2)
-        self.spin_box.setRange(value_range[0], value_range[1])
-        self.spin_box.setSingleStep(0.01)
+        self.spin_box = ScienDSpinBox(self)
+        self.spin_box.setMinimumWidth(75)
+        self.spin_box.setDecimals(decimals=2)
+        self.spin_box.setSuffix(unit)
+        self.spin_box.setRange(*value_range)
+        self.spin_box.dynamic_precision = False
+        self.spin_box.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred
+        )
+        self.spin_box.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
 
         layout = QtWidgets.QHBoxLayout(self)
         layout.addWidget(self.slider)
@@ -293,7 +305,7 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self.slider.valueChanged.connect(self.slider_value_changed)
-        self.spin_box.valueChanged.connect(self.spin_box_value_changed)
+        self.spin_box.editingFinished.connect(self.spin_box_value_changed)
 
     def slider_value_changed(self, value: int) -> None:
         """Slot to handle changes in the slider's value."""
@@ -301,11 +313,11 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
         self.spin_box.setValue(float_value)
         self.sigValueChanged.emit(float_value)
 
-    def spin_box_value_changed(self, value: float) -> None:
+    def spin_box_value_changed(self) -> None:
         """Slot to handle changes in the spin box's value."""
-        slider_value = self.float_to_slider_value(value)
+        slider_value = self.float_to_slider_value(self.spin_box.value())
         self.slider.setValue(slider_value)
-        self.sigValueChanged.emit(value)
+        self.sigValueChanged.emit(self.spin_box.value())
 
     def slider_value_to_float(self, value: int) -> float:
         """Convert the slider's integer value to a float."""
