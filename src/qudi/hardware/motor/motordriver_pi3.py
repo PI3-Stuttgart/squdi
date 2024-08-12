@@ -407,7 +407,7 @@ class Motordriver(Base):
     def motor_position(self, pos):
         if self._current_motor is not None:
             relative_move = pos - self._current_positions.get(self._current_motor, 0)
-            self._motor_pi3.moveRelative(motor=self._current_motor, pos=relative_move)
+            self.moveRelative(motor=self._current_motor, pos=relative_move)
             
             while self.isMoving(motor=self._current_motor):
                 time.sleep(0.02)  # Adjust the sleep time as necessary
