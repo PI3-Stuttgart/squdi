@@ -396,6 +396,7 @@ class PoiManagerLogic(LogicBase):
     sigThresholdUpdated = QtCore.Signal(float)
     sigDiameterUpdated = QtCore.Signal(float)
 
+    sigOptimizePoi = QtCore.Signal()
     # Internal signals
     __sigStartPeriodicRefocus = QtCore.Signal()
     __sigStopPeriodicRefocus = QtCore.Signal()
@@ -434,7 +435,9 @@ class PoiManagerLogic(LogicBase):
             self.start_periodic_refocus, QtCore.Qt.QueuedConnection)
         self.__sigStopPeriodicRefocus.connect(
             self.stop_periodic_refocus, QtCore.Qt.QueuedConnection)
-
+        self.sigOptimizePoi.connect(
+            self.optimise_poi_position, QtCore.Qt.QueuedConnection
+        )
         # Initialise the ROI scan image (xy confocal image) if not present
         if self._roi.scan_image is None:
             self.set_scan_image(False, self._scan_axes)

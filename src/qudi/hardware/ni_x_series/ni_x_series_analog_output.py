@@ -95,7 +95,7 @@ class NIXSeriesAnalogOutput(ProcessControlSwitchMixin, ProcessSetpointInterface)
         self._device_channel_mapping = dict()
         self._ao_task_handles = dict()
         self._keep_values = dict()
-
+        self._current_channel = None
         # Sanitize channel configuration
         ao_limits = ao_voltage_range(self._device_name)
         valid_channels = ao_channel_names(self._device_name)
@@ -207,6 +207,18 @@ class NIXSeriesAnalogOutput(ProcessControlSwitchMixin, ProcessSetpointInterface)
                                  f'value bounds {self.constraints.channel_limits[channel]}')
             self._write_ao_value(channel, value)
             self._setpoints[channel] = value
+    
+    @property
+    def setpoint(self):
+        if self._current_channel is not None:
+            self.set_activity_state(self._current_channel, True)
+            return self.get_setpoint(self._current_channel)
+    
+    @setpoint.setter
+    def setpoint(self, value):
+        if self._current_channel is not None:
+            self.set_activity_state(self._current_channel, True)
+            current_V = self.set_setpoint(self._current_channel, value)
 
     def get_setpoint(self, channel: str) -> float:
         """ Get current setpoint for a single channel """

@@ -1,0 +1,3 @@
+{
+    "-20.51445223128212": "Z:\\Vlad\\Daily_data\\bluefors\\2024\\05\\2024-05-10\\scanning_data_logic\\scan_10_10_158_170kev_Pplus_0_-20.51GHz"
+}
