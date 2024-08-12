@@ -147,7 +147,7 @@ class AOGui(GuiBase):
             label: QtWidgets.QLabel = self._get_channel_label(channel)
 
             if self._slider_row_num_max is None:
-                grid_pos = [ii, 0]
+                grid_pos: list[int] = [ii, 0]
             else:
                 grid_pos = [
                     int(ii % self._slider_row_num_max),
@@ -215,10 +215,13 @@ class AOGui(GuiBase):
     def _sliders_updated(self, setpoints):
         """Helper function to update the GUI on a change of the states in the logic.
         This function is connected to the signal coming from the switchlogic signaling a change in states.
-        @param dict states: The state dict of the form {"switch": "state"}
+        @param dict states: The state dict of the form {"channel": "setpoint"}
         @return: None
         """
+        print(setpoints)
         for channel, setpoint in setpoints.items():
+            print(channel)
+            print(setpoint)
             self._widgets[channel][1].set_value(setpoint)
 
     @QtCore.Slot(bool)
@@ -312,6 +315,7 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
 
     def float_to_slider_value(self, value: float) -> int:
         """Convert a float value to the slider's integer scale."""
+        print(self.value_range)
         min_value, max_value = self.value_range
         float_range: float = max_value - min_value
         return int((value - min_value) / float_range * self.num_slider_points)

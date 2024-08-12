@@ -66,17 +66,22 @@ class ProcessSetpointCombinerInterfuse(ProcessSetpointInterface):
             self._hardware_name = self.module_name
 
         self._constraints = ProcessControlConstraints(
-            setpoint_channels=self.ao_device1().constraints.setpoint_channels
-            + self.ao_device2().constraints.setpoint_channels,
-            units=self.ao_device1().constraints.channel_units.update(
-                self.ao_device2().constraints.channel_units
-            ),
-            limits=self.ao_device1().constraints.channel_limits.update(
-                self.ao_device2().constraints.channel_limits
-            ),
-            dtypes=self.ao_device1().constraints.channel_dtypes.update(
-                self.ao_device2().constraints.channel_dtypes
-            ),
+            setpoint_channels=[
+                *self.ao_device1().constraints.setpoint_channels,
+                *self.ao_device2().constraints.setpoint_channels,
+            ],
+            units={
+                **self.ao_device1().constraints.channel_units,
+                **self.ao_device2().constraints.channel_units,
+            },
+            limits={
+                **self.ao_device1().constraints.channel_limits,
+                **self.ao_device2().constraints.channel_limits,
+            },
+            dtypes={
+                **self.ao_device1().constraints.channel_dtypes,
+                **self.ao_device2().constraints.channel_dtypes,
+            },
         )
 
     def on_deactivate(self):
