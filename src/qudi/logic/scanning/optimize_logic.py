@@ -33,9 +33,66 @@ from qudi.core.connector import Connector
 from qudi.core.configoption import ConfigOption
 from qudi.core.statusvariable import StatusVar
 from qudi.util.fit_models.gaussian import Gaussian2D, Gaussian
+from scipy.interpolate import RectBivariateSpline
+from scipy.interpolate import splrep, splev
+from scipy.optimize import curve_fit
 
 from qudi.interface.scanning_probe_interface import ScanData
+def find_max_spline_2d(XY, xy):
+    """
+    Finds the maximum value and its corresponding (x, y) coordinates using 2D spline interpolation.
 
+    Args:
+        XY: 2D array of z values (e.g., counts) with shape (ny, nx).
+        xy: Tuple of (X, Y) meshgrid arrays.
+
+    Returns:
+        Tuple of (max_value, max_x, max_y)
+    """
+    X, Y = xy  # Unpack the meshgrid
+    ny, nx = XY.shape
+   
+    # Create a 2D spline representation
+    spline = RectBivariateSpline(X[:, 0], Y[0, :], XY)
+
+    # Define a fine grid for interpolation
+    x_interp = np.linspace(X.min(), X.max(), num=1000)
+    y_interp = np.linspace(Y.min(), Y.max(), num=1000)
+    
+    # Interpolate over the grid
+    z_interp = spline(x_interp, y_interp)
+
+    # Find the index of the maximum interpolated z value
+    max_index = np.unravel_index(np.argmax(z_interp), z_interp.shape)
+
+    # Get the corresponding x and y values at the maximum
+    max_x = x_interp[max_index[1]]
+    max_y = y_interp[max_index[0]]
+
+    # Return the maximum value and its corresponding (x, y) coordinates
+    return z_interp[max_index], max_x, max_y
+
+def find_max_spline(x_data, y_data):
+        """
+        Finds the maximum value and its corresponding x value using spline interpolation.
+
+        Args:
+            x_data: Array of x values (positions).
+            y_data: Array of y values (counts).
+
+        Returns:
+            Tuple of (max_value, max_x)
+        """
+        # Create spline representation
+        tck = splrep(x_data, y_data, s=0)  # Adjust s as needed
+        # Find the range of x values for interpolation
+        x_interp = np.linspace(x_data.min(), x_data.max(), num=1000)
+        # Interpolate y values
+        y_interp = splev(x_interp, tck)
+        # Find the index of the maximum interpolated y value
+        max_index = np.argmax(y_interp)
+        # Return the maximum value and its corresponding x value
+        return y_interp[max_index], x_interp[max_index]
 
 class ScanningOptimizeLogic(LogicBase):
     """
@@ -64,7 +121,8 @@ class ScanningOptimizeLogic(LogicBase):
     _scan_resolution = StatusVar(name='scan_resolution', default=None)
 
     _backwards_line_resolution = ConfigOption(name='backwards_line_resolution', default=20)
-    
+    do_get_max_from_spline = True
+
     # signals
     sigOptimizeStateChanged = QtCore.Signal(bool, dict, object)
     sigOptimizeSettingsChanged = QtCore.Signal(dict)
@@ -369,30 +427,33 @@ class ScanningOptimizeLogic(LogicBase):
                 try:
                     if data.scan_dimension == 1:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
-                        opt_pos, fit_data, fit_res = self._get_pos_from_1d_gauss_fit(
+                        opt_pos, fit_data, fit_res = self._get_pos_from_1d_fit(
                             x,
-                            data.data[self._data_channel]
+                            data.data[self._data_channel],
+                            max_is_spline=self.do_get_max_from_spline
                         )
                     else:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
                         y = np.linspace(*data.scan_range[1], data.scan_resolution[1])
                         xy = np.meshgrid(x, y, indexing='ij')
-                        opt_pos, fit_data, fit_res = self._get_pos_from_2d_gauss_fit(
+                        opt_pos, fit_data, fit_res = self._get_2d_pos_from_fit(
                             xy,
-                            data.data[self._data_channel].ravel()
+                            data.data[self._data_channel].ravel(),
+                            max_is_spline=self.do_get_max_from_spline
                         )
 
                     position_update = {ax: opt_pos[ii] for ii, ax in enumerate(data.scan_axes)}
                     self._last_fit_results = fit_res
                     # Abort optimize if fit failed
+
                     if ((fit_data is None) 
-                        or (fit_res is None) or (fit_res.rsquared < self._min_r_squared)): 
+                        or (fit_res is None) or (fit_res.rsquared < self._min_r_squared)) and not self.do_get_max_from_spline: 
                         # or (fit_res is not None and fit_res.rsquared < self._min_r_squared)):
                         self.log.warning("Stopping optimization due to failed fit.")
                         self.stop_optimize()
                         return
                 
-                    if fit_data is not None:
+                    if fit_data is not None or self.do_get_max_from_spline:
                         new_pos = self._scan_logic().set_target_position(position_update)
                         for ax in tuple(position_update):
                             position_update[ax] = new_pos[ax]
@@ -435,7 +496,7 @@ class ScanningOptimizeLogic(LogicBase):
             self.sigOptimizeDone.emit()
             return err
 
-    def _get_pos_from_2d_gauss_fit(self, xy, data):
+    def _get_2d_pos_from_fit(self, xy, data, max_is_spline = False):
         model = Gaussian2D()
         try:
             fit_result = model.fit(data, x=xy, **model.estimate_peak(data, xy))
@@ -446,11 +507,19 @@ class ScanningOptimizeLogic(LogicBase):
             y_middle = (y_max - y_min) / 2 + y_min
             self.log.exception('2D Gaussian fit unsuccessful.')
             return (x_middle, y_middle), None, None
+        if max_is_spline:
+            z_max, max_x, max_y = find_max_spline_2d(data.reshape(xy[0].shape[0], xy[1].shape[0]).T, 
+                                                     xy 
+                                                    )
+        else:
+            max_x = fit_result.best_values['center_x']
+            max_y = fit_result.best_values['center_y']
+        print((max_x,
+                max_y))
+        return (max_x,
+                max_y), fit_result.best_fit.reshape(xy[0].shape), fit_result
 
-        return (fit_result.best_values['center_x'],
-                fit_result.best_values['center_y']), fit_result.best_fit.reshape(xy[0].shape), fit_result
-
-    def _get_pos_from_1d_gauss_fit(self, x, data):
+    def _get_pos_from_1d_fit(self, x, data, max_is_spline = False):
         model = Gaussian()
 
         try:
@@ -460,8 +529,12 @@ class ScanningOptimizeLogic(LogicBase):
             middle = (x_max - x_min) / 2 + x_min
             self.log.exception('1D Gaussian fit unsuccessful.')
             return (middle,), None, None
+        if max_is_spline:
+            max_y, max_x = find_max_spline(x, data)
+        else:
+            max_x = fit_result.best_values['center']
 
-        return (fit_result.best_values['center'],), fit_result.best_fit, fit_result
+        return (max_x,), fit_result.best_fit, fit_result
 
 
 class OptimizerScanSequence():
