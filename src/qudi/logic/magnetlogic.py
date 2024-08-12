@@ -8,8 +8,8 @@ from qudi.core.connector import Connector
 
 class MagnetLogic(LogicBase):
     ## connectors
-    magnet = Connector(interface = 'Magnet3D')
-    tagger = Connector(interface = 'TT')
+    magnet = Connector(interface="Magnet3D")
+    tagger = Connector(interface="TT")
 
     ## external signals
     sigScanFinished = QtCore.Signal()
@@ -17,21 +17,19 @@ class MagnetLogic(LogicBase):
     sigPauseRamp = QtCore.Signal()
     sigContinueRamp = QtCore.Signal()
     sigRampToZero = QtCore.Signal()
-    sigRamp = QtCore.Signal(np.ndarray,bool)
+    sigRamp = QtCore.Signal(np.ndarray, bool)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.debug = True
         self.abortScan = True
-        
-
 
     def on_activate(self):
         self._magnet = self.magnet()
         self._tagger = self.tagger()
         if self._magnet.has_persistence:
             self.sigChangePswStatus.connect(self._magnet.set_psw_status)
-            
+
         self._magnet.sigRampFinished.connect(self._start_pixelIntegrationTimer)
         self.sigPauseRamp.connect(self._magnet.pause_ramp)
         self.sigContinueRamp.connect(self._magnet.continue_ramp)
@@ -41,13 +39,11 @@ class MagnetLogic(LogicBase):
         # switches
         self._rampForPixel = False
 
-
     def on_deactivate(self):
         pass
-    
 
     def set_up_scan(self, params, int_time):
-        self.log.debug('set up scan')
+        self.log.debug("set up scan")
         self.abortScan = False
         self.int_time = int_time
         # set up counter
@@ -62,38 +58,40 @@ class MagnetLogic(LogicBase):
         self._set_up_next_pixel()
         return
 
-
     def set_up_counter(self, int_time):
         """Sets up the counter for later count extraction.
-        
+
         @param float int_time: integration time in ns.
         """
-        
-        self.log.debug('set up counter')
-        apdChannels = self._tagger._counter['channels']
+
+        self.log.debug("set up counter")
+        apdChannels = self._tagger._counter["channels"]
         # convert ms into ps
-        self.ctr = self._tagger.counter(bin_width=int(int_time*1e9),n_values=1,channels=apdChannels)
+        self.ctr = self._tagger.counter(
+            bin_width=int(int_time * 1e9), n_values=1, channels=apdChannels
+        )
 
         self.pixelIntegrationTimer = QtCore.QTimer()
         self.pixelIntegrationTimer.setSingleShot(True)
-        self.pixelIntegrationTimer.timeout.connect(self._scan_pixel, QtCore.Qt.QueuedConnection)
+        self.pixelIntegrationTimer.timeout.connect(
+            self._scan_pixel, QtCore.Qt.QueuedConnection
+        )
         # After setting up the counter, you need to wait at least one bin width, otherwise you get only zeros.
         # Setting up the counter takes a little bit less than 100 ns
         buffer = 100
-        interval = int_time+buffer
+        interval = int_time + buffer
         self.pixelIntegrationTimer.setInterval(interval)
         return
 
-
     def build_3d_scan_line(self, params):
-        """ Buildas a 2d matrix to handle the 3d scan.
+        """Buildas a 2d matrix to handle the 3d scan.
 
         @input array params: 2D array specifying the axes:
             [[axis0_start, axis0_stop, axis0_steps],
                 [axis1_start, axis1_stop, axis1_steps],
                 [axis2_start, axis2_stop, axis2_steps]]
 
-        Each line is one pixel. 
+        Each line is one pixel.
         First axis 0 gets varied, then axis 1 and then axis 2.
 
         The resulting matrix looks like this:
@@ -111,57 +109,58 @@ class MagnetLogic(LogicBase):
             [x1,y2,z1]
         ]
         """
-        self.log.debug('build 3d scan line')
+        self.log.debug("build 3d scan line")
         # build axes
         axes = []
         for i in range(3):
-            start,stop,steps = params[i,:]
+            start, stop, steps = params[i, :]
             steps = int(steps)
-            axis = np.linspace(start,stop,steps)
+            axis = np.linspace(start, stop, steps)
             axes.append(axis)
         axes = np.array(axes, dtype=object)
         # build matrix
-        steps = params[:,2].astype(int)
-        scanning_line = np.zeros((np.prod(steps),3))
+        steps = params[:, 2].astype(int)
+        scanning_line = np.zeros((np.prod(steps), 3))
         # ax0 into matrix
-        ax0 = np.tile(axes[0],steps[1]*steps[2])
-        scanning_line[:,0] = ax0
+        ax0 = np.tile(axes[0], steps[1] * steps[2])
+        scanning_line[:, 0] = ax0
         # ax1 into matrix
-        ax1 = np.tile(axes[1], (steps[0],1))
+        ax1 = np.tile(axes[1], (steps[0], 1))
         ax1 = np.transpose(ax1)
-        ax1 = np.reshape(ax1,steps[0]*steps[1])
+        ax1 = np.reshape(ax1, steps[0] * steps[1])
         ax1 = np.tile(ax1, steps[2])
-        scanning_line[:,1] = ax1
+        scanning_line[:, 1] = ax1
         # ax2 into matrix
-        ax2 = np.tile(axes[2], (steps[0]*steps[1],1))
+        ax2 = np.tile(axes[2], (steps[0] * steps[1], 1))
         ax2 = np.transpose(ax2)
-        ax2 = np.reshape(ax2,np.prod(steps))
-        scanning_line[:,2] = ax2
-        self.log.debug(f'scanning line is: {scanning_line}')
+        ax2 = np.reshape(ax2, np.prod(steps))
+        scanning_line[:, 2] = ax2
+        self.log.debug(f"scanning line is: {scanning_line}")
         return scanning_line
 
-
     def _set_up_next_pixel(self):
-        self.log.debug('setting up next pixel')
+        self.log.debug("setting up next pixel")
         if self.abortScan:
-            self.log.debug('aborting scan')
+            self.log.debug("aborting scan")
             return
-        if len(self._scanning_line) > 0: # if we still have pixels to scan
-            self._rampForPixel = True # the ramp of the magnet was initiated by this script
+        if len(self._scanning_line) > 0:  # if we still have pixels to scan
+            self._rampForPixel = (
+                True  # the ramp of the magnet was initiated by this script
+            )
             # choose next pixel
             self.pixel = self._scanning_line[0]
-            self.log.debug(f'current pixel is {self.pixel}')
+            self.log.debug(f"current pixel is {self.pixel}")
             # remove the pixel from the stack
             self._scanning_line = self._scanning_line[1:]
             # turn spherical coordinates into carthesian
             carthesian = self.spherical_to_carthesian(self.pixel)
             self.log.debug(carthesian)
             # ramp the magnet
-            self.sigRamp.emit(carthesian,False)
+            self.sigRamp.emit(carthesian, False)
             # self._magnet.ramp(field_target=carthesian, enter_persistent=False)
             return
-        else: # if we are finished
-            self.log.debug('scan finished')
+        else:  # if we are finished
+            self.log.debug("scan finished")
             # turn counts from list into array for faster processing later on
             self.counts = np.array(self.counts)
             self._rampForPixel = False
@@ -169,63 +168,63 @@ class MagnetLogic(LogicBase):
             self.sigScanFinished.emit()
             return
 
-
     def _start_pixelIntegrationTimer(self):
-        self.log.debug('_start_pixelIntegrationTimer')
+        self.log.debug("_start_pixelIntegrationTimer")
         if self.abortScan:
-            self.log.debug('aborting scan')
+            self.log.debug("aborting scan")
             return
-        if self._rampForPixel: # only do sth if ramp was initiated for the pixel
+        if self._rampForPixel:  # only do sth if ramp was initiated for the pixel
             if self.thread() is not QtCore.QThread.currentThread():
-                self.log.debug('_start_pixelIntegrationTimer, thread is not currentThread')
-                QtCore.QMetaObject.invokeMethod(self.pixelIntegrationTimer,
-                                                'start',
-                                                QtCore.Qt.BlockingQueuedConnection)
+                self.log.debug(
+                    "_start_pixelIntegrationTimer, thread is not currentThread"
+                )
+                QtCore.QMetaObject.invokeMethod(
+                    self.pixelIntegrationTimer,
+                    "start",
+                    QtCore.Qt.BlockingQueuedConnection,
+                )
             else:
-                self.log.debug('_start_pixelIntegrationTimer, thread is currentThread')
+                self.log.debug("_start_pixelIntegrationTimer, thread is currentThread")
                 self.pixelIntegrationTimer.start()
         else:
-            self.log.debug('ramp was not initiated by this file, doing noting.')
-
+            self.log.debug("ramp was not initiated by this file, doing noting.")
 
     @QtCore.Slot()
     def _scan_pixel(self):
-        """ Gets counts and sets up next pixel.
-        """
-        self.log.debug('_scan_pixel')
+        """Gets counts and sets up next pixel."""
+        self.log.debug("_scan_pixel")
         if self.abortScan:
-            self.log.debug('aborting scan')
+            self.log.debug("aborting scan")
             return
         cts = self.ctr.getData()
-        self.log.debug(f'counts were {cts}')
-        self.counts.append(cts) # store counts in list
+        self.log.debug(f"counts were {cts}")
+        self.counts.append(cts)  # store counts in list
         self._set_up_next_pixel()
         return
 
-
     def spherical_to_carthesian(self, spherical):
         """Turns spherical coordinates into carthesian coordinates.
-        
+
         @param array spherical: spherical coordinates in [r, theta, phi]
 
         @return array carthesian: carthesian coordinates in [x, y, z]
         """
-        self.log.debug('spherical_to_carthesian')
+        self.log.debug("spherical_to_carthesian")
         r = spherical[0]
         theta = np.deg2rad(spherical[1])
         phi = np.deg2rad(spherical[2])
 
-        x = r*np.cos(phi)*np.sin(theta)
-        y = r*np.sin(phi)*np.sin(theta)
-        z = r*np.cos(theta)
-    
-        carthesian = np.array([x,y,z])
+        x = r * np.cos(phi) * np.sin(theta)
+        y = r * np.sin(phi) * np.sin(theta)
+        z = r * np.cos(theta)
+
+        carthesian = np.array([x, y, z])
         print(carthesian)
         print(phi)
         print(theta)
-        
+
         return carthesian
-    
+
     def cartesian_to_spherical(self, cartesian):
         """
         Converts a list of Cartesian coordinates to spherical coordinates using NumPy.
@@ -242,17 +241,16 @@ class MagnetLogic(LogicBase):
         x = cartesian[0]
         y = cartesian[1]
         z = cartesian[2]
-        
+
         radius = np.sqrt(x**2 + y**2 + z**2)
         theta = np.arccos(z / radius) if radius != 0 else 0
         phi = np.arctan2(y, x)
         phi_deg = np.rad2deg(phi) if phi > 0 else np.rad2deg(phi) + 360
         return np.array([radius, np.rad2deg(theta), phi_deg])
-        
-    
+
     def stop_scan(self):
         """Aborts the scan.
-        
+
         Also stops the ramp. Magnetic field will stay at the value it had when scan got aborted.
         """
         # stops execution of scan loop
@@ -262,47 +260,40 @@ class MagnetLogic(LogicBase):
         # self._magnet.pause_ramp()
         return
 
-    
-    def set_psw_status(self,status):
-        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}: passing psw status {status}')
+    def set_psw_status(self, status):
+        self.log.debug(
+            f"{__name__}, {inspect.stack()[0][3]}: passing psw status {status}"
+        )
         self.sigChangePswStatus.emit(status)
         return
 
-
     def pause_ramp(self):
-        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
-        self.sigPauseRamp.emit())
+        self.log.debug(f"{__name__}, {inspect.stack()[0][3]}")
+        self.sigPauseRamp.emit()
         return
 
-
     def continue_ramp(self):
-        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
+        self.log.debug(f"{__name__}, {inspect.stack()[0][3]}")
         self.sigContinueRamp.emit()
         return
 
-    
     def ramp_to_zero(self):
-        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
+        self.log.debug(f"{__name__}, {inspect.stack()[0][3]}")
         self.sigRampToZero.emit()
         return
 
-
     def ramp(self, filed_target_sperical):
-        self.log.debug(f'{__name__}, {inspect.stack()[0][3]}')
+        self.log.debug(f"{__name__}, {inspect.stack()[0][3]}")
         self.sigRamp.emit(self.spherical_to_carthesian(filed_target_sperical), False)
         return
-    
-
-
 
     # -------------------------------------------------------------------------------
     # code that I wrote thinking it will be useful but was not.
     # Keeping it in case I need it lateron
 
-
     # def build_scanning_matrix(self, params):
     #     """Builds 4D-matrix for scanning along three axes.
-        
+
     #     @input array params: 2D array specifying the axes:
     #         [[axis0_start, axis0_stop, axis0_steps],
     #             [axis1_start, axis1_stop, axis1_steps],
@@ -321,7 +312,7 @@ class MagnetLogic(LogicBase):
     #         ]
     #     ]
     #     Most inner block (axes 0 to 2) is last index, second most inner block ist third axis,
-    #     outer block ist first axis. 
+    #     outer block ist first axis.
     #     To scan the first axis, you need to vary the first index,
     #     to scan the second axis you need to vary the second index
     #     and to scan the third axis you need to vary the third index.
@@ -334,7 +325,7 @@ class MagnetLogic(LogicBase):
     #         axis = np.linspace(start,stop,steps)
     #         axes.append(axis)
     #     axes = np.array(axes, dtype=object)
-    #     # figure out dimension of each axis 
+    #     # figure out dimension of each axis
     #     dims = [len(ax) for ax in axes]
     #     dims.append(3)
     #     # built scanning matrix
@@ -349,7 +340,6 @@ class MagnetLogic(LogicBase):
     #     reps = [dims[0], dims[1], 1]
     #     scanning_matrix[:,:,:,ax] = np.transpose(np.tile(axes[ax],reps),(0,1,2))
     #     return scanning_matrix
-
 
     # def scan_along_matrix(self, scanning_matrix):
     #     # ramp field
