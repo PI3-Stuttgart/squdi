@@ -330,8 +330,10 @@ class StarkHOM(MeasurementsBase):
 
         # Initialize timers
         self.timer = QTimer()
+        self.timer.timeout.connect(self.refocus_and_realign)
         self.timer.setSingleShot(True)
         self.next_measurement_timer = QTimer()
+        self.next_measurement_timer.timeout.connect(self.next_measurement)
         self.next_measurement_timer.setSingleShot(True)
         self.elapsed_timer = QElapsedTimer()
 
@@ -381,8 +383,8 @@ class StarkHOM(MeasurementsBase):
                 time.sleep(1)
         
         if self.current_measurement == 'hom':
-
-            if selfiteration % 4 == 0:
+            
+            if self.iteration % 4 == 0:
                 target_laser = self.laser_scanner_logic.scanner_target
 
                 self.measurement_mode('PLE')
@@ -401,7 +403,8 @@ class StarkHOM(MeasurementsBase):
                 time.sleep(0.5)
                 while self.laser_scanner_logic.module_state() == 'locked':
                     time.sleep(1)
-            
+
+
             if self.iteration % 1 == 0:
                 self.measurement_mode('PLE')
                 time.sleep(0.5)
@@ -409,11 +412,18 @@ class StarkHOM(MeasurementsBase):
                 self.align_resonances(dv=0.2, steps=40)
                 time.sleep(1)
                 self.setpoint_story.append(self.ao_electrodes.setpoint)
+            if self.iteration % 6 == 0:
+                self.refocus_resonantly()
 
-        self.measurement_mode('Off-res')
-        time.sleep(0.2)
+
+            self.measurement_mode('Off-res')
+            self.set_green_power('atto3', self.max_power)
+            self.set_green_power('bf', self.max_power)
+            time.sleep(0.2)
 
         if self.current_measurement == 'hom_detuned':
+            self.set_green_power('atto3', self.max_power)
+            self.set_green_power('bf', self.max_power)
             self.ao_electrodes.setpoint = -0.05
 
         if self.current_measurement == 'g2_atto3':
@@ -427,10 +437,11 @@ class StarkHOM(MeasurementsBase):
         self.polarization_is_parallel = True
         self.iteration = self.iteration + 1
         self.elapsed_timer.start()
+        
         self.timer.start(self.query_time * 60 * 1000)
     
         print("New Iteraion", self.iteration)
-        
+    
     def next_measurement(self):
         
         self.timer.stop()
@@ -477,6 +488,7 @@ class StarkHOM(MeasurementsBase):
             os.makedirs(self.folder_save, exist_ok=True)
 
             self.start_measurement()
+    def refocus_resonantly(self):
         
 
     def calibrate_counts(self, cryo, cryo_off, steps = 40):
