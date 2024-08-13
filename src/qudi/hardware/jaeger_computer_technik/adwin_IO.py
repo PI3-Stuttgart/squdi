@@ -31,6 +31,7 @@ from qudi.interface.process_control_interface import ProcessControlConstraints
 from qudi.interface.process_control_interface import ProcessSetpointInterface
 from qudi.interface.mixins.process_control_switch import ProcessControlSwitchMixin
 from qudi.core.statusvariable import StatusVar
+from qudi.core.module import Base
 
 from qudi.util.helpers import natural_sort, in_range
 from qudi.hardware.jaeger_computer_technik.helpers_adwin import (
@@ -81,9 +82,9 @@ class Adwin_AO(
     def on_activate(self):
         # Check if device is connected and set device to use
         self.boot_adwin()
-        self.start_adwin_processes(['control_analog_out.TB9'])
-        self.start_adwin_processes(['control_digout.TB0'])
-
+        # self.start_adwin_processes(["control_analog_out.TB9"])
+        # self.start_adwin_processes(["control_digout.TB0"])
+        self.start_adwin_processes(["set_channel_out.TB3"])
         self._device_channel_mapping = dict()
         self._ao_task_handles = dict()
         self._keep_values = dict()
@@ -132,18 +133,18 @@ class Adwin_AO(
         # Sanitize status variables
         self._sanitize_setpoint_status()
         self.map_channels()
-        self.start_adwin_processes(["set_channel_out.TB3"])
+        # self.start_adwin_processes(["set_channel_out.TB3"])
 
     def map_channels(self):
 
         for ch_name in self._channels_config:
-            print(ch_name)
+            pass
             # self.adwin.Set_Par([11,12,13], int(ch_name))
             # TODO set integer parameters for channel indexing (now it is hardcoded!)
 
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
-        # TODO
+        self.stop_adwin_processes(["set_channel_out.TB3"], clear_processes=True)
         pass
 
     ## THIS FOLLOWING FUNCTIONS HAVE TO BE WRITTEN TO MAP TO NI_AO class from Bluefors.cfg
@@ -323,7 +324,9 @@ class Adwin_IO(
 
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
-        self.clear_adwin_processes(["control_analog_out.TB9", "control_digout.TB0"])
+        self.stop_adwin_processes(
+            ["control_analog_out.TB9", "control_digout.TB0"], clear_processes=True
+        )
         pass
 
     ## THIS FOLLOWING FUNCTIONS HAVE TO BE WRITTEN TO MAP TO NI_AO class from Bluefors.cfg
@@ -347,9 +350,8 @@ class Adwin_IO(
 
     def set_digi_out(self, port: int, active: bool):
 
-        if self.available_ports()["digital"][port]["IO"] == "in":
+        if self.available_ports()["digital"][port]["IO"] == "out":
             par_idx = 8 if port == 0 else port
-            print(par_idx)
 
             if active:
                 self.write_par(par_idx, 1)
@@ -373,3 +375,59 @@ class Adwin_IO(
 
     def available_ports(self) -> dict:
         return self._ports
+
+
+class AdwinTrigger(AdwinBase, Base):
+
+    def on_activate(self):
+        self.boot_adwin()
+        self.start_adwin_processes(["give_trigger.TB1"])
+
+    def on_deactivate(self):
+        """Stops all adwin process needed for the script"""
+        self.stop_adwin_processes(["give_trigger.TB1"], clear_processes=True)
+
+    # TODO: check for faulty input and catch it
+    @property
+    def number_of_pulses(self):
+        return self.read_par(31)
+
+    @number_of_pulses.setter
+    def number_of_pulses(self, number_of_pulses: int):
+        self.write_par(31, number_of_pulses)
+
+    @property
+    def sample_rate(self):
+        return self.read_fpar(30)
+
+    @sample_rate.setter
+    def sample_rate(self, sample_rate: float):
+        self.write_fpar(30, sample_rate)
+
+    @property
+    def digi_out_port(self):
+        return self.read_par(33)
+
+    @digi_out_port.setter
+    def digi_out_port(self, port: int):
+        if 0 < port <= 16:
+            self.write_par(33, port)
+        else:
+            self.log.warning("Wrong port number given")
+
+    def start(self):
+        if self.digi_out_port == 0:
+            self.log.warning("Digi out port number not given")
+            return -1
+        try:
+            self.write_par(30, 1)
+            return 0
+        except:
+            return -1
+
+    def stop(self):
+        try:
+            self.write_par(30, 0)
+            return 0
+        except:
+            return -1

@@ -326,6 +326,8 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                 'Unable to set frame size. Data acquisition in progress.'
             self._frame_size = samples
             self.log.debug(f'set frame_size to {self._frame_size}')
+            
+
     def _init_tt_cbm_task(self):
         """
         Set up tasks for digital event counting with the TIMETAGGER

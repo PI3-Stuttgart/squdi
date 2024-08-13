@@ -1,3 +1,4 @@
+# pip install pyserial
 import serial
 import csv
 import numpy as np
@@ -14,7 +15,7 @@ class waveform_generation:
     def __init__(self):
         self.path_to_folder = os.path.dirname(os.path.abspath(__file__))
 
-    # Make sure to only send integers to the device. Otherwise it won't work.
+    # Make sure to only send integers to the devpip install PyCRCice. Otherwise it won't work.
     def create_a_waveform_file(self, voltages, fname='waveform.txt'):
         fname = os.path.join(self.path_to_folder,fname)
         line = ''
@@ -231,6 +232,14 @@ class PPG512(Base):
         ans = self.ser.read_all()
         return ans
 
+    def get_state(self):
+        ans = self._query('SYS:STAT?')
+        return ans
+
+    def get_report(self):
+        ans = self._query('SYS:REP?')
+        return ans
+        
 
     def reset(self):
         """Reset System
@@ -275,7 +284,7 @@ class PPG512(Base):
         return ans
 
 
-    def write_waveform(self, fname = 'waveform.txt'):
+    def write_waveform(self, fname='waveform.txt'):
         value = []
         fname = os.path.join(self.path_to_folder,fname)
         with open(fname) as fp:
