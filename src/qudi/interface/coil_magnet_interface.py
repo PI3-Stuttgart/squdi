@@ -8,7 +8,6 @@ Question for the meeting:
 from qudi.core.module import Base
 from abc import abstractmethod
 
-
 class CoilMagnetInterface(Base):
     """
     This interface is used to control a 3D coil magnet.
@@ -21,17 +20,19 @@ class CoilMagnetInterface(Base):
         """
         pass
 
+
     @abstractmethod
-    def on_deactivate(self):
+    def  on_deactivate(self):
         """
         Properly deactivates the module.
         """
         pass
 
-    @abstractmethod
-    def ramp(self, field_target=[None, None, None], enter_persistent=False):
-        """Ramps the magnet to the specified field target. Sends signal once done.
 
+    @abstractmethod
+    def ramp(self, field_target=[None,None,None], enter_persistent=False):
+        """Ramps the magnet to the specified field target. Sends signal once done.
+        
         @param array field_target: Target field in carthesian coordinates as array of length 3.
 
         @param bool enter_persistent: Specifies the state of the persistent switches (PSWs) after the ramp has finished.
@@ -39,6 +40,7 @@ class CoilMagnetInterface(Base):
             True: PSWs turn off, magnet enters persistent mode
         """
         pass
+
 
     @abstractmethod
     def ramp_to_zero(self):
@@ -48,6 +50,7 @@ class CoilMagnetInterface(Base):
         Returns signal once ramp is finished.
         """
         pass
+
 
     @abstractmethod
     def get_ramping_state(self):
@@ -69,13 +72,15 @@ class CoilMagnetInterface(Base):
         """
         pass
 
+
     @abstractmethod
     def pause_ramp(self):
         """Pauses the ramping process.
-
+        
         The current/field will stay at the level it had when the function was executed.
         """
         pass
+
 
     @abstractmethod
     def continue_ramp(self):
@@ -84,14 +89,16 @@ class CoilMagnetInterface(Base):
         """
         pass
 
-    @abstractmethod
+
+    @abstractmethod     
     def abort_ramp(self):
         """
         Aborts the ramp.
-
+        
         Aborts the ramp loops and pauses the ramp.
         """
         pass
+
 
     @abstractmethod
     def get_magnet_currents(self):
@@ -102,6 +109,7 @@ class CoilMagnetInterface(Base):
         """
         pass
 
+
     @abstractmethod
     def get_supply_currents(self):
         """
@@ -111,6 +119,7 @@ class CoilMagnetInterface(Base):
         """
         pass
 
+
     @abstractmethod
     def get_field(self):
         """
@@ -119,21 +128,23 @@ class CoilMagnetInterface(Base):
         @return list: magnetic field in x, y and z as [field_x,field_y,field_z]
         """
         pass
+        
 
     @abstractmethod
-    def check_field_amplitude(self, target_field):
+    def check_field_amplitude(self,target_field):
         """
         Checks if the given field exceeds the constraints.
-
+        
         @return int: Returns 0 if everything is okay, returns -1 if field is too strong.
         """
         pass
 
+
     @abstractmethod
-    def combine_fields(self, field1, field2):
+    def combine_fields(self,field1,field2):
         """
         Combines the given fields.
-
+        
         Combined field is max of individual fields.
         e.g. [1,2,3] and [2,2,2] would result in [2,2,3].
 
@@ -141,6 +152,7 @@ class CoilMagnetInterface(Base):
         """
         pass
 
+    
     @abstractmethod
     def equalize_currents(self):
         """
@@ -148,15 +160,17 @@ class CoilMagnetInterface(Base):
         """
         pass
 
+
     @abstractmethod
     def get_psw_status(self):
-        """Returns the status of the psw heaters as array.
+        """Returns the status of the psw heaters as array. 
 
         @return list: Status of the psw heaters as [status heater x, status heater y, status heater z]
             0 means heater is switched off.
             1 means heater is switched on.
         """
         pass
+
 
     @abstractmethod
     def set_psw_status(self, status):
