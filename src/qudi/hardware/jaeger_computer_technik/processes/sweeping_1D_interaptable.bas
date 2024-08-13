@@ -1,0 +1,82 @@
+'<ADbasic Header, Headerversion 001.001>
+' Process_Number                 = 6
+' Initial_Processdelay           = 30000000
+' Eventsource                    = Timer
+' Control_long_Delays_for_Stop   = No
+' Priority                       = Low
+' Priority_Low_Level             = 2
+' Version                        = 1
+' ADbasic_Version                = 6.3.1
+' Optimize                       = Yes
+' Optimize_Level                 = 1
+' Stacksize                      = 1000
+' Info_Last_Save                 = QINU  QINU\yy3
+'<Header End>
+#Include ADwinGoldII.inc
+
+Dim data_1[1000000] as Float
+Dim data_2[1000000] as Float
+Dim data_3[1000000] as Float
+'Dim data_4[10000] as Float' # legacy for PLE?
+Dim index as Long     
+Dim rise_time as Long
+Dim low_time as Long
+Dim total_time as Long
+
+
+
+Function get_vol(input) As Long   'input is in m'   
+  Dim vol as Float
+  vol = input'(1.0/0.07853981633) * arctan(input/2.1e-3) - 0.3 'Volts'
+  If (AbsF(vol) > 5) Then
+    get_vol = 32768
+  Else
+    get_vol = vol * 3277 + 32768 'Bits'
+  EndIf
+EndFunction
+
+Function get_vol_z(input_z) As Long      
+  Dim vol2 as Float
+  vol2 = input_z'(input_z/3)*10e5'
+  If ((vol2 > 9.5) OR (vol2 < -5)) Then
+    get_vol_z = 32768
+  Else
+    get_vol_z = vol2 * 3277 + 32768 'Bits'
+  EndIf
+
+EndFunction
+  
+Init:
+  Conf_DIO(1111b)
+  PAR_20 = 10000000
+  Digout(9, 1)
+  index = 0
+Event:  
+  If (PAR_24 = 1) Then
+    If (index = 0) Then
+      Processdelay = 3 * 10000000
+      index = index + 1
+      PAR_23 = index
+    Else
+      Processdelay = PAR_20*3
+      If (index <= PAR_21) Then
+        'PAR_23 = index'
+        DAC(1, get_vol(data_1[index]))
+        DAC(2, get_vol(data_2[index]))
+        DAC(3, get_vol_z(data_3[index]))
+        index = index + 1
+        PAR_23 = index
+      
+      Else
+        PAR_24 = 0
+        index = 0
+        PAR_23 = 0
+      EndIf
+      Digout(9, 0)
+      CPU_Sleep(PAR_20/2)
+      Digout(9, 1)
+    EndIf
+  EndIf
+ 
+  
+Finish:

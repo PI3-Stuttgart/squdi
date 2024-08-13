@@ -126,6 +126,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         self._thread_lock_data = Mutex()
         # handle to the uncorrected scanner instance, not wrapped by a potential CoordinateTransformMixin
         self.bare_scanner = NiScanningProbeInterfuseBare
+        
+        
     def on_activate(self):
         # Sanity checks for ni_ao and ni finite sampling io
         # TODO check that config values within fsio range?

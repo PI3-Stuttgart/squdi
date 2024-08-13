@@ -33,5 +33,12 @@ Event:
     
   EndIf
   
+  If (data_5[3] = 1.0) Then
+    Digout(0,1)
+    
+  Else
+    Digout(0,0)
+    
+  EndIf
 Finish:
   

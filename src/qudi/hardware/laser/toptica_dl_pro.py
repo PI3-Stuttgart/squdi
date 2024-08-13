@@ -76,14 +76,17 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface):
         )
         self.get_laser_state()
 
+
     def on_deactivate(self):
         """ Deactivate module.
         """
         return 
     
+    
     def set_activity_state(self, channel: str, active: bool) -> None:
 
         pass
+
 
     def get_activity_state(self, channel: str) -> bool:
         """ Get activity state for given channel.

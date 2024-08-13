@@ -365,6 +365,8 @@ class ScanningProbeLogic(LogicBase):
             if start:
                 return self.start_scan(scan_axes, caller_id)
             return self.stop_scan()
+    
+
     def toggle_tilt_correction(self, enable=True):
 
         target_pos = self._scanner().get_target()
@@ -587,6 +589,7 @@ class ScanningProbeLogic(LogicBase):
                     return
                 # TODO Added the following line as a quick test; Maybe look at it with more caution if correct
                 self.sigScanStateChanged.emit(True, self.scan_data, self._curr_caller_id)
+                
 
                 # Queue next call to this slot
                 self.__scan_poll_timer.start()

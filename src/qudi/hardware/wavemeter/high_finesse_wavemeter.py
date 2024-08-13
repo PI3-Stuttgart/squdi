@@ -1,4 +1,4 @@
- # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 """
 This file contains the qudi hardware module for the HighFinesse wavemeter. It implements the
@@ -25,17 +25,9 @@ You should have received a copy of the GNU Lesser General Public License along w
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from qtpy import QtCore
-import ctypes   # is a foreign function library for Python. It provides C
-                # compatible data types, and allows calling functions in DLLs
-                # or shared libraries. It can be used to wrap these libraries
-                # in pure Python.
-from qudi.hardware.wavemeter import high_finesse_api
-from qudi.interface.wavemeter_interface import WavemeterInterface
-from qudi.core.module import Base
-from qudi.core.configoption import ConfigOption
-from qudi.util.mutex import Mutex
 import time
+from typing import Union, Optional, List, Tuple, Sequence, Any, Dict
+
 import numpy as np
 from scipy.constants import lambda2nu
 from PySide2 import QtCore
@@ -80,23 +72,25 @@ class HighFinesseWavemeter(DataInStreamInterface):
     _proxy: HighFinesseProxy = Connector(name='proxy', interface='HighFinesseProxy')
 
     # config options
-    _measurement_timing = ConfigOption('measurement_timing', default=0.2)
-    _active_channels = ConfigOption('active_channels', default=[0])
-    _selected_channels = ConfigOption('selected_channels', default=[2,4])
-    _default_channel = ConfigOption('default_channel', default=0)
-    _buffer_size = 3000
-    # signals
-    sig_handle_timer = QtCore.Signal(bool)
+    _wavemeter_ch_config: Dict[str, Dict[str, Any]] = ConfigOption(
+        name='channels',
+        default={
+            'default_channel': {'switch_ch': 1, 'unit': 'm', 'exposure': None}
+        },
+        missing='info'
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._lock = Mutex()
 
-        # the current wavelength read by the wavemeter in nm (vac)
-        self._current_wavelengths = {ch: 0 for ch in self._active_channels}
-        
-        self._wavelength_buffer = np.array([])
-      
+        # internal settings
+        # dictionary with switch channel numbers as keys, channel names as values
+        self._channel_names: Dict[int, str] = {}
+        self._channel_units: Dict[int, str] = {}
+        self._channel_buffer_size = 1024**2
+        self._active_switch_channels: Optional[List[int]] = None  # list of active switch channel numbers
+        self._last_measurement_error: Dict[int, float] = {}
 
         # data buffer
         self._wm_start_time: Optional[float] = None
@@ -151,6 +145,29 @@ class HighFinesseWavemeter(DataInStreamInterface):
         # free memory
         self._data_buffer = None
         self._timestamp_buffer = None
+        
+        
+    def start_lock(self, wavelength: Union[float, None] = None, use_current_wavelength: bool = False, channel: int = 1) -> None:
+        
+        if self.module_state() == 'idle':
+            self.start_stream()
+            time.sleep(0.01)
+        
+        if use_current_wavelength:
+            wavelength = current_wavelength = self.read_single_point()[0][0] * 1e9 # TODO: not generic
+        else:
+            if wavelength == None:
+                raise ValueError('Target wavelength needs to be defined or use_current_wavelength=True')
+        self._proxy().set_reference_wavelength(wavelength)
+        self._proxy().toggle_locking(True)
+        
+    def stop_lock(self, channel: int = 1) -> None:
+        if self.module_state() == 'idle':
+            self.start_stream()
+            time.sleep(0.01)
+        
+        self._proxy().toggle_locking(False)
+        
 
     @property
     def constraints(self) -> DataInStreamConstraints:
@@ -197,7 +214,7 @@ class HighFinesseWavemeter(DataInStreamInterface):
         into.
         The 1D data_buffer can be unraveled into channel and sample indexing with:
 
-            data_buffer.reshape([<number_of_samples>, <channel_count>])
+            data_buffer.reshape([<samples_per_channel>, <channel_count>])
 
         The data_buffer array must have the same data type as self.constraints.data_type.
 
@@ -257,28 +274,28 @@ class HighFinesseWavemeter(DataInStreamInterface):
         return samples_per_channel
 
     def read_data(self,
-                  number_of_samples: Optional[int] = None
+                  samples_per_channel: Optional[int] = None
                   ) -> Tuple[np.ndarray, Union[np.ndarray, None]]:
         """ Read data from the stream buffer into a 1D numpy array and return it.
         All samples for each channel are stored in consecutive blocks one after the other.
         The returned data_buffer can be unraveled into channel samples with:
 
-            data_buffer.reshape([<channel_count>, number_of_samples])
+            data_buffer.reshape([<channel_count>, samples_per_channel])
 
         The numpy array data type is the one defined in self.constraints.data_type.
 
         In case of SampleTiming.TIMESTAMP a 1D numpy.float64 timestamp_buffer array will be
         returned as well with timestamps corresponding to the data_buffer array.
 
-        If number_of_samples is omitted all currently available samples are read from buffer.
+        If samples_per_channel is omitted all currently available samples are read from buffer.
         This method will not return until all requested samples have been read or a timeout occurs.
         """
-        number_of_samples = number_of_samples if number_of_samples is not None else self.available_samples
-        total_samples = len(self.active_channels) * number_of_samples
+        samples_per_channel = samples_per_channel if samples_per_channel is not None else self.available_samples
+        total_samples = len(self.active_channels) * samples_per_channel
 
         data_buffer = np.empty(total_samples, dtype=self.constraints.data_type)
-        timestamp_buffer = np.empty(number_of_samples, dtype=np.float64)
-        self.read_data_into_buffer(data_buffer, number_of_samples, timestamp_buffer)
+        timestamp_buffer = np.empty(samples_per_channel, dtype=np.float64)
+        self.read_data_into_buffer(data_buffer, samples_per_channel, timestamp_buffer)
 
         return data_buffer, timestamp_buffer
 
@@ -349,26 +366,7 @@ class HighFinesseWavemeter(DataInStreamInterface):
         For StreamingMode.FINITE this will also be the total number of samples to acquire per
         channel.
         """
-        elapsed_time = time.time() - self.start_time
-        row = [wavelengths[ch] for ch in self._selected_channels]
-        row.append(elapsed_time)
-        if len(self._wavelength_buffer) < 1:
-            
-            self._wavelength_buffer = np.array(
-                row
-                )
-        elif len(self._wavelength_buffer) > 2:
-            if (np.abs(np.round(wavelengths[self._default_channel], 5) - np.round(self._wavelength_buffer[-1][0], 5))) > 0:
-                self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
-            else:
-                pass
-        else:
-            self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
-
-        self._wavelength_buffer = self._wavelength_buffer[-self._buffer_size:]
-        self._current_wavelengths = wavelengths
-    def empty_buffer(self):
-        self._wavelength_buffer = np.array([])
+        return self._channel_buffer_size
 
     def configure(self,
                   active_channels: Sequence[str],
@@ -482,42 +480,10 @@ class HighFinesseWavemeter(DataInStreamInterface):
             raise TypeError(f'timestamp_buffer must be provided for the wavemeter and '
                             f'it must be a numpy.ndarray with dtype np.float64.')
 
-    def get_wavelength_buffer(self):
-      
-        if len(self._wavelength_buffer) > 0:
-            return np.array(self._wavelength_buffer)
-        else:
-            return np.array([self.get_current_wavelength(), 0])
+        number_of_channels = len(self.active_channels)
+        samples_per_channel = data_buffer.size // number_of_channels
 
-    def get_current_wavelengths(self):
-        """ This method returns the current wavelength.
-
-        """
-
-        return self._current_wavelengths
-    def get_selected_channels(self):
-        return self._selected_channels
-    
-    def get_current_wavelength(self):
-    
-        return self._current_wavelengths[self._default_channel]
-        
-
-    def get_timing(self):
-        """ Get the timing of the internal measurement thread.
-
-        @return float: clock length in second
-        """
-        return self._measurement_timing
-
-    def set_timing(self, timing):
-        """ Set the timing of the internal measurement thread.
-
-        @param float timing: clock length in second
-
-        @return int: error code (0:OK, -1:error)
-        """
-        self._measurement_timing=float(timing)
-        return 0
+        if timestamp_buffer.size != samples_per_channel:
+            raise ValueError(f'timestamp_buffer must be exactly of length data_buffer // <channel_count>')
 
         return samples_per_channel

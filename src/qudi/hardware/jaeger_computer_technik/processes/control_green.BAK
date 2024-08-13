@@ -14,7 +14,7 @@
 #Include ADwinGoldII.inc
 Dim data_5[10000] as Float
 Init:
-  CONF_DIO(1100b)
+  CONF_DIO(1111b)
   
 Event:
   If (data_5[1] = 1.0) Then
@@ -33,5 +33,12 @@ Event:
     
   EndIf
   
+  If (data_5[3] = 1.0) Then
+    Digout(1,1)
+    
+  Else
+    Digout(1,0)
+    
+  EndIf
 Finish:
   

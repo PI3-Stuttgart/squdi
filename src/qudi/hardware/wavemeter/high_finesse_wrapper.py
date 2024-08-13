@@ -33,6 +33,7 @@ def load_dll(dll_path='wlmData.dll'):
 
 
 def setup_dll(dll):
+    
     # LONG_PTR Instantiate(long RFC, long Mode, LONG_PTR P1, long P2)
     dll.Instantiate.argtypes = [c_long, c_long, POINTER(c_long), c_long]
     dll.Instantiate.restype = POINTER(c_long)

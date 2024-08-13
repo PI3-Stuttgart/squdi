@@ -3,13 +3,14 @@
 ' Initial_Processdelay           = 3000
 ' Eventsource                    = Timer
 ' Control_long_Delays_for_Stop   = No
-' Priority                       = High
+' Priority                       = Low
+' Priority_Low_Level             = 1
 ' Version                        = 1
 ' ADbasic_Version                = 6.3.1
 ' Optimize                       = Yes
 ' Optimize_Level                 = 1
 ' Stacksize                      = 1000
-' Info_Last_Save                 = DESKTOP-O5HD7AV  DESKTOP-O5HD7AV\yy3
+' Info_Last_Save                 = QINU  QINU\yy3
 '<Header End>
 #Include ADwinGoldII.inc
 
@@ -25,8 +26,8 @@ EndFunction
 
 Function get_vol_z(input_z) As Long      
   Dim vol2 as Float
-  vol2 = (input_z/3)*10e7
-  If ((vol2 > 9.5) OR (vol2 < 0)) Then
+  vol2 = input_z
+  If ((vol2 > 9.5) OR (vol2 < -5)) Then
     get_vol_z = 32768
   Else
     get_vol_z = vol2 * 3277 + 32768 'Bits'
@@ -34,12 +35,24 @@ Function get_vol_z(input_z) As Long
 
 EndFunction
 
+
+
+Function get_vol_xy(input) As Long      
+  Dim vol2 as Float
+  vol2 = input
+  If ((vol2 > 5) OR (vol2 < -5)) Then
+    get_vol_xy = 32768
+  Else
+    get_vol_xy = vol2 * 3277 + 32768 'Bits'
+  EndIf
+  
+EndFunction
 Init:
 
 Event:
-  DAC(1, get_vol(PAR_11))
-  DAC(2, get_vol(PAR_12))
-  DAC(6, get_vol_z(PAR_13))
+  DAC(1, get_vol_xy(FPAR_21)) 'x'
+  DAC(2, get_vol_xy(FPAR_22)) 'y'
+  DAC(3, get_vol_z(FPAR_23)) 'z'
   
 Finish:
   

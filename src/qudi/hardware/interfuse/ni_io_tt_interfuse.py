@@ -165,7 +165,6 @@ class NI_IO_TT_Interfuse(FiniteSamplingIOInterface):
     @property
     def sample_rate(self):
         """ The sample rate (in Hz) at which the samples will be emitted.
-
         @return float: The current sample rate in Hz
         """
         return self.__sample_rate
