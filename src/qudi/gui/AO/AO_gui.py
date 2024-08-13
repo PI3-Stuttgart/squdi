@@ -192,7 +192,7 @@ class AOGui(GuiBase):
         @return QWidget: QLabel with switch name
         """
 
-        label = QtWidgets.QLabel(f"{channel}".replace("_", " "))
+        label = QtWidgets.QLabel(f"{channel}:".replace("_", " "))
         font: QtGui.QFont = label.font()
         font.setBold(True)
         font.setPointSize(11)

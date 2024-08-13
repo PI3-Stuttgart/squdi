@@ -3,6 +3,7 @@ from typing import Dict, Tuple, Any
 import time
 
 from qualang_tools.control_panel import ManualOutputControl
+import qm
 
 from qudi.core.configoption import ConfigOption
 from qudi.interface.process_control_interface import (
@@ -37,13 +38,11 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             f"qudi.hardware.OPX.{self._qm_config_file}"
         )
         # Establish connection to OPX+
-        self._qm_manual_output_control = ManualOutputControl(
-            self._configuration.config, host=self._configuration.qop_ip
-        )
         self._set_constraints()
+        self._connect_to_OPX()
 
     def on_deactivate(self) -> None:
-        """TODO: disconnect from OPX?"""
+        self._qm_manual_output_control.close()
 
     def _set_constraints(self):
         _channels: list = []
@@ -57,6 +56,25 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             limits={ch: (-0.5, 0.5) for ch in _channels},
             dtypes={ch: float for ch in _channels},
         )
+
+    def _connect_to_OPX(self) -> None:
+        try:
+            self._qm_manual_output_control = ManualOutputControl(
+                self._configuration.config,
+                host=self._configuration.qop_ip,
+                close_previous=False,
+                elements_to_control=self.constraints.setpoint_channels,
+            )
+        except qm.exceptions.OpenQmException:
+            self.log.warning(
+                "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
+            )
+            self._qm_manual_output_control = ManualOutputControl(
+                self._configuration.config,
+                host=self._configuration.qop_ip,
+                close_previous=True,
+                elements_to_control=self.constraints.setpoint_channels,
+            )
 
     @property
     def constraints(self) -> ProcessControlConstraints:
@@ -95,7 +113,13 @@ class AnalogOutputOPX(ProcessSetpointInterface):
 
     def set_setpoint(self, channel: str, value: float) -> None:
         """Set new setpoint for a single channel"""
-        self._qm_manual_output_control.set_amplitude(channel, value)
+        try:
+            self._qm_manual_output_control.set_amplitude(channel, value)
+        except qm.exceptions.QMConnectionError:
+            self.log.warning("Reconnecting OPX ...")
+            self._connect_to_OPX()
+            self._qm_manual_output_control.set_amplitude(channel, value)
+
         # time.sleep(self._switch_time)
 
     def get_setpoint(self, channel: str) -> float:

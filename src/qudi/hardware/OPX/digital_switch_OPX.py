@@ -1,7 +1,9 @@
 import importlib
 from typing import Dict, Tuple, Any, Union
 
+import qm.exceptions
 from qualang_tools.control_panel import ManualOutputControl
+import qm
 
 from qudi.core.configoption import ConfigOption
 from qudi.util.mutex import RecursiveMutex
@@ -43,12 +45,29 @@ class DigitalSwitchOPX(SwitchInterface):
             f"qudi.hardware.OPX.{self._qm_config_file}"
         )
         # Establish connection to OPX+
-        self._qm_manual_output_control = ManualOutputControl(
-            self._configuration.config, host=self._configuration.qop_ip
-        )
+        self._connect_to_OPX()
 
     def on_deactivate(self) -> None:
         """TODO: disconnect from OPX?"""
+
+    def _connect_to_OPX(self) -> None:
+        try:
+            self._qm_manual_output_control = ManualOutputControl(
+                self._configuration.config,
+                host=self._configuration.qop_ip,
+                close_previous=False,
+                elements_to_control=self.available_states.keys(),
+            )
+        except qm.exceptions.OpenQmException:
+            self.log.warning(
+                "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
+            )
+            self._qm_manual_output_control = ManualOutputControl(
+                self._configuration.config,
+                host=self._configuration.qop_ip,
+                close_previous=True,
+                elements_to_control=self.available_states.keys(),
+            )
 
     @property
     def name(self) -> str:
@@ -71,7 +90,10 @@ class DigitalSwitchOPX(SwitchInterface):
         _states = {}
 
         for name, qm_element in self._configuration.config["elements"].items():
-            if "digitalInputs" in qm_element.keys():
+            if (
+                "digitalInputs" in qm_element.keys()
+                and not "outputs" in qm_element.keys()
+            ):
                 _states[name] = ("off", "on")
 
         return _states
@@ -96,6 +118,16 @@ class DigitalSwitchOPX(SwitchInterface):
         @param str state: name of the state to set
         """
         if state == "on":
-            self._qm_manual_output_control.digital_on(switch)
+            try:
+                self._qm_manual_output_control.digital_on(switch)
+            except qm.exceptions.QMConnectionError:
+                self.log.warning("Reconnecting OPX ...")
+                self._connect_to_OPX()
+                self._qm_manual_output_control.digital_on(switch)
         if state == "off":
-            self._qm_manual_output_control.digital_off(switch)
+            try:
+                self._qm_manual_output_control.digital_off(switch)
+            except qm.exceptions.QMConnectionError:
+                self.log.warning("Reconnecting OPX ...")
+                self._connect_to_OPX()
+                self._qm_manual_output_control.digital_off(switch)
