@@ -53,29 +53,37 @@ class SetupControlLogicQINU(LogicBase):
         self.io_dev.set_digi_out(
             self.io_dev.port_by_name('green_laser'), active)
         
+    def activate_blue_laser(self, active: bool):
+        self.io_dev.set_digi_out(
+            self.io_dev.port_by_name('blue_laser'), active)
+        
+    def activate_blue_laser_aom(self, active: bool):
+        self.io_dev.set_digi_out(
+            self.io_dev.port_by_name('blue_laser_aom'), active)
+        
+    def activate_yellow_laser_aom(self, active: bool):
+        self.io_dev.set_digi_out(
+            self.io_dev.port_by_name('yellow_laser_aom'), active)
+        
+    def activate_red_laser_aom(self, active: bool):
+        self.io_dev.set_digi_out(
+            self.io_dev.port_by_name('red_laser_aom'), active)
         
     def activate_lamp(self, active: bool):
-#        self.io_dev.set_digi_out(
-#            self.io_dev.port_by_name('lamp'), active)
-
         self.lamp_on = active
         self.set_lamp_power(self.current_lamp_power)  
-      
       
     def flip_powermeter(self, flipped_in:bool):
         self._flip(self.io_dev.port_by_name('flip_powermeter'))
     
-    
     def flip_mirror_camera_path(self, flipped_in: bool):
         self._flip(self.io_dev.port_by_name('flip_mirror_camera_path'))
-    
     
     def set_green_power(self, power_percentage: float):
         self.io_dev.set_analog_out(
             self.io_dev.port_by_name('green_laser_attenuation'), 
             self._calculate_attenuation_from_power(power_percentage)
             )
-        
         
     def set_lamp_power(self, power_percentage: float):
         self.current_lamp_power = power_percentage

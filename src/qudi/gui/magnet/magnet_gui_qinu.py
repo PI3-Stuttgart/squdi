@@ -77,7 +77,7 @@ class MagnetWindow(GuiBase):
         
         # create logging handler
         _qtpyhandler = QTPyHandler(self._mw.textBrowser_consol)# logging.StreamHandler(stream=QtPyStream(self._mw.textBrowser_consol))
-        _qtpyhandler.setLevel(logging.DEBUG)
+        _qtpyhandler.setLevel(logging.INFO)
         formatter = logging.Formatter('%(asctime)s - %(message)s', '%m-%d %H:%M:%S')
         _qtpyhandler.setFormatter(formatter)
         

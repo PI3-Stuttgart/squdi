@@ -9,7 +9,7 @@
 ' Optimize                       = Yes
 ' Optimize_Level                 = 1
 ' Stacksize                      = 1000
-' Info_Last_Save                 = DESKTOP-O5HD7AV  DESKTOP-O5HD7AV\yy3
+' Info_Last_Save                 = QINU  QINU\yy3
 '<Header End>
 #Include ADwinGoldII.inc
 Dim meas_bit_x as Long
@@ -89,6 +89,11 @@ Init:
   bit_curr_out_y = ADC(2) - meas_offset_x_bit
   bit_curr_out_z = ADC(3) - meas_offset_x_bit
   
+  FPar_10 = bit_curr_out_x
+  FPar_11 = bit_curr_out_y
+  FPar_12 = bit_curr_out_z
+  
+  
 Event: 
 
   If ((FPar_14 > 100) OR (FPAR_14 <= 0)) Then
@@ -101,51 +106,20 @@ Event:
   meas_bit_y = ADC(2) - meas_offset_y_bit
   meas_bit_z = ADC(3) - meas_offset_z_bit
   
-  
-  If (abs(meas_bit_x - bit_curr_out_x) > 0.005 * 3277) Then
+
+  If (abs(meas_bit_x - bit_curr_out_x) > 0.1 * 3277) Then
     bit_curr_out_x = meas_bit_x 
   Endif
-  
-  If (abs(meas_bit_y - bit_curr_out_y) > 0.005 * 3277) Then
+    
+  If (abs(meas_bit_y - bit_curr_out_y) > 0.1 * 3277) Then
     bit_curr_out_y = meas_bit_y 
   Endif
-  
-  If (abs(meas_bit_z - bit_curr_out_z) > 0.005 * 3277) Then
+    
+  If (abs(meas_bit_z - bit_curr_out_z) > 0.1 * 3277) Then
     bit_curr_out_z = meas_bit_z
   Endif
-  
-  'diff_bit_x = Abs(meas_bit_x - volt2bit(FPAR_10))
-  'diff_bit_y = Abs(meas_bit_y - volt2bit(FPAR_11))
-  'diff_bit_z = Abs(meas_bit_z - volt2bit(FPAR_12))
 
-  REM X-Achse
-  'If ((meas_bit_x + max_meas_diff_bit) < volt2bit(FPAR_10)) Then
-  '  DAC(4, meas_bit_x + bit_step)
-  'EndIf
-  
-  'If ((meas_bit_x - max_meas_diff_bit) > volt2bit(FPAR_10)) Then
-  '  DAC(4, meas_bit_x - bit_step)
-  'EndIf
 
-  'REM Y-Achse
-  'If ((meas_bit_y + max_meas_diff_bit) < volt2bit(FPAR_11)) Then
-  '  DAC(5, meas_bit_y + bit_step)
-  'EndIf
-  
-  'If ((meas_bit_y - max_meas_diff_bit) > volt2bit(FPAR_11)) Then
-  '  DAC(5, meas_bit_y - bit_step)
-  'EndIf
-  
-  REM Z-Achse
-  
-  'If ((meas_bit_z + max_meas_diff_bit) < volt2bit(FPAR_12)) Then
-  '  DAC(6, meas_bit_z + bit_step)
-  'EndIf
-  
-  'If ((meas_bit_z - max_meas_diff_bit) > volt2bit(FPAR_12)) Then
-  '  DAC(6, meas_bit_z - bit_step)
-  'EndIf
- 
   REM X- Achse
   If(abs(meas_bit_x - volt2bit(FPAR_10)) > max_meas_diff_bit ) Then
     If (meas_bit_x < volt2bit(FPAR_10)) Then

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>300</width>
-    <height>120</height>
+    <width>305</width>
+    <height>277</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,49 +17,53 @@
    <layout class="QHBoxLayout" name="horizontalLayout">
     <item>
      <layout class="QGridLayout" name="gridLayout">
-      <item row="0" column="1">
-       <widget class="QLabel" name="label_1">
-        <property name="text">
-         <string>Control</string>
-        </property>
-       </widget>
-      </item>
-
-      <item row="3" column="1">
-       <widget class="QPushButton" name="Flip_powermeter_Button">
-        <property name="text">
-         <string>Powermeter in</string>
-        </property>
-       </widget>
-      </item>
-
-    <item row="3" column="2">
-       <widget class="QPushButton" name="Flip_mirror_camera_Button">
-        <property name="text">
-         <string>Camera mirror in</string>
-        </property>
-       </widget>
-      </item>
-
       <item row="2" column="1">
-       <widget class="QPushButton" name="Lamp_Button">
-        <property name="text">
-         <string>Lamp</string>
-        </property>
-       </widget>
-      </item>
-
-      <item row="1" column="1">
        <widget class="QPushButton" name="Green_Button">
         <property name="text">
-         <string>Green</string>
-        </property>
-        <property name="text">
-         <string>Green</string>
+         <string>520 nm</string>
         </property>
        </widget>
       </item>
-
+      <item row="4" column="2">
+       <widget class="QSlider" name="lamp_power">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>150</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="sizeIncrement">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="baseSize">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="focusPolicy">
+         <enum>Qt::StrongFocus</enum>
+        </property>
+        <property name="minimum">
+         <number>0</number>
+        </property>
+        <property name="maximum">
+         <number>100</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+       </widget>
+      </item>
       <item row="0" column="2">
        <widget class="QLabel" name="label_5">
         <property name="text">
@@ -67,8 +71,7 @@
         </property>
        </widget>
       </item>
-
-      <item row="1" column="2">
+      <item row="2" column="2">
        <widget class="QSlider" name="green_attenuation">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -97,59 +100,59 @@
         <property name="focusPolicy">
          <enum>Qt::StrongFocus</enum>
         </property>
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
         <property name="minimum">
-         <double>0</double>
+         <number>0</number>
         </property>
         <property name="maximum">
-         <double>100</double>
-        </property>
-       </widget>
-      </item>
-
-    <item row="2" column="2">
-        <widget class="QSlider" name="lamp_power">
-            <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-                </sizepolicy>
-            </property>
-            <property name="minimumSize">
-                <size>
-                    <width>150</width>
-                    <height>0</height>
-                </size>
-            </property>
-            <property name="sizeIncrement">
-                <size>
-            <width>0</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="baseSize">
-         <size>
-          <width>0</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="focusPolicy">
-         <enum>Qt::StrongFocus</enum>
+         <number>100</number>
         </property>
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
         </property>
-        <property name="minimum">
-         <double>0</double>
-        </property>
-        <property name="maximum">
-         <double>100</double>
+       </widget>
+      </item>
+      <item row="6" column="2">
+       <widget class="QPushButton" name="Flip_mirror_camera_Button">
+        <property name="text">
+         <string>Camera mirror in</string>
         </property>
        </widget>
       </item>
-
+      <item row="6" column="1">
+       <widget class="QPushButton" name="Flip_powermeter_Button">
+        <property name="text">
+         <string>Powermeter in</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QPushButton" name="Lamp_Button">
+        <property name="text">
+         <string>Lamp</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="label_1">
+        <property name="text">
+         <string>Control</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QPushButton" name="Red_Button">
+        <property name="text">
+         <string>620 nm</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QPushButton" name="Blue_Button">
+        <property name="text">
+         <string>450 nm</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </item>
    </layout>
@@ -159,8 +162,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>500</width>
-     <height>21</height>
+     <width>305</width>
+     <height>26</height>
     </rect>
    </property>
   </widget>

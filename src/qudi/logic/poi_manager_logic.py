@@ -378,7 +378,7 @@ class PoiManagerLogic(LogicBase):
 
     # config options
     _scan_axes = tuple(str(ConfigOption('data_scan_axes', default='xy', missing='info')))
-
+    # _scan_axes = ("x", "y")
     # status vars
     _roi = StatusVar(default=RegionOfInterest())  # Notice constructor and representer further below
     _refocus_period = StatusVar(default=120)

@@ -39,6 +39,9 @@ from qudi.interface.finite_sampling_io_interface import (
 )
 from qudi.util.enums import SamplingOutputMode
 from qudi.util.mutex import RecursiveMutex
+from qudi.hardware.jaeger_computer_technik.adwin_Scanner import (
+    Adwin_Scanning_Device as Adwin_Scanning_Device,
+)
 import time
 import warnings
 
@@ -159,6 +162,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
     # Hardcoded data type
     __data_type = np.float64
 
+    frame_size = None
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -239,7 +244,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 self._device_name = dev
                 break
 
-        self._adwin_handle = self._adwin()
+        self._adwin_scanning_device: Adwin_Scanning_Device = self._adwin()
         # TODO - more checks similar to reconnections, bla.
 
         # if self._device_handle():
@@ -251,18 +256,18 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         # ## Maybe later to use for making it smoother for multiple channels, bla
         # self.__all_counters = tuple(
-        #     self._extract_terminal(ctr) for ctr in self._adwin_handle.co_physical_chans.channel_names if
+        #     self._extract_terminal(ctr) for ctr in self._adwin_scanning_device.co_physical_chans.channel_names if
         #     'ctr' in ctr.lower())
         self.__all_digital_terminals = tuple(
             self._extract_terminal(term)
-            for term in self._adwin_handle._digital_outputs.keys()
+            for term in self._adwin_scanning_device._digital_outputs.keys()
             if "d" in term
         )
         # self.__all_analog_in_terminals = tuple(
-        #     self._extract_terminal(term) for term in self._adwin_handle.ai_physical_chans.channel_names)
+        #     self._extract_terminal(term) for term in self._adwin_scanning_device.ai_physical_chans.channel_names)
         self.__all_analog_out_terminals = tuple(
             self._extract_terminal(term)
-            for term in self._adwin_handle._analog_outputs.keys()
+            for term in self._adwin_scanning_device._analog_outputs.keys()
         )
 
         # Get digital input terminals from _input_channel_units of the Time Tagger
@@ -297,7 +302,6 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         if analog_outputs:
             source_set = set(analog_outputs)
-            # print(source_set, self.__all_analog_out_terminals)
             invalid_sources = source_set.difference(
                 set(self.__all_analog_out_terminals)
             )
@@ -329,7 +333,6 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         )
         invalid_channels = set.difference(defined_channel_set, detected_channel_set)
 
-        # print('invalid channels', invalid_channels)
         if invalid_channels:
             raise ValueError(
                 f'The channels "{", ".join(invalid_channels)}", specified in the config, were not recognized.'
@@ -364,8 +367,11 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         # else:
         # # Only ao and di, therefore probably the fastest possible
         sample_rate_limits = (
-            self._adwin_handle.ao_min_rate,
-            min(self._adwin_handle.ao_max_rate, self._adwin_handle.ci_max_timebase),
+            self._adwin_scanning_device.ao_min_rate,
+            min(
+                self._adwin_scanning_device.ao_max_rate,
+                self._adwin_scanning_device.ci_max_timebase,
+            ),
         )
 
         output_voltage_ranges = {
@@ -553,7 +559,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             return self._number_of_pending_samples
 
         if self._ai_task_handle is None and self._di_task_handles is not None:
-            # data = self._timetagger_cbm_tasks[0].getData()
+            #data = self._timetagger_cbm_tasks[0].getData()
             return (
                 self.frame_size
             )  # self._di_task_handles[0].in_stream.avail_samp_per_chan
@@ -605,7 +611,6 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         assert not self.is_running, f"IO is running. Can not set frame data"
 
         active_output_channels_set = self.active_channels[1]
-
         if data is not None:
             # assure dict keys are striped from device name and are lower case
             data = {self._extract_terminal(ch): value for ch, value in data.items()}
@@ -697,7 +702,6 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         Must return immediately and not wait for the frame to finish.
         Must raise exception if frame output can not be started.
         """
-
         assert self._constraints.sample_rate_in_range(self.sample_rate)[
             0
         ], f"Cannot start frame as sample rate {self.sample_rate:.2g}Hz not valid"
@@ -709,13 +713,13 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         ), f"Channels in active channels and frame buffer do not coincide"
 
         self.module_state.lock()
-
         with self._thread_lock:
             self._number_of_pending_samples = self.frame_size
 
             # # set up all tasks
 
             if self._init_sample_clock() < 0:
+
                 self.terminate_all_tasks()
                 self.module_state.unlock()
                 raise NiInitError(
@@ -725,11 +729,13 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             # TT
 
             if self._init_tt_cbm_task() < 0:
+
                 self.terminate_all_tasks()  # add the treatment of the TT task termination
                 self.module_state.unlock()
 
             # DONE - dummy.
             if self._init_analog_in_task() < 0:
+
                 self.terminate_all_tasks()
                 self.module_state.unlock()
                 raise NiInitError(
@@ -738,6 +744,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
             # DONE - dummy.
             if self._init_analog_out_task_adwin() < 0:
+
                 self.terminate_all_tasks()
                 self.module_state.unlock()
                 raise NiInitError(
@@ -747,10 +754,17 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             output_data = np.ndarray(
                 (len(self.active_channels[1]), self.frame_size)
             )  # basically a scan line size..
+            output_data[0] = self.__frame_buffer["ao1"]
+            output_data[1] = self.__frame_buffer["ao2"]
+            output_data[2] = self.__frame_buffer["ao3"]
+            # TODO
 
-            for num, output_channel in enumerate(self.active_channels[1]):
-                output_data[num] = self.__frame_buffer[output_channel]
-
+            # for num, output_channel in enumerate(self.active_channels[1]):
+            #    output_data[num] = self.__frame_buffer[output_channel]
+            
+            # not doing anything right now
+            status = self._adwin_scanning_device.configure_scan(line_path=output_data)
+            # self._adwin_scanning_device.scan_line(line_path = output_data, pixel_clock = True)
             ## COMMENTING OUT UNWANTED INTERACTION WITH NIDAQ. but need to start adwin here???
             # Before here we should ask for the counts, or?
 
@@ -768,22 +782,27 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             #         [lsx, lsy, lsz, np.ones(lsx.shape) * current_pos[3]])
             # # move to the start position of the scan, counts are thrown away
 
-            self._adwin_handle.scan_line(line_path=output_data, pixel_clock=True)
+            # something like this here. ### Writing some data to the adwin scan line!!!
+            if status < 0:
+                self.terminate_all_tasks()
+                self.module_state.unlock()
 
-            # try:
-            #     self._ao_writer.write_many_sample(output_data) ### Writing some data to the adwin scan line!!!
-            # except ni.DaqError:
-            #     self.terminate_all_tasks()
-            #     self.module_state.unlock()
-            #     raise
+            if len(self._di_task_handles) > 0:
+                try:
+                    for di_task in self._di_task_handles:
+                        di_task.start()
+                except Exception:
+                    self.terminate_all_tasks()
+                    self.module_state.unlock()
+                    raise
 
-            # if self._ao_task_handle is not None:
-            #     try:
-            #         self._ao_task_handle.start() #Start the scan line function?????
-            #     except ni.DaqError:
-            #         self.terminate_all_tasks()
-            #         self.module_state.unlock()
-            #         raise
+            if self._ao_task_handle is not None:
+                try:
+                    self._adwin_scanning_device.start_scan()  # Start the scan line function?????
+                except Exception:
+                    self.terminate_all_tasks()
+                    self.module_state.unlock()
+                    raise
 
             # if self._ai_task_handle is not None:
             #     try:
@@ -792,22 +811,15 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             #         self.terminate_all_tasks()
             #         self.module_state.unlock()
             #         raise
+            # up to now is working...
 
-            # if len(self._di_task_handles) > 0:
-            #     try:
-            #         for di_task in self._di_task_handles:
-            #             di_task.start()
-            #     except ni.DaqError:
-            #         self.terminate_all_tasks()
-            #         self.module_state.unlock()
-            #         raise
-
+            # IT IS ALREADY RUNNING!
             # try:
-            #     self._clk_task_handle.start()
-            # except ni.DaqError:
-            #     self.terminate_all_tasks()
-            #     self.module_state.unlock()
-            #     raise
+            # self._clk_task_handle.start()
+            # except Exception:
+            # self.terminate_all_tasks()
+            # self.module_state.unlock()
+            # raise
 
     ## EXAMPLES from ADWIN CODES from old qudi confocal logic.
 
@@ -853,6 +865,32 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 self.terminate_all_tasks()  # nidaqmx raises a warning when frame is stopped before all samples acq.
             self.module_state.unlock()
 
+    
+    def check_if_scan_finished(self) -> None:
+        """Checks wheater tt collection is finished. Additionally checks, if the scann didn't 
+            finsihed because a trigger was missed, 
+            by checking that the timetagger is couinting a lot in one of the last bins.
+
+        """
+        print(self._timetagger_cbm_tasks[0].getData())
+        for num, _ in enumerate(
+            self.__active_channels["di_channels"]):
+                        
+            scanner_ready_temp = self._timetagger_cbm_tasks[num].ready()
+            if scanner_ready_temp == False:
+                tt_data = self._timetagger_cbm_tasks[num].getData()
+                # Remove zeros from the array
+                tt_data_wo_zeros = tt_data[tt_data != 0]
+                # Check if scan is at least 95% finished
+                if len(tt_data_wo_zeros) < len(tt_data) * 0.90:
+                    scanner_ready_temp = False
+                else:
+                    # Check if the last number is 10 times larger than the mean of the rest
+                    scanner_ready_temp =  tt_data_wo_zeros[-1] >= 100 * np.mean(tt_data_wo_zeros[:-1])
+                    print(scanner_ready_temp) 
+            self._scanner_ready = scanner_ready_temp             
+            
+    
     def get_buffered_samples(self, number_of_samples=None):
         """Returns a chunk of the current data frame for all active input channels read from the
         input frame buffer.
@@ -895,9 +933,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             pre_stop = not self.is_running
 
             # if not samples_to_read <= self._number_of_pending_samples:
-            #     print(f"Requested {samples_to_read} samples, "
-            #                      f"but only {self._number_of_pending_samples} enough pending.")
-
+            
             if samples_to_read > 0 and self.is_running:
                 request_time = time.time()
                 # if number_of_samples > self.samples_in_buffer:
@@ -942,7 +978,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                     di_data = np.zeros(
                         len(self.__active_channels["di_channels"]) * samples_to_read
                     )
-
+                    
                     di_data = di_data.reshape(
                         len(self.__active_channels["di_channels"]), samples_to_read
                     )
@@ -954,8 +990,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                         data[di_channel] = (
                             di_data[num] * self.sample_rate
                         )  # To go to c/s # TODO What if unit not c/s
-                        self._scanner_ready = self._timetagger_cbm_tasks[num].ready()
-
+                    self.check_if_scan_finished()
+                    
                 if self._ai_reader is not None:
                     data_buffer = np.zeros(
                         samples_to_read * len(self.__active_channels["ai_channels"])
@@ -1025,9 +1061,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         # # Return if sample clock is externally supplied
         # if self._external_sample_clock_source is not None:
         #     return 0
-        # print('Hello adwin')
-        frequency = 100
-        status = self._adwin_handle.set_up_clock(frequency)
+        frequency = self.sample_rate
+        status = self._adwin_scanning_device.set_up_clock(frequency)
         return status
 
     def _init_tt_cbm_task(self):
@@ -1055,7 +1090,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         self._timetagger_cbm_tasks = [
             self._tt.count_between_markers(
                 click_channel=channel,
-                begin_channel=clock_tt,
+                begin_channel=clock_fall_tt,
                 end_channel=clock_fall_tt,
                 n_values=self.frame_size,
             )  ### It wants to get this ammount of the counts.
@@ -1086,7 +1121,11 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                         n_values=self.frame_size,
                     )
                 )
-
+                
+        for num, _ in enumerate(
+                self.__active_channels["di_channels"]
+                    ):
+            self._timetagger_cbm_tasks[num].getData()
         return 0
 
     def _init_analog_in_task(self):
@@ -1101,7 +1140,10 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         return 0
 
     def _init_analog_out_task_adwin(self):
-        return self.start_scanner()
+
+        self._ao_task_handle = "ao_task_handle"
+        return 0
+        # return self.start_scanner()
 
     ### TOOK from old qudi
     def _scan_line(self):
@@ -1135,7 +1177,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                         ],  # no idea what _current_a does, just copied from below
                     ]
                 )
-            return_line_counts = self._scanning_device.scan_line(return_line)
+            return_line_counts = self._adwin_scanning_device.scan_line(return_line)
             # now actually stop the scan
             with self.threadlock:
                 self.kill_scanner()
@@ -1178,7 +1220,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                         [lsx, lsy, lsz, np.ones(lsx.shape) * current_pos[3]]
                     )
                 # move to the start position of the scan, counts are thrown away
-                start_line_counts = self._scanning_device.scan_line(start_line)
+                start_line_counts = self._adwin_scanning_device.scan_line(start_line)
                 if np.any(start_line_counts == -1):
                     self.stopRequested = True
                     self.signal_scan_lines_next.emit()
@@ -1200,7 +1242,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
             # scan the line in the scan
             self._counter_device.setup_count_confocal(len(lsx))
-            self.dummy = self._scanning_device.scan_line(line, pixel_clock=True)
+            self.dummy = self._adwin_scanning_device.scan_line(line, pixel_clock=True)
             line_counts = self._counter_device.get_confocal_counts()
             if np.any(line_counts == -1):
                 self.stopRequested = True
@@ -1302,7 +1344,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                     )
 
             # return the scanner to the start of next line, counts are thrown away
-            return_line_counts = self._scanning_device.scan_line(return_line)
+            return_line_counts = self._adwin_scanning_device.scan_line(return_line)
             if np.any(return_line_counts == -1):
                 self.stopRequested = True
                 self.signal_scan_lines_next.emit()
@@ -1349,31 +1391,29 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print("lockin_adwin_tt_io")
-        self.module_state.lock()
-        print(self._scanning_device)  # There is no scanning device"
-        self._scanning_device.module_state.lock()
-        print("locking the adwin galvo")
+        # self.module_state.lock() - it was already locked!
+
+        self._adwin_scanning_device.module_state.lock()
         if self.initialize_image() < 0:
-            self._scanning_device.module_state.unlock()
+            self._adwin_scanning_device.module_state.unlock()
             self.module_state.unlock()
             return -1
 
-        clock_status = self._scanning_device.set_up_scanner_clock(
+        clock_status = self._adwin_scanning_device.set_up_scanner_clock(
             clock_frequency=self._clock_frequency
         )
 
         if clock_status < 0:
-            self._scanning_device.module_state.unlock()
+            self._adwin_scanning_device.module_state.unlock()
             self.module_state.unlock()
             self.set_position("scanner")
             return -1
 
-        scanner_status = self._scanning_device.set_up_scanner()
+        scanner_status = self._adwin_scanning_device.set_up_scanner()
 
         if scanner_status < 0:
-            self._scanning_device.close_scanner_clock()
-            self._scanning_device.module_state.unlock()
+            self._adwin_scanning_device.close_scanner_clock()
+            self._adwin_scanning_device.module_state.unlock()
             self.module_state.unlock()
             self.set_position("scanner")
             return -1
@@ -1387,23 +1427,23 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         @return int: error code (0:OK, -1:error)
         """
         self.module_state.lock()
-        self._scanning_device.module_state.lock()
+        self._adwin_scanning_device.module_state.lock()
 
-        clock_status = self._scanning_device.set_up_scanner_clock(
+        clock_status = self._adwin_scanning_device.set_up_scanner_clock(
             clock_frequency=self._clock_frequency
         )
 
         if clock_status < 0:
-            self._scanning_device.module_state.unlock()
+            self._adwin_scanning_device.module_state.unlock()
             self.module_state.unlock()
             self.set_position("scanner")
             return -1
 
-        scanner_status = self._scanning_device.set_up_scanner()
+        scanner_status = self._adwin_scanning_device.set_up_scanner()
 
         if scanner_status < 0:
-            self._scanning_device.close_scanner_clock()
-            self._scanning_device.module_state.unlock()
+            self._adwin_scanning_device.close_scanner_clock()
+            self._adwin_scanning_device.module_state.unlock()
             self.module_state.unlock()
             self.set_position("scanner")
             return -1
@@ -1521,8 +1561,11 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             )  # TODO Real HW constraint?
 
         sample_rate_limits = (
-            self._adwin_handle.ao_min_rate,
-            min(self._adwin_handle.ao_max_rate, self._adwin_handle.ci_max_timebase),
+            self._adwin_scanning_device.ao_min_rate,
+            min(
+                self._adwin_scanning_device.ao_max_rate,
+                self._adwin_scanning_device.ci_max_timebase,
+            ),
         )  # hardcoded in adwin_Scanner.
 
         # output_voltage_ranges = {self._extract_terminal(key): value
@@ -1561,18 +1604,17 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         return 0
 
     def terminate_all_tasks(self):
-
         # TODO properly... in principle remove all the scanner realted tasks from the adwin.
 
         # Terminate the ADWIN process related to scanners, and TT process.
         err = 0
-        self._adwin_handle.close_scanner()  # this should also keep an eye on processes killing,
+        self._adwin_scanning_device.close_scanner()  # this should also keep an eye on processes killing,
 
         self._di_readers = list()
         self._ai_reader = None
 
         # an attempt to make a quasi stopping of the tasks..
-        while len(self._adwin_handle.scanner_processes) > 0:
+        while len(self._adwin_scanning_device.scanner_processes) > 0:
             try:
                 pass
                 # TODO stop the processes... Doing nothing now...

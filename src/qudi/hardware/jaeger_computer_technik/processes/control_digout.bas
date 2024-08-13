@@ -9,11 +9,12 @@
 ' Optimize                       = Yes
 ' Optimize_Level                 = 1
 ' Stacksize                      = 1000
-' Info_Last_Save                 = DESKTOP-O5HD7AV  DESKTOP-O5HD7AV\yy3
+' Info_Last_Save                 = QINU  QINU\yy3
 '<Header End>
 #Include ADwinGoldII.inc
 
 Init:
+  Conf_DIO(1111b)
   Digout(1, 0)
   Digout(2, 0)
   Digout(3, 0)

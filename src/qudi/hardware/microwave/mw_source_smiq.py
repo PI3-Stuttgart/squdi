@@ -105,7 +105,7 @@ class MicrowaveSmiq(MicrowaveInterface):
             power_limits = (-144, 13)
         elif self._model == 'SMIQ04B':
             freq_limits = (300e3, 4.4e9)
-            power_limits = (-144, 10)
+            power_limits = (-144, 16)
         elif self._model == 'SMIQ06B':
             freq_limits = (300e3, 6.4e9)
             power_limits = (-144, 16)

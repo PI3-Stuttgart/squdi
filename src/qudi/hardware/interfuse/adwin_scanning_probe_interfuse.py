@@ -36,7 +36,7 @@ from qudi.util.mutex import RecursiveMutex, Mutex
 from qudi.util.helpers import natural_sort, in_range
 from qudi.util.enums import SamplingOutputMode
 from qudi.util.helpers import in_range
-
+from qudi.hardware.jaeger_computer_technik.adwin_tt_io import AdwinSamplingIO as AdwinSamplingIO
 
 
 class NiScanningProbeInterfuseBare(ScanningProbeInterface):
@@ -84,8 +84,10 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
     # TODO What about channels which are not "calibrated" to 'm', e.g. just use 'V'?
     # TODO Bool indicators deprecated; Change in scanning probe toolchain
-
+    
     _ni_finite_sampling_io = Connector(name='scan_hardware', interface='FiniteSamplingIOInterface')
+    
+    #on activate 
     
     # THIS IS SLOW analog outputs?
     _ni_ao = Connector(name='analog_output', interface='ProcessSetpointInterface')
@@ -135,6 +137,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     def on_activate(self):
         # Sanity checks for ni_ao and ni finite sampling io
         # TODO check that config values within fsio range?
+        self.ni_finite_sampling_io: AdwinSamplingIO = self._ni_finite_sampling_io()
         assert set(self._position_ranges) == set(self._frequency_ranges) == set(self._resolution_ranges), \
             f'Channels in position ranges, frequency ranges and resolution ranges do not coincide'
 
@@ -142,8 +145,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             f'Not all specified channels are mapped to an ni card physical channel'
 
         # TODO: Any case where ni_ao and ni_io potentially don't have the same channels?
-        specified_ni_finite_io_channels_set = set(self._ni_finite_sampling_io().constraints.input_channel_units).union(
-            set(self._ni_finite_sampling_io().constraints.output_channel_units))
+        specified_ni_finite_io_channels_set = set(self.ni_finite_sampling_io.constraints.input_channel_units).union(
+            set(self.ni_finite_sampling_io.constraints.output_channel_units))
         mapped_channels = set([val.lower() for val in self._ni_channel_mapping.values()])
 
         assert set(mapped_channels).issubset(specified_ni_finite_io_channels_set), \
@@ -177,6 +180,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         self._toggle_ao_setpoint_channels(False)  # And free ao resources after that
         self._t_last_move = time.perf_counter()
         self.__init_ao_timer()
+        
         self.__t_last_follow = None
         self.sigChangeTemperatureRegime.connect(self._change_temperature_regime, QtCore.Qt.QueuedConnection)
         self.sigNextDataChunk.connect(self._fetch_data_chunk, QtCore.Qt.QueuedConnection)
@@ -198,13 +202,13 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         Deactivate the module
         """
         self._abort_cursor_movement()
-        if self._ni_finite_sampling_io().is_running:
-            self._ni_finite_sampling_io().stop_buffered_frame()
+        if self.ni_finite_sampling_io.is_running:
+            self.ni_finite_sampling_io.stop_buffered_frame()
     @QtCore.Slot(bool)
     def _change_temperature_regime(self, is_LT_regime):
         self._scan_data = None
         self._ni_ao().set_new_ao_limits(is_LT_regime)
-        self._ni_finite_sampling_io().set_new_io_limits(is_LT_regime)
+        self.ni_finite_sampling_io.set_new_io_limits(is_LT_regime)
     
     def _update_position_ranges(self, new_position_ranges):
         self._position_ranges = new_position_ranges
@@ -310,16 +314,16 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
                     return True, self.scan_settings
             try:
                 
-                self._ni_finite_sampling_io().set_sample_rate(frequency)
-                self._ni_finite_sampling_io().set_active_channels(
+                self.ni_finite_sampling_io.set_sample_rate(frequency)
+                self.ni_finite_sampling_io.set_active_channels(
                     input_channels=(self._ni_channel_mapping[in_ch] for in_ch in self._input_channel_units),
                     output_channels=(self._ni_channel_mapping[ax] for ax in self.get_constraints().axes.keys())
                     #output_channels = (self._ni_channel_mapping[ax] for ax in axes)
                 )
 
-                self._ni_finite_sampling_io().set_output_mode(SamplingOutputMode.JUMP_LIST)
+                self.ni_finite_sampling_io.set_output_mode(SamplingOutputMode.JUMP_LIST)
 
-                self._ni_finite_sampling_io().set_frame_data(ni_scan_dict)
+                self.ni_finite_sampling_io.set_frame_data(ni_scan_dict)
 
             except Exception as e:
                 self.log.exception(e)
@@ -414,8 +418,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             return pos
 
     def start_scan(self):
-        
-        print('start scan intefuse.')
+
         try:
 
             #self.log.debug(f"Start scan in thread {self.thread()}, QT.QThread {QtCore.QThread.currentThread()}... ")
@@ -490,8 +493,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             self._abort_cursor_movement()
             # self.log.debug("Move aborted")
 
-        if self._ni_finite_sampling_io().is_running:
-            self._ni_finite_sampling_io().stop_buffered_frame()
+        if self.ni_finite_sampling_io.is_running:
+            self.ni_finite_sampling_io.stop_buffered_frame()
             # self.log.debug("Frame stopped")
 
         self.module_state.unlock()
@@ -522,7 +525,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         @return:
         """
         # TODO: Implement. Yet not used in logic till yet? Maybe sth like this:
-        # self._ni_finite_sampling_io().terminate_all_tasks()
+        # self.ni_finite_sampling_io.terminate_all_tasks()
         # self._ni_ao().set_activity_state(False)
         pass
 
@@ -559,22 +562,21 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     def _check_scan_end_reached(self):
         # not thread safe, call from thread_lock protected code only
         #FIx this shit
-        
-        return self.raw_data_container.is_full and self._ni_finite_sampling_io()._scanner_ready
+        return self.raw_data_container.is_full and self.ni_finite_sampling_io._scanner_ready
 
     def _fetch_data_chunk(self):
         try:
-            # self.log.debug(f'fetch chunk: {self._ni_finite_sampling_io().samples_in_buffer}, {self.is_scan_running}')
+            # self.log.debug(f'fetch chunk: {self.ni_finite_sampling_io.samples_in_buffer}, {self.is_scan_running}')
             # chunk_size = self._scan_data.scan_resolution[0] + self._backwards_line_resolution
             chunk_size = 10  # TODO Hardcode or go line by line as commented out above?
             # Request a minimum of chunk_size samples per loop
             try:
-                samples_dict = self._ni_finite_sampling_io().get_buffered_samples(chunk_size) \
-                    if self._ni_finite_sampling_io().samples_in_buffer < chunk_size\
-                    else self._ni_finite_sampling_io().get_buffered_samples()
+                samples_dict = self.ni_finite_sampling_io.get_buffered_samples(chunk_size) \
+                    if self.ni_finite_sampling_io.samples_in_buffer < chunk_size\
+                    else self.ni_finite_sampling_io.get_buffered_samples()
             except ValueError:  # ValueError is raised, when more samples are requested then pending or still to get
                 # after HW stopped
-                samples_dict = self._ni_finite_sampling_io().get_buffered_samples()
+                samples_dict = self.ni_finite_sampling_io.get_buffered_samples()
             
             reverse_routing = {val.lower(): key for key, val in self._ni_channel_mapping.items()}
 
@@ -618,7 +620,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         """
 
         ni_channel = self._ni_channel_mapping[axis]
-        voltage_range = self._ni_finite_sampling_io().constraints.output_channel_limits[ni_channel]
+        voltage_range = self.ni_finite_sampling_io.constraints.output_channel_limits[ni_channel]
         position_range = self.get_constraints().axes[axis].value_range
 
         slope = np.diff(voltage_range) / np.diff(position_range)
@@ -662,7 +664,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         for ni_channel in voltages:
             try:
                 axis = reverse_routing[ni_channel]
-                voltage_range = self._ni_finite_sampling_io().constraints.output_channel_limits[ni_channel]
+                voltage_range = self.ni_finite_sampling_io.constraints.output_channel_limits[ni_channel]
                 position_range = self.get_constraints().axes[axis].value_range
 
                 slope = np.diff(position_range) / np.diff(voltage_range)
@@ -771,7 +773,6 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
             if i_trial > 0:
                 ranges = self._shrink_scan_ranges(ranges)
-
             scan_data = ScanData(
                 channels=tuple(self._constraints.channels.values()),
                 scan_axes=tuple(self._constraints.axes[ax] for ax in axes),
@@ -883,13 +884,12 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
             self.log.exception("Error in ao write loop: ")
 
     def _start_hw_timed_scan(self):
-
         self.log.debug("Starting hw timed scan")
         try:
-            self._ni_finite_sampling_io().start_buffered_frame()
+            self.ni_finite_sampling_io.start_buffered_frame()
             self.sigNextDataChunk.emit()
         except Exception as e:
-            self.log.error(f'Could not start frame due to {str(e)}')
+            self.log.error(f'Could not start frame due to {str(e)}, I am here')
             self.module_state.unlock()
 
         self._start_scan_after_cursor = False
@@ -993,7 +993,7 @@ class RawDataContainer:
         self.forward_line_resolution = forward_line_resolution
         self.backwards_line_resolution = backwards_line_resolution
 
-        self.frame_size = number_of_scan_lines * (forward_line_resolution + backwards_line_resolution)
+        self.frame_size = number_of_scan_lines * (forward_line_resolution + backwards_line_resolution) 
         self._raw = {key: np.full(self.frame_size, np.nan) for key in channel_keys}
 
     def fill_container(self, samples_dict):

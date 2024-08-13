@@ -259,7 +259,7 @@ class Magnet3D(AdwinBase):  # TODO see towards - ProcessSetpointInterface
         set_voltage_x, _ = self.read_fpar(self.fpar_idx_set_volt_x)
         set_voltage_y, _ = self.read_fpar(self.fpar_idx_set_volt_y)
         set_voltage_z, _ = self.read_fpar(self.fpar_idx_set_volt_z)
-        
+
         return [set_voltage_x, set_voltage_y, set_voltage_z]
 
     def get_magnet_currents(self) -> list[float, float, float]:

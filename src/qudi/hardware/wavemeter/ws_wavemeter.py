@@ -93,7 +93,7 @@ class HighFinesseWavemeter(WavemeterInterface):
     _measurement_timing = ConfigOption('measurement_timing', default=0.2)
     _active_channels = ConfigOption('active_channels', default=[0])
     _selected_channels = ConfigOption('selected_channels', default=[2,4])
-    _default_channel = ConfigOption('default_channel', default=0)
+    _default_channel = ConfigOption('default_channel', default=1)
     _buffer_size = 3000
     # signals
     sig_handle_timer = QtCore.Signal(bool)
@@ -152,6 +152,11 @@ class HighFinesseWavemeter(WavemeterInterface):
     #############################################
     # Methods of the main class
     #############################################
+
+    def start_lock_curr_wavelegth(self):   
+        
+        self.get_current_wavelength
+        
 
     def handle_wavelength(self, wavelengths):
         """ Function to save the wavelength, when it comes in with a signal.
@@ -232,6 +237,7 @@ class HighFinesseWavemeter(WavemeterInterface):
         """
 
         return self._current_wavelengths
+    
     def get_selected_channels(self):
         return self._selected_channels
     
