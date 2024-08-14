@@ -38,7 +38,7 @@ from scipy.interpolate import splrep, splev
 from scipy.optimize import curve_fit
 
 from qudi.interface.scanning_probe_interface import ScanData
-def find_max_spline_2d(XY, xy):
+def find_max_spline_2d(XY, xy, s=0):
     """
     Finds the maximum value and its corresponding (x, y) coordinates using 2D spline interpolation.
 
@@ -53,7 +53,7 @@ def find_max_spline_2d(XY, xy):
     ny, nx = XY.shape
    
     # Create a 2D spline representation
-    spline = RectBivariateSpline(X[:, 0], Y[0, :], XY)
+    spline = RectBivariateSpline(X[:, 0], Y[0, :], XY, s=s)
 
     # Define a fine grid for interpolation
     x_interp = np.linspace(X.min(), X.max(), num=1000)
@@ -72,7 +72,7 @@ def find_max_spline_2d(XY, xy):
     # Return the maximum value and its corresponding (x, y) coordinates
     return z_interp[max_index], max_x, max_y
 
-def find_max_spline(x_data, y_data):
+def find_max_spline(x_data, y_data, s=0):
         """
         Finds the maximum value and its corresponding x value using spline interpolation.
 
@@ -84,7 +84,7 @@ def find_max_spline(x_data, y_data):
             Tuple of (max_value, max_x)
         """
         # Create spline representation
-        tck = splrep(x_data, y_data, s=0)  # Adjust s as needed
+        tck = splrep(x_data, y_data, s=s)  # Adjust s as needed
         # Find the range of x values for interpolation
         x_interp = np.linspace(x_data.min(), x_data.max(), num=1000)
         # Interpolate y values
@@ -114,7 +114,8 @@ class ScanningOptimizeLogic(LogicBase):
 
     # status variables
     _scan_sequence = StatusVar(name='scan_sequence', default=None)
-    _min_r_squared = StatusVar(name='min_r_squared', default=0.6)
+    _min_r_squared = StatusVar(name='min_r_squared', default=0.8)
+    _crashed_fit_r = StatusVar(name='min_r_squared', default=0.3)
     _data_channel = StatusVar(name='data_channel', default=None)
     _scan_frequency = StatusVar(name='scan_frequency', default=None)
     _scan_range = StatusVar(name='scan_range', default=None)
@@ -122,6 +123,12 @@ class ScanningOptimizeLogic(LogicBase):
 
     _backwards_line_resolution = ConfigOption(name='backwards_line_resolution', default=20)
     do_get_max_from_spline = True
+    _optimize_spline_options = {
+        'to_spline_2d': False,
+        's_2d' : 0,
+        'to_spline_1d' : False,
+        's_1d' : 0
+    }
 
     # signals
     sigOptimizeStateChanged = QtCore.Signal(bool, dict, object)
@@ -425,13 +432,22 @@ class ScanningOptimizeLogic(LogicBase):
                 return
             elif data is not None:
                 try:
+                    do_spline = self._optimize_spline_options['to_spline_1d'] if data.scan_dimension == 1 else self._optimize_spline_options['to_spline_2d']
                     if data.scan_dimension == 1:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
                         opt_pos, fit_data, fit_res = self._get_pos_from_1d_fit(
                             x,
                             data.data[self._data_channel],
-                            max_is_spline=self.do_get_max_from_spline
+                            max_is_spline=do_spline
                         )
+                        if (fit_res.rsquared < self._min_r_squared) and not do_spline:
+                            opt_pos, fit_data, fit_res = self._get_pos_from_1d_fit(
+                            x,
+                            data.data[self._data_channel],
+                            max_is_spline=True,
+                            s=1
+                        )
+
                     else:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
                         y = np.linspace(*data.scan_range[1], data.scan_resolution[1])
@@ -439,7 +455,14 @@ class ScanningOptimizeLogic(LogicBase):
                         opt_pos, fit_data, fit_res = self._get_2d_pos_from_fit(
                             xy,
                             data.data[self._data_channel].ravel(),
-                            max_is_spline=self.do_get_max_from_spline
+                            max_is_spline=do_spline
+                        )
+                        if (fit_res.rsquared < self._min_r_squared) and not do_spline:
+                            opt_pos, fit_data, fit_res = self._get_2d_pos_from_fit(
+                            xy,
+                            data.data[self._data_channel].ravel(),
+                            max_is_spline=True,
+                            s=1
                         )
 
                     position_update = {ax: opt_pos[ii] for ii, ax in enumerate(data.scan_axes)}
@@ -447,13 +470,13 @@ class ScanningOptimizeLogic(LogicBase):
                     # Abort optimize if fit failed
 
                     if ((fit_data is None) 
-                        or (fit_res is None) or (fit_res.rsquared < self._min_r_squared)) and not self.do_get_max_from_spline: 
-                        # or (fit_res is not None and fit_res.rsquared < self._min_r_squared)):
+                        or (fit_res is None) or (fit_res.rsquared < self._crashed_fit_r)) and not do_spline: 
+                   
                         self.log.warning("Stopping optimization due to failed fit.")
                         self.stop_optimize()
                         return
                 
-                    if fit_data is not None or self.do_get_max_from_spline:
+                    if fit_data is not None or do_spline:
                         new_pos = self._scan_logic().set_target_position(position_update)
                         for ax in tuple(position_update):
                             position_update[ax] = new_pos[ax]
@@ -509,7 +532,7 @@ class ScanningOptimizeLogic(LogicBase):
             return (x_middle, y_middle), None, None
         if max_is_spline:
             z_max, max_x, max_y = find_max_spline_2d(data.reshape(xy[0].shape[0], xy[1].shape[0]).T, 
-                                                     xy 
+                                                     xy, s = self._optimize_spline_options['s_2d']
                                                     )
         else:
             max_x = fit_result.best_values['center_x']
@@ -530,7 +553,7 @@ class ScanningOptimizeLogic(LogicBase):
             self.log.exception('1D Gaussian fit unsuccessful.')
             return (middle,), None, None
         if max_is_spline:
-            max_y, max_x = find_max_spline(x, data)
+            max_y, max_x = find_max_spline(x, data, s=self._optimize_spline_options['s_1d'])
         else:
             max_x = fit_result.best_values['center']
 
