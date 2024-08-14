@@ -478,7 +478,7 @@ class ScanningOptimizeLogic(LogicBase):
                         self.stop_optimize()
                         return
                 
-                    if fit_data is not None or do_spline:
+                    else:
                         new_pos = self._scan_logic().set_target_position(position_update)
                         for ax in tuple(position_update):
                             position_update[ax] = new_pos[ax]
