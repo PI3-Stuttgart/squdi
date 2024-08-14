@@ -446,8 +446,9 @@ class ScanningOptimizeLogic(LogicBase):
                                     x,
                                     data.data[self._data_channel],
                                     max_is_spline=True,
-                                    s=1
+                                    
                                 )
+                                print("Here I am...")
 
                     else:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
@@ -463,8 +464,8 @@ class ScanningOptimizeLogic(LogicBase):
                                 opt_pos, fit_data, fit_res = self._get_2d_pos_from_fit(
                                     xy,
                                     data.data[self._data_channel].ravel(),
-                                    max_is_spline=True,
-                                    s=1
+                                    max_is_spline=True
+                                    
                                 )
 
                     position_update = {ax: opt_pos[ii] for ii, ax in enumerate(data.scan_axes)}
@@ -521,7 +522,7 @@ class ScanningOptimizeLogic(LogicBase):
             self.sigOptimizeDone.emit()
             return err
 
-    def _get_2d_pos_from_fit(self, xy, data, max_is_spline = False):
+    def _get_2d_pos_from_fit(self, xy, data, max_is_spline = False, s=None):
         model = Gaussian2D()
         try:
             fit_result = model.fit(data, x=xy, **model.estimate_peak(data, xy))
@@ -533,8 +534,9 @@ class ScanningOptimizeLogic(LogicBase):
             self.log.exception('2D Gaussian fit unsuccessful.')
             return (x_middle, y_middle), None, None
         if max_is_spline:
+            s = self._optimize_spline_options['s_2d'] if s is None else s
             z_max, max_x, max_y = find_max_spline_2d(data.reshape(xy[0].shape[0], xy[1].shape[0]).T, 
-                                                     xy, s = self._optimize_spline_options['s_2d']
+                                                     xy, s = s
                                                     )
         else:
             max_x = fit_result.best_values['center_x']
@@ -544,7 +546,7 @@ class ScanningOptimizeLogic(LogicBase):
         return (max_x,
                 max_y), fit_result.best_fit.reshape(xy[0].shape), fit_result
 
-    def _get_pos_from_1d_fit(self, x, data, max_is_spline = False):
+    def _get_pos_from_1d_fit(self, x, data, max_is_spline = False, s=None):
         model = Gaussian()
 
         try:
@@ -555,7 +557,8 @@ class ScanningOptimizeLogic(LogicBase):
             self.log.exception('1D Gaussian fit unsuccessful.')
             return (middle,), None, None
         if max_is_spline:
-            max_y, max_x = find_max_spline(x, data, s=self._optimize_spline_options['s_1d'])
+            s = self._optimize_spline_options['s_1d'] if s is None else s
+            max_y, max_x = find_max_spline(x, data, s=s)
         else:
             max_x = fit_result.best_values['center']
 
