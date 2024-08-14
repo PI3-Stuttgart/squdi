@@ -95,8 +95,8 @@ class MeasurementsBase:
         self.folder_interval = 20 #folder_interval_minutes  # Set the folder saving interval in minutes
         self.opti_counts = {2:np.inf,
                             3: np.inf}
-        self._attodry_channel = 2
-        self._bf_channel = 3
+        self._attodry_channel = 3
+        self._bf_channel = 2
         self._update_opti = True
         self.motordriver_pi3.current_motor = 0
         self.motordriver_pi3.motor_position = self.perpendicular_position
@@ -125,18 +125,31 @@ class MeasurementsBase:
         return np.array(cts)
 
     def refocus(self, local = True, remote=False):
-        if local and remote is False:
+        if (local or remote) is False:
             return
         
         self.polarization_is_parallel = False
 
         time.sleep(1)
-        self.poi_manager_logic_remote._optimizelogic().start_optimize()
+        if remote:
+            self.poi_manager_logic_remote._optimizelogic().set_optimize_settings(
+                    {
+                        'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
+                        'data_channel': 'APD1',
+                        'scan_sequence' : ('xy', 'z'),
+                        'scan_range': {'z': 1.2e-06, 'x': 0.6e-06, 'y': 0.6e-06},
+                        'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
+                        
+                    }
+                )
+            time.sleep(0.2)
+            self.poi_manager_logic_remote._optimizelogic().start_optimize()
         if local:
             self.poi_manager_logic._optimizelogic().start_optimize()
             while self.poi_manager_logic._optimizelogic().module_state()=='locked':
                 time.sleep(1) # wait for a long time to 
         if remote:
+            # self.poi_manager_logic_remote._optimizelogic().start_optimize()
             while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
                 time.sleep(1) # wait for a long time to 
         time.sleep(1) # wait for a long time to avoid conflicts with the countrate checker
@@ -218,7 +231,7 @@ class MeasurementsBase:
             if self.switchlogic.get_state("Mirror") == 'On':
                 if self.switchlogic.get_state("Shutter") != 'Off':
                     self.switchlogic.set_state(switch = "Shutter", state = "Off")
-                time.sleep(0.5)
+                time.sleep(2)
                 if self.switchlogic.get_state("ResonantBF") != 'On':
                     self.switchlogic.set_state(switch = "ResonantBF", state = "On")
                 self.ibeam_smart_remote.power = 50
@@ -233,7 +246,7 @@ class MeasurementsBase:
                     self.switchlogic.set_state(switch = "ResonantBF", state = "Off")
             if self.switchlogic.get_state("Shutter") != 'On':
                 self.switchlogic.set_state(switch = "Shutter", state = "On")
-            time.sleep(0.5)
+            time.sleep(2)
             if self.switchlogic.get_state("Mirror") != 'Off':
                 self.switchlogic.set_state(switch = "Mirror", state = "Off")
             if greens_on:
@@ -400,9 +413,9 @@ class StarkHOM(MeasurementsBase):
             if self.current_measurement == 'hom':
                 
                 self.set_green_power('atto3', 5e3)
-                for i in range(2):
-                    self.align_resonances(dv=0.2, steps=40)
-                    time.sleep(2)
+                
+                self.align_resonances(dv=0.2, steps=40)
+                
                 self.setpoint_story.append(self.ao_electrodes.setpoint)
 
 
@@ -684,7 +697,7 @@ class StarkHOM(MeasurementsBase):
         
 
         # TODO: add the line switching to the required channel ('APD1')
-        for i in align_iter:
+        for i in range(align_iter):
             v0 = self.ao_electrodes.setpoint
             setpoints = np.linspace(v0 - dv, v0 + dv, steps)
 
