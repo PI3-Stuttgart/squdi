@@ -440,13 +440,14 @@ class ScanningOptimizeLogic(LogicBase):
                             data.data[self._data_channel],
                             max_is_spline=do_spline
                         )
-                        if (fit_res.rsquared < self._min_r_squared) and not do_spline:
-                            opt_pos, fit_data, fit_res = self._get_pos_from_1d_fit(
-                            x,
-                            data.data[self._data_channel],
-                            max_is_spline=True,
-                            s=1
-                        )
+                        if fit_data is not None and fit_res is not None:
+                            if fit_res.rsquared < self._min_r_squared and not do_spline:
+                                opt_pos, fit_data, fit_res = self._get_pos_from_1d_fit(
+                                    x,
+                                    data.data[self._data_channel],
+                                    max_is_spline=True,
+                                    s=1
+                                )
 
                     else:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
@@ -457,13 +458,14 @@ class ScanningOptimizeLogic(LogicBase):
                             data.data[self._data_channel].ravel(),
                             max_is_spline=do_spline
                         )
-                        if (fit_res.rsquared < self._min_r_squared) and not do_spline:
-                            opt_pos, fit_data, fit_res = self._get_2d_pos_from_fit(
-                            xy,
-                            data.data[self._data_channel].ravel(),
-                            max_is_spline=True,
-                            s=1
-                        )
+                        if fit_data is not None and fit_res is not None:
+                            if fit_res.rsquared < self._min_r_squared and not do_spline:
+                                opt_pos, fit_data, fit_res = self._get_2d_pos_from_fit(
+                                    xy,
+                                    data.data[self._data_channel].ravel(),
+                                    max_is_spline=True,
+                                    s=1
+                                )
 
                     position_update = {ax: opt_pos[ii] for ii, ax in enumerate(data.scan_axes)}
                     self._last_fit_results = fit_res
@@ -471,7 +473,7 @@ class ScanningOptimizeLogic(LogicBase):
 
                     if ((fit_data is None) 
                         or (fit_res is None) or (fit_res.rsquared < self._crashed_fit_r)) and not do_spline: 
-                   
+
                         self.log.warning("Stopping optimization due to failed fit.")
                         self.stop_optimize()
                         return
