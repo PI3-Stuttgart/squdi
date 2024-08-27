@@ -25,14 +25,14 @@ import numpy as np
 import os
 import pyqtgraph as pg
 
-from core.connector import Connector
-from core.util import units
-from gui.guibase import GUIBase
-from gui.colordefs import QudiPalettePale as palette
-from gui.colordefs import QudiPalette as palettedark
-from qtpy import QtCore
-from qtpy import QtWidgets
-from qtpy import uic
+from qudi.core.connector import Connector
+from qudi.util import units
+from qudi.core.module import GuiBase
+from qudi.util.colordefs import QudiPalettePale as palette
+from qudi.util.colordefs import QudiPalette as palettedark
+from PySide2 import QtCore
+from PySide2 import QtWidgets
+import qudi.util.uic as uic
 
 
 class GatedCounterMainWindow(QtWidgets.QMainWindow):
@@ -49,7 +49,7 @@ class GatedCounterMainWindow(QtWidgets.QMainWindow):
         self.show()
 
 
-class GatedCounterGui(GUIBase):
+class GatedCounterGui(GuiBase):
     """ Main GUI for the Gated Counting. """
 
     # declare connectors

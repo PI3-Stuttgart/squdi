@@ -25,7 +25,7 @@ import collections
 import logging
 
 from PySide2.QtWidgets import QTableWidgetItem, QMainWindow
-from PySide2.QtCore import pyqtSignal
+from PySide2.QtCore import Signal as pyqtSignal
 #from gui.qtgui import transition_tracker_gui
 
 from PySide2.uic import compileUi

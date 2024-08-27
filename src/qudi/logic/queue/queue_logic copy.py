@@ -189,7 +189,7 @@ class queue_logic(GenericLogic):
     #     self._timetagger = TimeTaggerHandler.init_timetagger()
 
     def init_run(self):
-        self.user_script_folder = r"C:/src/qudi/notebooks/UserScripts/electron_t2"
+        self.user_script_folder = r"C:/src/qudi/notebooks/userscripts/electron_t2"
         self._script_queue = ScriptQueueList(oktypes=(ScriptQueueStep), list_owner=self)
         self.q = Queue() # use connector
         self.run_thread()
@@ -503,7 +503,7 @@ class queue_logic(GenericLogic):
                                                  'currently_unused',
                                                  ".idea",
                                                  ".hg",
-                                                 'UserScripts',
+                                                 'userscripts',
                                                  'log',
                                                  'notebooks' #FIXME - include logic, explode heavy stuff.
                                                  ]

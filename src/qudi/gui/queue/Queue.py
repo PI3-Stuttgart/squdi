@@ -7,7 +7,7 @@ import logic.misc
 
 from PySide2.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
 from PySide2 import QtGui
-from PySide2.QtCore import pyqtSignal
+from PySide2.QtCore import Signal as pyqtSignal
 import PySide2.uic
 import PySide2.QtWidgets
 import PySide2
@@ -37,7 +37,7 @@ import shutil
 import sys
 import threading
 import time
-from core.connector import Connector
+from qudi.core.connector import Connector
 from gui.guibase import GUIBase
 import traceback
 #import TimeTaggerHandler
@@ -252,7 +252,7 @@ class queue_gui(GUIBase):
         self.user_script_folder = QFileDialog.getExistingDirectory(
             self._mw,
             'Select user_script_folder',
-            r"C:\src\qudi\notebooks\UserScripts",
+            r"C:\Users\yy3\git\squdi\src\qudi\userscripts",
         )
         self._queue_logic.user_script_folder = self.user_script_folder
         #this is working - need to do now the gui, no?

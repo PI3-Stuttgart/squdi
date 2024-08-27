@@ -11,9 +11,9 @@ from queue import Queue
 
 #from PyQt5.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
 #from PyQt5 import QtGui
-from PySide2.QtCore import pyqtSignal
-import PyQt5.uic
-import PyQt5.QtWidgets
+from PySide2.QtCore import Signal as pyqtSignal
+import PySide2.uic
+import PySide2.QtWidgets
 from logic.qudip_enhanced import *
 # FIXME
 from PyQt5.QtCore import QTimer
@@ -165,15 +165,15 @@ class queue_logic(GenericLogic):
         self._optimizer = self.optimizer()
         self._PLE_logic = self.PLE_logic()
         self._ODMR_logic = self.odmr_logic()
-        self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic()
+        self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic() ### : is important for clicking through.
         # self._biaslogic:BiasLogic = self.biaslogic()
-        self._powerstabilization_logic = self.powerstabilization_logic()
-        self._poimanagerlogic = self.poimanagerlogic()
-        self._counter=self.counterlogic1()
+        self._powerstabilization_logic = self.powerstabilization_logic() ##: TODO - here we can recover it with our own code
+        self._poimanagerlogic = self.poimanagerlogic() # :TODO - this is legacy poi manager, but we can use the new one.
+        self._counter=self.counterlogic1() #
         self._fast_counter_device = self.fastcounter()  # FIXME
         self.create_odmr()  #only logic (no gui)
         self.init_run()
-        self.write_standard_awg_sequences()
+        #self.write_standard_awg_sequences()
         self._confocal = self.confocal()
         self.tt = self._transition_tracker
 
@@ -195,7 +195,7 @@ class queue_logic(GenericLogic):
     #     self._timetagger = TimeTaggerHandler.init_timetagger()
 
     def init_run(self):
-        self.user_script_folder = r"C:/src/qudi/notebooks/UserScripts/electron_t2"
+        self.user_script_folder = r"C:/src/qudi/notebooks/userscripts/electron_t2"
         self._script_queue = ScriptQueueList(oktypes=(ScriptQueueStep), list_owner=self)
         self.q = Queue() # use connector
         self.run_thread()
@@ -512,7 +512,7 @@ class queue_logic(GenericLogic):
                                                  'currently_unused',
                                                  ".idea",
                                                  ".hg",
-                                                 'UserScripts',
+                                                 'userscripts',
                                                  'log',
                                                  'notebooks' #FIXME - include logic, explode heavy stuff.
                                                  ]
