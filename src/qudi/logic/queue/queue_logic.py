@@ -9,15 +9,15 @@ from gui.queue.Queue import queue_gui
 
 from queue import Queue
 
-from PyQt5.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
-from PyQt5 import QtGui
-from PyQt5.QtCore import pyqtSignal
+#from PyQt5.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
+#from PyQt5 import QtGui
+from PySide2.QtCore import pyqtSignal
 import PyQt5.uic
 import PyQt5.QtWidgets
 from logic.qudip_enhanced import *
 # FIXME
 from PyQt5.QtCore import QTimer
-from PyQt5 import QtTest
+from PySide2 import QtTest
 # import multi_channel_awg_seq as MCAS; reload(MCAS)
 import logic.misc as misc
 import datetime
@@ -29,7 +29,7 @@ import threading
 import time
 import traceback
 from logic.generic_logic import GenericLogic
-from core.connector import Connector
+from qudi.core.connector import Connector
 import multiprocess
 import numpy as np
 import logging
@@ -37,7 +37,7 @@ import logging
 import collections
 import importlib
 import logic.ODMR_nops as odmr; importlib.reload(odmr)
-from core.util.mutex import Mutex
+from qudi.core.util.mutex import Mutex
 
 from logic.currentmeasurement.current_measurement import CurrentMeasurementLogic
 # from logic.biaslogic import BiasLogic

@@ -5,11 +5,12 @@ __metaclass__ = type
 import sys, os
 import logic.misc
 
-from PyQt5.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
-from PyQt5 import QtGui
-from PyQt5.QtCore import pyqtSignal
-import PyQt5.uic
-import PyQt5.QtWidgets
+from PySide2.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
+from PySide2 import QtGui
+from PySide2.QtCore import pyqtSignal
+import PySide2.uic
+import PySide2.QtWidgets
+import PySide2
 from logic.qudip_enhanced import *
 import importlib
 setup = False
@@ -43,7 +44,7 @@ import traceback
 import numpy as np
 import psutil
 import collections
-from PyQt5 import QtCore, QtWidgets
+from PySide2 import QtCore, QtWidgets
 
 class ScriptQueueStep:
     def __init__(self, name, pd):
@@ -133,7 +134,7 @@ class window(QtWidgets.QMainWindow):
         this_dir = os.path.dirname(__file__)
         ui_file = os.path.join(this_dir,'pi3d_main_window.ui')
         # Load ui
-        PyQt5.uic.loadUi(ui_file, self)
+        PySide2.uic.loadUi(ui_file, self)
         self.show()
 
 

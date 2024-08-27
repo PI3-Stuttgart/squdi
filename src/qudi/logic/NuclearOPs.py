@@ -22,18 +22,21 @@ import os
 import numpy as np
 import pandas as pd
 import logging
-from PyQt5 import QtTest
-from qtpy import QtCore
+#from PyQt5 import QtTest
+from PySide2 import QtTest
+from PySide2 import QtCore, QtWidgets, QtGui
+#from qtpy import QtCore
 import collections
 
 from numbers import Number
 from logic.generic_logic import GenericLogic
-from core.connector import Connector
+from qudi.core.connector import Connector
 #TODO replace import with a connector to that
 from logic.qudip_enhanced.data_generation import DataGeneration
 from logic.qudip_enhanced.util import ret_property_list_element
 from logic.qudip_enhanced import save_qutip_enhanced
-from core.util.mutex import Mutex
+
+from qudi.util.mutex import Mutex
 import logic.qudip_enhanced.data_handling as data_handling
 import base64
 import hashlib

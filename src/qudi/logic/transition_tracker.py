@@ -21,14 +21,14 @@ import pandas as pd
 import os
 #from pi3diamond import pi3d
 import collections
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import logging
 
-from PyQt5.QtWidgets import QTableWidgetItem, QMainWindow
-from PyQt5.QtCore import pyqtSignal
+from PySide2.QtWidgets import QTableWidgetItem, QMainWindow
+from PySide2.QtCore import pyqtSignal
 #from gui.qtgui import transition_tracker_gui
 
-from PyQt5.uic import compileUi
+from PySide2.uic import compileUi
 
 from qutip import *
 import numpy as np
@@ -36,7 +36,7 @@ from matplotlib import pyplot as plt
 from scipy.optimize import minimize
 from scipy.interpolate import UnivariateSpline
 
-from qtpy import QtCore
+from PySide2 import QtCore
 from collections import OrderedDict
 import numpy as np
 import time
@@ -44,8 +44,8 @@ import datetime
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from core.connector import Connector
-from core.configoption import ConfigOption
+from qudi.core.connector import Connector
+#from core.configoption import ConfigOption
 from logic.generic_logic import GenericLogic
 from core.util.mutex import Mutex
 import shutil
@@ -56,7 +56,7 @@ import lmfit
 # single values
 ####################################################################################################################
 app_dir = r'C:/src/qudi'
-#app_dir= r'/Users/vvv/Documents/GitHub/qudi'
+app_dir= r'C:\Users\yy3\git\squdi\src\qudi'
 
 log_dir = '{}/log/'.format(app_dir)
 log_archive_dir = '{}/log/archive/'.format(app_dir)
