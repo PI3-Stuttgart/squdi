@@ -27,7 +27,7 @@ from configuration import *
 ###################
 
 # Frequency vector
-f_vec = np.arange(80 * u.MHz, 130 * u.MHz, 1 * u.MHz)
+f_vec = np.arange(80 * u.MHz, 140 * u.MHz, 1 * u.MHz)
 n_avg = 200_000_000  # number of averages
 readout_len = long_meas_len_1  # Readout duration for this experiment
 
@@ -49,39 +49,48 @@ with program() as cw_odmr:
             # Play the mw pulse...
             play("cw" * amp(1), "NV", duration=readout_len * u.ns)
             # ... and the laser pulse simultaneously (the laser pulse is delayed by 'laser_delay_1')
-            play("laser_ON", "AOM_green", duration=readout_len * u.ns)
-            wait(1_000 * u.ns, "SPCM1")  # so readout don't catch the first part of spin reinitialization
+            play("laser_ON", "Laser_520", duration=readout_len * u.ns)
+            wait(
+                1_000 * u.ns, "SPCM1"
+            )  # so readout don't catch the first part of spin reinitialization
             # Measure and detect the photons on SPCM1
-            measure("long_readout", "SPCM1", None, time_tagging.analog(times, readout_len, counts))
+            measure(
+                "long_readout",
+                "SPCM1",
+                None,
+                time_tagging.analog(times, readout_len, counts),
+            )
 
             save(counts, counts_st)  # save counts on stream
 
             # Wait and align all elements before measuring the dark events
             wait(wait_between_runs * u.ns)
-            #align()  # align all elements
+            # align()  # align all elements
             # Play the mw pulse with zero amplitude...
-            #play("cw" * amp(0), "NV", duration=readout_len * u.ns)
+            # play("cw" * amp(0), "NV", duration=readout_len * u.ns)
             # ... and the laser pulse simultaneously (the laser pulse is delayed by 'laser_delay_1')
-            #play("laser_ON", "AOM_green", duration=readout_len * u.ns)
-            #wait(1_000 * u.ns, "SPCM1")  # so readout don't catch the first part of spin reinitialization
-            #measure("long_readout", "SPCM1", None, time_tagging.analog(times, readout_len, counts))
+            # play("laser_ON", "AOM_green", duration=readout_len * u.ns)
+            # wait(1_000 * u.ns, "SPCM1")  # so readout don't catch the first part of spin reinitialization
+            # measure("long_readout", "SPCM1", None, time_tagging.analog(times, readout_len, counts))
 
-            #save(counts, counts_dark_st)  # save counts on stream
+            # save(counts, counts_dark_st)  # save counts on stream
 
-            #wait(wait_between_runs * u.ns)
+            # wait(wait_between_runs * u.ns)
 
             save(n, n_st)  # save number of iteration inside for_loop
 
     with stream_processing():
         # Cast the data into a 1D vector, average the 1D vectors together and store the results on the OPX processor
         counts_st.buffer(len(f_vec)).average().save("counts")
-        #counts_dark_st.buffer(len(f_vec)).average().save("counts_dark")
+        # counts_dark_st.buffer(len(f_vec)).average().save("counts_dark")
         n_st.save("iteration")
 
 #####################################
 #  Open Communication with the QOP  #
 #####################################
-qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name, octave=octave_config)
+qmm = QuantumMachinesManager(
+    host=qop_ip, cluster_name=cluster_name, octave=octave_config
+)
 
 #######################
 # Simulate or execute #
@@ -99,7 +108,7 @@ else:
     # Send the QUA program to the OPX, which compiles and executes it
     job = qm.execute(cw_odmr)
     # Get results from QUA program
-    #results = fetching_tool(job, data_list=["counts", "counts_dark", "iteration"], mode="live")
+    # results = fetching_tool(job, data_list=["counts", "counts_dark", "iteration"], mode="live")
     results = fetching_tool(job, data_list=["counts", "iteration"], mode="live")
     # Live plotting
     fig = plt.figure()
@@ -107,24 +116,27 @@ else:
 
     while results.is_processing():
         # Fetch results
-        #counts, counts_dark, iteration = results.fetch_all()
+        # counts, counts_dark, iteration = results.fetch_all()
         counts, iteration = results.fetch_all()
         # Progress bar
         progress_counter(iteration, n_avg, start_time=results.get_start_time())
         # Plot data
         plt.cla()
-        plt.plot((NV_LO_freq * 0 + f_vec) / u.MHz, counts / 1000 / (readout_len * 1e-9), label="photon counts")
-        #plt.plot((NV_LO_freq * 0 + f_vec) / u.MHz, counts_dark / 1000 / (readout_len * 1e-9), label="dark counts")
+        plt.plot(
+            (NV_LO_freq * 0 + f_vec) / u.MHz,
+            counts / 1000 / (readout_len * 1e-9),
+            label="photon counts",
+        )
+        # plt.plot((NV_LO_freq * 0 + f_vec) / u.MHz, counts_dark / 1000 / (readout_len * 1e-9), label="dark counts")
         plt.xlabel("MW frequency [MHz]")
         plt.ylabel("Intensity [kcps]")
         plt.title("ODMR")
         plt.legend()
         plt.pause(0.1)
-        
+
     plt.show()
-    f = open("C:\\Data\\2024\\06\\odmr.txt", "w")
+    f = open("C:\\Data\\2024\\08\\odmr.txt", "w")
     for i in range(len(counts)):
-        #f.write(str(counts[i])+ '\t' + str(counts_dark[i])+ '\n')
-        f.write(str(counts[i] / 1000 / (readout_len * 1e-9)) + '\n')
+        # f.write(str(counts[i])+ '\t' + str(counts_dark[i])+ '\n')
+        f.write(str(counts[i] / 1000 / (readout_len * 1e-9)) + "\n")
     f.close()
-    

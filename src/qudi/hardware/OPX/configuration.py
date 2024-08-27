@@ -136,6 +136,7 @@ config = {
             "digital_outputs": {
                 1: {},  # indicator
                 6: {},  # Laser 520 nm (Green)
+                4: {},  # indicator
                 7: {},  # Laser 450 nm (Blue)
                 8: {},  # AOM Laser 520 nm (Green)
                 9: {},  # AOM Laser 575 nm (Yellow)
@@ -143,6 +144,7 @@ config = {
             },
             "analog_inputs": {
                 1: {"offset": 0, "gain_db": -3},  # SPCM1
+                2: {"offset": 0, "gain_db": -3},  # SPCM2
             },
         }
     },
@@ -189,7 +191,7 @@ config = {
                 "port": ("con1", 7),
             },
             "operations": {
-                "power": "power_AOM",
+                "power": "AOM_power",
             },
         },
         "Laser_520": {
@@ -221,7 +223,7 @@ config = {
                 "port": ("con1", 8),
             },
             "operations": {
-                "power": "power_AOM",
+                "power": "AOM_power",
             },
         },
         "AOM_575": {
@@ -241,7 +243,7 @@ config = {
                 "port": ("con1", 9),
             },
             "operations": {
-                "power": "power_AOM",
+                "power": "AOM_power",
             },
         },
         "AOM_620": {
@@ -261,7 +263,7 @@ config = {
                 "port": ("con1", 10),
             },
             "operations": {
-                "power": "power_AOM",
+                "power": "AOM_power",
             },
         },
         "LaserScanner_red": {

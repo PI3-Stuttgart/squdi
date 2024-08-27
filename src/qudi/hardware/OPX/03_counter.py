@@ -35,9 +35,14 @@ with program() as counter:
         # Loop over the chunks to measure for the total integration time
         with for_(n, 0, n < n_count, n + 1):
             # Play the laser pulse...
-            play("laser_ON", "AOM_green", duration=single_integration_time_cycles)
+            # play("laser_ON", "AOM_green", duration=single_integration_time_cycles)
             # ... while measuring the events from the SPCM
-            measure("readout", "SPCM1", None, time_tagging.analog(times, single_integration_time_ns, counts))
+            measure(
+                "readout",
+                "SPCM1",
+                None,
+                time_tagging.analog(times, single_integration_time_ns, counts),
+            )
             # Increment the received counts
             assign(total_counts, total_counts + counts)
         # Save the counts
@@ -50,7 +55,9 @@ with program() as counter:
 #####################################
 #  Open Communication with the QOP  #
 #####################################
-qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name, octave=octave_config)
+qmm = QuantumMachinesManager(
+    host=qop_ip, cluster_name=cluster_name, octave=octave_config
+)
 
 #######################
 # Simulate or execute #

@@ -5,6 +5,7 @@ import numpy as np
 # AUXILIARY FUNCTIONS #
 #######################
 
+
 # IQ imbalance matrix
 def IQ_imbalance(g, phi):
     """
@@ -20,11 +21,13 @@ def IQ_imbalance(g, phi):
     N = 1 / ((1 - g**2) * (2 * c**2 - 1))
     return [float(N * x) for x in [(1 - g) * c, (1 + g) * s, (1 - g) * s, (1 + g) * c]]
 
+
 def gauss(amplitude, mu, sigma, length):
     t = np.linspace(-length / 2, length / 2, length)
-    gauss_wave = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma ** 2))
+    gauss_wave = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
     substracted_gauss_wave = gauss_wave - gauss_wave[-1]
     return [float(x) for x in substracted_gauss_wave]
+
 
 #############
 # VARIABLES #
@@ -34,8 +37,8 @@ qop_ip = "192.168.1.6"
 host = 80
 
 # Frequencies
-#NV_IF1_freq = -67e6  # in units of Hz
-#NV_IF2_freq = 350e6  # in units of Hz
+# NV_IF1_freq = -67e6  # in units of Hz
+# NV_IF2_freq = 350e6  # in units of Hz
 NV_IF1_freq = 3e6
 NV_IF2_freq = 0e6
 NV_LO_freq = 2.870e9  # in units of Hz
@@ -83,15 +86,22 @@ config = {
                 2: {},  # AOM/green Laser
                 3: {},  # AOM/orange Laser
                 4: {},  # AOM/red Laser
+                5: {},  #
+                6: {},  # turn green on
             },
             "analog_inputs": {
-                1: {"offset": 0, 'gain_db': -3},  # SPCM
+                1: {"offset": 0, "gain_db": -3},  # SPCM
             },
         }
     },
     "elements": {
         "NV1": {
-            "mixInputs": {"I": ("con1", 1), "Q": ("con1", 2), "lo_frequency": NV_LO_freq, "mixer": "mixer_NV1"},
+            "mixInputs": {
+                "I": ("con1", 1),
+                "Q": ("con1", 2),
+                "lo_frequency": NV_LO_freq,
+                "mixer": "mixer_NV1",
+            },
             "intermediate_frequency": NV_IF1_freq,
             "operations": {
                 "cw": "const_pulse",
@@ -100,7 +110,12 @@ config = {
             },
         },
         "NV2": {
-            "mixInputs": {"I": ("con1", 3), "Q": ("con1", 4), "lo_frequency": NV_LO_freq, "mixer": "mixer_NV2"},
+            "mixInputs": {
+                "I": ("con1", 3),
+                "Q": ("con1", 4),
+                "lo_frequency": NV_LO_freq,
+                "mixer": "mixer_NV2",
+            },
             "intermediate_frequency": NV_IF2_freq,
             "operations": {
                 "cw": "const_pulse",
@@ -111,7 +126,7 @@ config = {
         "AOM_green": {
             "digitalInputs": {
                 "marker": {
-                    "port": ("con1", 2),
+                    "port": ("con1", 6),
                     "delay": green_laser_delay,
                     "buffer": 0,
                 },
@@ -226,10 +241,18 @@ config = {
     },
     "mixers": {
         "mixer_NV1": [
-            {"intermediate_frequency": NV_IF1_freq, "lo_frequency": NV_LO_freq, "correction": IQ_imbalance(0.0, 0.0)},
+            {
+                "intermediate_frequency": NV_IF1_freq,
+                "lo_frequency": NV_LO_freq,
+                "correction": IQ_imbalance(0.0, 0.0),
+            },
         ],
         "mixer_NV2": [
-            {"intermediate_frequency": NV_IF2_freq, "lo_frequency": NV_LO_freq, "correction": IQ_imbalance(0.0, 0.0)},
+            {
+                "intermediate_frequency": NV_IF2_freq,
+                "lo_frequency": NV_LO_freq,
+                "correction": IQ_imbalance(0.0, 0.0),
+            },
         ],
     },
 }
