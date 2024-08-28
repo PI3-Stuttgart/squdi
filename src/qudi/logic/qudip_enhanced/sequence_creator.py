@@ -760,7 +760,7 @@ class Z(Arbitrary):
         self.sequence = [[i] for i in self.controls]
 
 
-class PList(collections.MutableSequence):
+class PList(collections.abc.MutableSequence):
     def __init__(self, list_owner):
         self.oktypes = (Arbitrary)
         self.list_owner = list_owner

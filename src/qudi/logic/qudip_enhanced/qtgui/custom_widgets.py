@@ -10,11 +10,11 @@ import operator
 from functools import partial
 import itertools
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QMenu, QAction
-from PyQt5.QtGui import QCursor
-from PyQt5.QtCore import pyqtSignal
-from PyQt5 import QtGui, QtWidgets, QtCore
+from PySide2.QtCore import Qt
+from PySide2.QtWidgets import QTableWidget, QTableWidgetItem, QMenu, QAction
+from PySide2.QtGui import QCursor
+from PySide2.QtCore import Signal as pyqtSignal
+from PySide2 import QtGui, QtWidgets, QtCore
 
 class QTableWidgetEnhanced(QTableWidget):
 

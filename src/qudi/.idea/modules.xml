@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/qudi.iml" filepath="$PROJECT_DIR$/.idea/qudi.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../../../squdi-core/.idea/squdi-core.iml" filepath="$PROJECT_DIR$/../../../squdi-core/.idea/squdi-core.iml" />
     </modules>
   </component>
 </project>

@@ -1,7 +1,9 @@
 from __future__ import print_function, absolute_import, division
 __metaclass__ = type
 
-import logic.misc as misc
+#import misc
+
+
 import traceback
 import time
 import sys
@@ -9,17 +11,19 @@ import os
 import threading
 from PySide2.QtCore import Signal as pyqtSignal
 from PySide2 import QtTest
-import logic.Analysis as Analysis
+from qudi.logic import Analysis as Analysis
+
 #from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 #from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 #from matplotlib.figure import Figure
 import PySide2.QtCore
 import numpy as np
 import logging
+
 #from hardware.Keysight_AWG_M8190.pym8190a import MultiChSeq as MCAS
 #from hardware.Keysight_AWG_M8190.pym8190a import start_awgs as start_awgs
 import zmq
-import logic.qudip_enhanced.qtgui.gui_helpers
+#import logic.qudip_enhanced.qtgui.gui_helpers
 from numbers import Number
 import copy
 import datetime
@@ -30,7 +34,8 @@ import time
 from collections import OrderedDict
 from qudi.core.connector import Connector
 #from core.util.network import netobtain
-from logic.generic_logic import GenericLogic
+from qudi.logic.generic_logic import GenericLogic
+import qudi.logic.misc as misc
 from PySide2 import QtCore
 
 class GatedCounter(GenericLogic):

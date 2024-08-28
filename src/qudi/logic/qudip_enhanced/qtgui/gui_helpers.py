@@ -6,16 +6,15 @@ import traceback
 import sys
 import os
 
-import PyQt5.QtWidgets
-import PyQt5.QtCore
-import PyQt5.uic
-import PyQt5.uic
+import PySide2.QtWidgets
+import PySide2.QtCore
+import qudi.util.uic as uic
 
 def compile_ui_file(ui_filepath):
     name = os.path.basename(ui_filepath).split('.')[0] + '.py'
     py_filepath = os.path.join(os.path.dirname(ui_filepath), name)
     with open(py_filepath, 'w') as f:
-        PyQt5.uic.compileUi(ui_filepath, f)
+        uic.compileUi(ui_filepath, f)
 
 
 
@@ -57,21 +56,21 @@ class WithQt:
             traceback.print_exception(exc_type, exc_value, exc_tb)
 
 
-class QtGuiClass(PyQt5.QtWidgets.QMainWindow):
-    clear_signal = PyQt5.QtCore.pyqtSignal()
-    show_signal = PyQt5.QtCore.pyqtSignal()
-    close_signal = PyQt5.QtCore.pyqtSignal()
-    update_window_title_signal = PyQt5.QtCore.pyqtSignal(str)
+class QtGuiClass(PySide2.QtWidgets.QMainWindow):
+    clear_signal = PySide2.QtCore.Signal()
+    show_signal = PySide2.QtCore.Signal()
+    close_signal = PySide2.QtCore.Signal()
+    update_window_title_signal = PySide2.QtCore.Signal(str)
 
     def __init__(self, parent=None, no_qt=None, ui_filepath=None):
         super(QtGuiClass, self).__init__(parent=parent)
         self.no_qt = no_qt
         self.ui_filepath = ui_filepath
 
-        PyQt5.uic.loadUi(self.ui_filepath, self)
+        uic.loadUi(self.ui_filepath, self)
         # It was working! But not connected to the Fields...
-        # widget = PyQt5.QtWidgets.QWidget()
-        #PyQt5.uic.loadUi(self.ui_filepath, widget)
+        # widget = PySide2.QtWidgets.QWidget()
+        #PySide2.uic.loadUi(self.ui_filepath, widget)
         #self.setCentralWidget(widget)
         #self.setCentralWidget(self.parameter_tab)
         self.init_gui()

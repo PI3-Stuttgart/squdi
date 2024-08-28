@@ -3,10 +3,10 @@ from __future__ import print_function, absolute_import, division
 __metaclass__ = type
 
 from qutip import tensor, ket2dm, expect, jmat, Qobj
-from logic.qudip_enhanced.data_generation import DataGeneration
-from logic.qudip_enhanced.data_handling import PlotData
-from logic.qudip_enhanced import sequence_creator
-from logic.qudip_enhanced import dim2spin, sort_eigenvalues_standard_basis
+from qudi.logic.qudip_enhanced.data_generation import DataGeneration
+from qudi.logic.qudip_enhanced.data_handling import PlotData
+from qudi.logic.qudip_enhanced import sequence_creator
+from qudi.logic.qudip_enhanced import dim2spin, sort_eigenvalues_standard_basis
 #import logic.qudip_enhanced.nv_hamilton
 from collections import OrderedDict
 import collections

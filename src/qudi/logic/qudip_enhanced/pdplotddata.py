@@ -4,15 +4,16 @@ import pyqtgraph as pg
 __metaclass__ = type
 
 import traceback
-from PyQt5.QtWidgets import QListWidgetItem
-import PyQt5.QtWidgets
-from PyQt5.QtCore import Qt, pyqtSignal
+from PySide2.QtWidgets import QListWidgetItem
+import PySide2.QtWidgets
+from PySide2.QtCore import Qt
+from PySide2.QtCore import Signal as pyqtSignal
 #TODO add pyqtgraph.
 from .util import printexception
 from . import pddata
 try:
-    import logic.qudip_enhanced.qtgui.gui_helpers
-    from logic import qudip_enhanced as qudip_enhanced
+    import qudi.logic.qudip_enhanced.qtgui.gui_helpers
+    from qudi.logic import qudip_enhanced as qudip_enhanced
 except Exception as e:
     print(e)
 
@@ -282,7 +283,7 @@ class FitResultTable(DataTable):
     def selected_indices_default(self, selected_indices=None):
         return collections.OrderedDict()
 
-from logic.qudip_enhanced import qtgui #fixme - is it used?
+from qudi.logic.qudip_enhanced import qtgui #fixme - is it used?
 
 class PlotData(qudip_enhanced.qtgui.gui_helpers.WithQt):
 
@@ -654,7 +655,7 @@ class PlotData(qudip_enhanced.qtgui.gui_helpers.WithQt):
             self.gui.update_info_text(info_text)
 
 
-class BaseQt(PyQt5.QtWidgets.QWidget):
+class BaseQt(PySide2.QtWidgets.QWidget):
 
     def __init__(self, name, widget_name, parent, *args, **kwargs):
         super(BaseQt, self).__init__(*args, **kwargs)
