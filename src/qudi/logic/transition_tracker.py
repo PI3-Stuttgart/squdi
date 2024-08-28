@@ -882,7 +882,7 @@ class TransitionTracker(GenericLogic):
             self.transition(key).current_frequency = -get_transition_frequency(h_diag=self.h_diag, dims=self.nvham.dims, 
                                                                                transition=val)
         self.update_tt_nuclear_gui.emit() #connected to gui.
-        print('emission of the nuclear tt signal')
+        #print('emission of the nuclear tt signal')
 
     def load_rabi_parameters(self):
         self.rabi_parameters = dict()
@@ -1039,7 +1039,7 @@ class TransitionTracker(GenericLogic):
             if not hasattr(self, attr_name):
                 return
         self.update_tt_electron_gui.emit() #connected to the gui
-        print('emission of the electron signal')
+        #print('emission of the electron signal')
         self.set_h_diag()
         if not hasattr(self, 'ntd'):
             return

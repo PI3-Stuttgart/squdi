@@ -1,32 +1,26 @@
 from __future__ import print_function, absolute_import, division
 
 __metaclass__ = type
-
-import sys, os
-import logic.misc
-
 from PySide2.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
 from PySide2 import QtGui
 from PySide2.QtCore import Signal as pyqtSignal
-import PySide2.uic
-import PySide2.QtWidgets
-import PySide2
-from logic.qudip_enhanced import *
-import importlib
+import qudi.util.uic as uic
+#from logic.qudip_enhanced import *
+#import importlib
 setup = False
 #import multi_channel_awg_seq as MCAS; importlib.reload(MCAS)
-import sip
+#import sip
 
-try:
-    sip.setapi('QDate', 2)
-    sip.setapi('QDateTime', 2)
-    sip.setapi('QString', 2)
-    sip.setapi('QtextStream', 2)
-    sip.setapi('Qtime', 2)
-    sip.setapi('QUrl', 2)
-    sip.setapi('QVariant', 2)
-except ValueError as e:
-    raise RuntimeError('Could not set API version (%s): did you import PyQt4 directly?' % e)
+#try:
+#    sip.setapi('QDate', 2)
+#    sip.setapi('QDateTime', 2)
+#    sip.setapi('QString', 2)
+#    sip.setapi('QtextStream', 2)
+#    sip.setapi('Qtime', 2)
+#    sip.setapi('QUrl', 2)
+#    sip.setapi('QVariant', 2)
+#except ValueError as e:
+#    raise RuntimeError('Could not set API version (%s): did you import PyQt4 directly?' % e)
 
 import datetime
 import logging
@@ -38,9 +32,8 @@ import sys
 import threading
 import time
 from qudi.core.connector import Connector
-from gui.guibase import GUIBase
+from qudi.core.module import GuiBase
 import traceback
-#import TimeTaggerHandler
 import numpy as np
 import psutil
 import collections
@@ -52,7 +45,7 @@ class ScriptQueueStep:
         self.pd = pd
 
 
-class ScriptQueueList(collections.MutableSequence):
+class ScriptQueueList(collections.abc.MutableSequence):
     def __init__(self, oktypes, list_owner, *args):
         self.oktypes = oktypes
         self.list_owner = list_owner
@@ -129,16 +122,16 @@ class window(QtWidgets.QMainWindow):
 
     def __init__(self):
         # Get the path to the *.ui file
-        super().__init__()
+        super(window,self).__init__()
         # Load it
         this_dir = os.path.dirname(__file__)
         ui_file = os.path.join(this_dir,'pi3d_main_window.ui')
         # Load ui
-        PySide2.uic.loadUi(ui_file, self)
+        uic.loadUi(ui_file, self)
         self.show()
 
 
-class queue_gui(GUIBase):
+class queue_gui(GuiBase):
 
     update_user_script_folder_text_field_signal = pyqtSignal(str)
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
@@ -156,7 +149,10 @@ class queue_gui(GUIBase):
         # icon = QtGui.QIcon()
         # icon.addPixmap(QtGui.QPixmap(r"D:\Python\pi3diamond\qtgui\folder_icon.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
         # self.user_script_folder_pushButton.setIcon(icon)
-
+        self._mw.setObjectName("window")
+        #self._mw.resize(760, 793)
+        self._mw.setWindowOpacity(1.0)
+        self._mw.setAutoFillBackground(False)
         for name in [
             'update_user_script_folder_text_field',
             'update_selected_user_script_combo_box',
@@ -186,9 +182,10 @@ class queue_gui(GUIBase):
     def show(self):
         """ Make window visible and put it above all other windows.
         """
-        QtWidgets.QMainWindow.show(self._mw)
-        self._mw.activateWindow()
-        self._mw.raise_()
+        pass
+        #QtWidgets.QMainWindow.show(self._mw)
+        #self._mw.activateWindow()
+        #self._mw.raise_()
 
 
     def on_deactivate(self):

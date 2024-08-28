@@ -36,6 +36,7 @@ from qudi.core.connector import Connector
 #from core.util.network import netobtain
 from qudi.logic.generic_logic import GenericLogic
 import qudi.logic.misc as misc
+from qudi.hardware.swabian_instruments.timetagger_api import TT as TT
 from PySide2 import QtCore
 
 class GatedCounter(GenericLogic):
@@ -77,7 +78,8 @@ class GatedCounter(GenericLogic):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-        self._fast_counter_device = self.fastcounter()#FIXME
+        self._fast_counter_device: TT = self.fastcounter()#FIXME
+        #self._currentmeasurementlogic: CurrentMeasurementLogic = self.currentmeasurementlogic()
         #self._mcas_dict = self.mcas_holder()
         #self._pulse_generator_device = self.pulsegenerator()
         # Maybe replace with the mcas holder?

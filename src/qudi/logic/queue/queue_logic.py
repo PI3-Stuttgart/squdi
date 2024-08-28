@@ -3,32 +3,23 @@ from __future__ import print_function, absolute_import, division
 __metaclass__ = type
 
 import sys, os
-import logic.misc
 import imp
-from gui.queue.Queue import queue_gui
-
+#from gui.queue.Queue import queue_gui
 from queue import Queue
-
-#from PyQt5.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
-#from PyQt5 import QtGui
 from PySide2.QtCore import Signal as pyqtSignal
-import PySide2.uic
-import PySide2.QtWidgets
-from logic.qudip_enhanced import *
+from qudi.logic.qudip_enhanced import *
 # FIXME
-from PyQt5.QtCore import QTimer
+from PySide2.QtCore import QTimer
 from PySide2 import QtTest
 # import multi_channel_awg_seq as MCAS; reload(MCAS)
-import logic.misc as misc
+import qudi.logic.misc as misc
 import datetime
-import logging.handlers
 import os
 import pickle
 import sys
 import threading
-import time
 import traceback
-from logic.generic_logic import GenericLogic
+from qudi.logic.generic_logic import GenericLogic
 from qudi.core.connector import Connector
 import multiprocess
 import numpy as np
@@ -36,10 +27,9 @@ import logging
 
 import collections
 import importlib
-import logic.ODMR_nops as odmr; importlib.reload(odmr)
-from qudi.core.util.mutex import Mutex
-
-from logic.currentmeasurement.current_measurement import CurrentMeasurementLogic
+#import qudi.logic.ODMR_nops as odmr; importlib.reload(odmr)
+from qudi.util.mutex import Mutex
+#from qudi.logic.currentmeasurement.current_measurement import CurrentMeasurementLogic # Voltage and Current measurements
 # from logic.biaslogic import BiasLogic
 class ScriptQueueStep:
     def __init__(self, name, pd):
@@ -47,7 +37,7 @@ class ScriptQueueStep:
         self.pd = pd
 
 
-class ScriptQueueList(collections.MutableSequence):
+class ScriptQueueList(collections.abc.MutableSequence):
     def __init__(self, oktypes, list_owner, *args):
         self.oktypes = oktypes
         self.list_owner = list_owner
@@ -124,17 +114,17 @@ class queue_logic(GenericLogic):
     # declare connections
     mcas_holder = Connector(interface='McasDictHolderInterface')
     transition_tracker = Connector(interface = 'TransitionTracker') # Should be a name of the class
-    confocal = Connector('ConfocalLogic')
+    confocal = Connector(interface='ScanningProbeLogic')
     gated_counter = Connector('GatedCounter') # Should be name of the class.
-    optimizer= Connector('OptimizerLogic')
-    fastcounter = Connector(interface='TimeTaggerInterface')
-    PLE_logic= Connector("LaserScannerLogic")
-    odmr_logic= Connector("ODMRLogic_holder")
-    currentmeasurementlogic= Connector("CurrentMeasurementLogic")
+    optimizer= Connector('ScanningOptimizeLogic')
+    fastcounter = Connector(interface='TT')
+    PLE_logic= Connector(interface="PLEOptimizeScannerLogic") #only for refocuses...
+    #odmr_logic= Connector("ODMRLogic_holder")
+    #currentmeasurementlogic= Connector("CurrentMeasurementLogic")
     # biaslogic= Connector("BiasLogic")
-    poimanagerlogic = Connector('PoiManagerLogic')
-    powerstabilization_logic = Connector("PowerStabilizationLogic")
-    counterlogic1=Connector("CounterLogic")
+    #poimanagerlogic = Connector('PoiManagerLogic')
+    #powerstabilization_logic = Connector("PowerStabilizationLogic")
+    counterlogic1=Connector(interface="TimeTaggerLogic")
 
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
@@ -164,14 +154,14 @@ class queue_logic(GenericLogic):
         self._gated_counter = self.gated_counter()
         self._optimizer = self.optimizer()
         self._PLE_logic = self.PLE_logic()
-        self._ODMR_logic = self.odmr_logic()
-        self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic() ### : is important for clicking through.
+        #self._ODMR_logic = self.odmr_logic()
+        #self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic() ### : is important for clicking through.
         # self._biaslogic:BiasLogic = self.biaslogic()
-        self._powerstabilization_logic = self.powerstabilization_logic() ##: TODO - here we can recover it with our own code
-        self._poimanagerlogic = self.poimanagerlogic() # :TODO - this is legacy poi manager, but we can use the new one.
+        #self._powerstabilization_logic = self.powerstabilization_logic() ##: TODO - here we can recover it with our own code
+        #self._poimanagerlogic = self.poimanagerlogic() # :TODO - this is legacy poi manager, but we can use the new one.
         self._counter=self.counterlogic1() #
         self._fast_counter_device = self.fastcounter()  # FIXME
-        self.create_odmr()  #only logic (no gui)
+        #self.create_odmr()  #only logic (no gui)
         self.init_run()
         #self.write_standard_awg_sequences()
         self._confocal = self.confocal()
@@ -455,6 +445,7 @@ class queue_logic(GenericLogic):
 
     def add_rco(self):
         folder = r"C:\src\qudi\notebooks\UserScripts"
+        print('I am here', 'who has called me?')
         name = 'refocus_confocal_odmr'
         pd = self.user_script_params
         self.add_to_queue(name, pd, folder)
