@@ -5,30 +5,25 @@ import warnings
 import datetime
 import time
 import shutil
-
-import logic.misc as misc
+import qudi.logic.misc as misc
 from importlib import reload
 from numbers import Number
 import scipy.interpolate
 import scipy.optimize
-from logic.qudip_enhanced.nv_hamilton import NVHam
-from logic.qudip_enhanced import sort_eigenvalues_standard_basis
-from logic.qudip_enhanced.analyze import flipped_spin_numbers, single_quantum_transitions_non_hf_spins, get_transition_frequency
-import logic.qudip_enhanced.lmfit_models
+from qudi.logic.qudip_enhanced.nv_hamilton import NVHam
+from qudi.logic.qudip_enhanced import sort_eigenvalues_standard_basis
+from qudi.logic.qudip_enhanced.analyze import flipped_spin_numbers, single_quantum_transitions_non_hf_spins, get_transition_frequency
+import qudi.logic.qudip_enhanced.lmfit_models
 from itertools import product
 import numpy as np
 import pandas as pd
 import os
-#from pi3diamond import pi3d
 import collections
-#import matplotlib.pyplot as plt
 import logging
 
 from PySide2.QtWidgets import QTableWidgetItem, QMainWindow
 from PySide2.QtCore import Signal as pyqtSignal
 #from gui.qtgui import transition_tracker_gui
-
-from PySide2.uic import compileUi
 
 from qutip import *
 import numpy as np
@@ -43,20 +38,18 @@ import time
 import datetime
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-
 from qudi.core.connector import Connector
 #from core.configoption import ConfigOption
-from logic.generic_logic import GenericLogic
-from core.util.mutex import Mutex
+from qudi.logic.generic_logic import GenericLogic
+#from core.util.mutex import Mutex
 import shutil
-
 import lmfit
 
 ####################################################################################################################
 # single values
 ####################################################################################################################
-app_dir = r'C:/src/qudi'
-app_dir= r'C:\Users\yy3\git\squdi\src\qudi'
+###### app_dir = r'C:/src/qudi'
+app_dir= r'C:/Users/yy3/git/squdi/src/qudi'
 
 log_dir = '{}/log/'.format(app_dir)
 log_archive_dir = '{}/log/archive/'.format(app_dir)
@@ -559,9 +552,9 @@ class TransitionTracker(GenericLogic):
     #transition_tracker_gui = Connector(interface="transition_tracker_gui")
     mcas_holder = Connector(interface='McasDictHolderInterface') #why?
     #rabi_logic= Connector(interface='RabiLogic') #why? we do it via nuclear ops.
-    odmr_logic= Connector(interface='ODMRLogic_holder') #ok for refocus.
-    ple_logic= Connector(interface='LaserScannerLogic') #ok for refocus
-    powerstabilization_logic= Connector(interface='PowerStabilizationLogic') #ok for refocus
+    #odmr_logic= Connector(interface='ODMRLogic_holder') #ok for refocus.
+    #ple_logic= Connector(interface='LaserScannerLogic') #ok for refocus
+    #powerstabilization_logic= Connector(interface='PowerStabilizationLogic') #ok for refocus
     
     update_tt_nuclear_gui = pyqtSignal()
     update_tt_electron_gui = pyqtSignal() #is it connected?
@@ -573,9 +566,9 @@ class TransitionTracker(GenericLogic):
     def on_activate(self):
         self.load_current_spin()
         self._awg = self.mcas_holder()
-        self._odmr_logic= self.odmr_logic()
-        self._ple_logic= self.ple_logic()
-        self._powerstabilization_logic= self.powerstabilization_logic()
+        #self._odmr_logic= self.odmr_logic()
+        #self._ple_logic= self.ple_logic()
+        #self._powerstabilization_logic= self.powerstabilization_logic()
     
         self.connect_signals()  # todo
         # title = '' if title is None else title
@@ -612,7 +605,7 @@ class TransitionTracker(GenericLogic):
 
     def load_current_spin(self):
         File=r"log\transition_tracker_log\current_n_spins.csv"
-        spins= np.loadtxt(File,dtype=str).tolist()
+        spins= np.loadtxt(os.path.join(app_dir,File),dtype=str).tolist()
         if len(spins)>0:
             for spin in spins.split(','):
                 spin=str(spin)
@@ -631,8 +624,8 @@ class TransitionTracker(GenericLogic):
                 return
             spins.append(spin_name.replace("si","Si").replace("c","C").replace("MHz",""))
 
-        folder=r"log\transition_tracker_log"
-        File=folder+r"\current_n_spins.csv"
+        folder=os.path.join(app_dir,r"log\transition_tracker_log")
+        File=os.path.join(folder,r"\current_n_spins.csv")
         np.savetxt(File,spins,fmt="%s")
         for i,spin_name in enumerate(spins):
             hf_p_file=folder+r"\hf_"+spin_name+".dat"
@@ -658,7 +651,7 @@ class TransitionTracker(GenericLogic):
         script_folder=r"C:\src\qudi\notebooks\UserScripts"
         shutil.copytree(os.path.join(script_folder,"8MHz"),os.path.join(script_folder,f"{str(spin_names).replace('.',',')}"[2:-2]))
 
-        print("you need to retart qudi for the transition tracker to update")
+        print("you need to restart qudi for the transition tracker to update")
 
     def do_nothing(self,*args,**kwargs):
         print("done nothing\n", "args are:\n",args)
@@ -786,9 +779,10 @@ class TransitionTracker(GenericLogic):
         #self.current_local_oscillator_freq=pi_dur
 
     def connect_signals(self):
+        pass
         #self._rabi_logic.sigFitPerformed.connect(self.update_rabi)
-        self._odmr_logic.sigFitPerformed.connect(self.update_ODMR)
-        self._ple_logic.sigFitPerformed.connect(self.update_ple)
+        #self._odmr_logic.sigFitPerformed.connect(self.update_ODMR)
+        #self._ple_logic.sigFitPerformed.connect(self.update_ple)
         #self._powerstabilization_logic.SigPowerCalibrationFinished.connect(self.update_power_calibration)
 
         #self.update_tt_nuclear_gui.connect(self.update_gui_nuclear)
@@ -887,7 +881,8 @@ class TransitionTracker(GenericLogic):
         for key, val in self.ntd.items():
             self.transition(key).current_frequency = -get_transition_frequency(h_diag=self.h_diag, dims=self.nvham.dims, 
                                                                                transition=val)
-        self.update_tt_nuclear_gui.emit() #connect to gui.
+        self.update_tt_nuclear_gui.emit() #connected to gui.
+        print('emission of the nuclear tt signal')
 
     def load_rabi_parameters(self):
         self.rabi_parameters = dict()
@@ -1043,7 +1038,8 @@ class TransitionTracker(GenericLogic):
                           'ple_A2_fit_params','ple_A1_fit_params','interferometer_fit_params','interferometer_history']: #needs "ple_Ex", but where is this "ple_Ex" called?
             if not hasattr(self, attr_name):
                 return
-        self.update_tt_electron_gui.emit() #connect to the gui
+        self.update_tt_electron_gui.emit() #connected to the gui
+        print('emission of the electron signal')
         self.set_h_diag()
         if not hasattr(self, 'ntd'):
             return

@@ -17,20 +17,20 @@ from qudi.core.module import GuiBase
 from qudi.util.colordefs import QudiPalettePale as palette
 from qudi.util.colordefs import QudiPalette as palettedark
 from PySide2.QtWidgets import QTableWidgetItem
-from qudi.util import uic
 from PySide2 import QtCore, QtGui, QtWidgets
+from qudi.util import uic
 
 class TransitionTrackerMainWindow(QtWidgets.QMainWindow):
     """ Create the Main Window based on the *.ui file. """
 
     def __init__(self):
         # Get the path to the *.ui file
-        super(TransitionTrackerMainWindow).__init__()
+        super().__init__()
         # Load it
         this_dir = os.path.dirname(__file__)
         ui_file = os.path.join(this_dir, 'transition_tracker.ui')
         # Load it
-        uic.loadUi(ui_file, self)
+        uic.loadUi(ui_file, self) #FIXME here is the error somehow now...
         self.show()
 
 class TransitionTrackerGui(GuiBase):
@@ -41,10 +41,10 @@ class TransitionTrackerGui(GuiBase):
         #self._mw = TransitionTrackerMainWindow()
         #self.show()
 
-    def on_activate(self):
-        
-        self._transition_tracker = self.transition_tracker_logic()
+    def on_activate(self, e= None):
+
         self._mw = TransitionTrackerMainWindow()
+        self._transition_tracker = self.transition_tracker_logic()
         self._mw.setObjectName("window")
         self._mw.resize(760, 793)
         self._mw.setWindowOpacity(1.0)
@@ -149,6 +149,8 @@ class TransitionTrackerGui(GuiBase):
         # self.ple_A1_label.setObjectName("ple_A1_label")
         self._transition_tracker.update_tt_nuclear_gui.connect(self.update_gui_nuclear)
         self._transition_tracker.update_tt_electron_gui.connect(self.update_gui_electron)
+        self._transition_tracker.update_tt_nuclear_gui.emit()
+        self._transition_tracker.update_tt_electron_gui.emit()
 
         #self.retranslateUi(self._mw)
         #QtCore.QMetaObject.connectSlotsByName(self._mw)
@@ -168,8 +170,8 @@ class TransitionTrackerGui(GuiBase):
     def update_gui_electron(self):
         self._mw.current_local_oscillator_freq_text_field.setText("{:.10f}".format(self._transition_tracker.current_local_oscillator_freq))
         self._mw.current_local_oscillator_freq_p1_text_field.setText("{:.10f}".format(self._transition_tracker.current_local_oscillator_freq_p1))
-        self._mw.mw_mixing_frequency_text_field.setText("{:.10f}".format(self._transition_tracker.mw_mixing_frequency))
-        self._mw.mw_mixing_frequency_p1_text_field.setText("{:.10f}".format(self._transition_tracker.mw_mixing_frequency_p1))
+        self._mw.mw_mixing_frequency_text_field.setText("{:.10f}".format(self._transition_tracker.mw_mixing_frequency_C))
+        self._mw.mw_mixing_frequency_p1_text_field.setText("{:.10f}".format(self._transition_tracker.mw_mixing_frequency_R))
         self._mw.mw_transition_frequency_text_field.setText("{:.10f}".format(self._transition_tracker.mw_transition_frequency))
         self._mw.mw_transition_frequency_p1_text_field.setText("{:.10f}".format(self._transition_tracker.mw_transition_frequency_p1))
         self._mw.zero_field_splitting_text_field.setText("{:.10f}".format(self._transition_tracker.zero_field_splitting))
