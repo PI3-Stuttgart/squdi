@@ -8,47 +8,43 @@
 import datetime
 import numpy as np
 import os
-import pyqtgraph as pg
-import pyqtgraph.exporters
+#import pyqtgraph as pg
+#import pyqtgraph.exporters
 
-from core.connector import Connector
-from core.util import units
-from gui.guibase import GUIBase
-from gui.colordefs import QudiPalettePale as palette
-from gui.fitsettings import FitSettingsDialog, FitSettingsComboBox
-from qtpy import QtWidgets
-from PyQt5.QtWidgets import QTableWidgetItem
-from qtpy import QtCore
-from qtpy import uic
-from PyQt5 import QtCore, QtGui, QtWidgets
+from qudi.core.connector import Connector
+#from core.util import units
+from qudi.core.module import GuiBase
+from qudi.util.colordefs import QudiPalettePale as palette
+from qudi.util.colordefs import QudiPalette as palettedark
+from PySide2.QtWidgets import QTableWidgetItem
+from qudi.util import uic
+from PySide2 import QtCore, QtGui, QtWidgets
 
-class window(QtWidgets.QMainWindow):
+class TransitionTrackerMainWindow(QtWidgets.QMainWindow):
     """ Create the Main Window based on the *.ui file. """
 
     def __init__(self):
         # Get the path to the *.ui file
-        super().__init__()
+        super(TransitionTrackerMainWindow).__init__()
         # Load it
         this_dir = os.path.dirname(__file__)
         ui_file = os.path.join(this_dir, 'transition_tracker.ui')
-
         # Load it
-
         uic.loadUi(ui_file, self)
         self.show()
 
-class TransitionTrackerGui(GUIBase):
+class TransitionTrackerGui(GuiBase):
     transition_tracker_logic = Connector(interface="TransitionTracker") #class name
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
-        self._mw = window()
+        #self._mw = TransitionTrackerMainWindow()
         #self.show()
 
     def on_activate(self):
         
         self._transition_tracker = self.transition_tracker_logic()
-
+        self._mw = TransitionTrackerMainWindow()
         self._mw.setObjectName("window")
         self._mw.resize(760, 793)
         self._mw.setWindowOpacity(1.0)

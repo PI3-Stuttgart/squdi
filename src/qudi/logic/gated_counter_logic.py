@@ -45,7 +45,7 @@ class GatedCounter(GenericLogic):
     # fastcounter = Connector(interface='TimeTaggerInterface')
     # add possible signals here
     # Needed a connection to the queue as well... connection to mcas?
-    fastcounter = Connector(interface='TimeTaggerInterface')
+    fastcounter = Connector(interface='TT', name = 'fastcounter')
     mcas_holder = Connector(interface='McasDictHolderInterface')
     sigHistogramUpdated = QtCore.Signal()
     sigMeasurementFinished = QtCore.Signal()
@@ -87,6 +87,7 @@ class GatedCounter(GenericLogic):
         #self.hist_data = None
         #self.trace = None
         #self.sigMeasurementFinished.connect(self.ssr_measurement_analysis)# is it?
+        self._gui = None
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.

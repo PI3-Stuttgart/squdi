@@ -141,7 +141,7 @@ class TT(Base):
             self.tagger.setConditionalFilter(filtered=[filtered_channels], trigger=self.apdChans)
         return Dump(self.tagger, dumpPath, self.maxDumps,\
                                     self.allChans)
-    
+
     #@remote_tagger
     def countrate(self, channels=None):
         """
