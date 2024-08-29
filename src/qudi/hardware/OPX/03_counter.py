@@ -35,8 +35,8 @@ with program() as counter:
         # Loop over the chunks to measure for the total integration time
         with for_(n, 0, n < n_count, n + 1):
             # Play the laser pulse...
-            # play("laser_ON", "AOM_green", duration=single_integration_time_cycles)
-            # ... while measuring the events from the SPCM
+            play("laser_ON", "Laser_520", duration=single_integration_time_ns)
+            # ... while measuring the events from the SPC
             measure(
                 "readout",
                 "SPCM1",

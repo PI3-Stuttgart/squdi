@@ -1,13 +1,12 @@
-from __future__ import print_function, absolute_import, division
-
-__metaclass__ = type
+#from __future__ import print_function, absolute_import, division
+#__metaclass__ = type
 from PySide2.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
-from PySide2 import QtGui
+#from PySide2 import QtGui
 from PySide2.QtCore import Signal as pyqtSignal
-import qudi.util.uic as uic
+
 #from logic.qudip_enhanced import *
 #import importlib
-setup = False
+#setup = False
 #import multi_channel_awg_seq as MCAS; importlib.reload(MCAS)
 #import sip
 
@@ -22,22 +21,23 @@ setup = False
 #except ValueError as e:
 #    raise RuntimeError('Could not set API version (%s): did you import PyQt4 directly?' % e)
 
-import datetime
-import logging
-import logging.handlers
+#import datetime
+#import logging
+#import logging.handlers
 import os
-import pickle
-import shutil
+#import pickle
+#import shutil
 import sys
-import threading
-import time
+#import threading
+#import time
 from qudi.core.connector import Connector
 from qudi.core.module import GuiBase
 import traceback
-import numpy as np
-import psutil
+#import numpy as np
+#import psutil
 import collections
-from PySide2 import QtCore, QtWidgets
+from PySide2 import QtWidgets
+import qudi.util.uic as uic
 
 class ScriptQueueStep:
     def __init__(self, name, pd):
@@ -117,17 +117,21 @@ class ScriptQueueList(collections.abc.MutableSequence):
     def __repr__(self):
         return str(self.list)
 
-class window(QtWidgets.QMainWindow):
+class QueueMainWindow(QtWidgets.QMainWindow):
     """ Create the Main Window based on the *.ui file. """
 
     def __init__(self):
         # Get the path to the *.ui file
-        super(window,self).__init__()
+        super().__init__()
         # Load it
         this_dir = os.path.dirname(__file__)
         ui_file = os.path.join(this_dir,'pi3d_main_window.ui')
         # Load ui
         uic.loadUi(ui_file, self)
+
+        self.setCentralWidget(self.widget)
+        self.hbox = QtWidgets.QHBoxLayout()
+        self.centralWidget().setLayout(self.hbox)
         self.show()
 
 
@@ -175,17 +179,17 @@ class queue_gui(GuiBase):
         self._queue_logic.update_queue_list.connect(self.update_script_queue_table_data)
 
     def on_activate(self):
-        self._mw = window()
+        self._mw = QueueMainWindow()
         self._queue_logic = self.queue_logic()
         self.init_gui()
 
     def show(self):
         """ Make window visible and put it above all other windows.
         """
-        pass
-        #QtWidgets.QMainWindow.show(self._mw)
-        #self._mw.activateWindow()
-        #self._mw.raise_()
+        #pass
+        QtWidgets.QMainWindow.show(self._mw)
+        self._mw.activateWindow()
+        self._mw.raise_()
 
 
     def on_deactivate(self):
