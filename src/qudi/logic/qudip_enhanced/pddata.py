@@ -480,7 +480,10 @@ class Data:
         if len(self.df) == 0:
             self._df = df_append
         else:
-            self._df = self.df.append(df_append, ignore_index=True)
+            #self._df = self.df.append(df_append, ignore_index=True) - this is deprecated since PANDAS2.0
+            #self._df =self.df.loc[len(self.df)] = df_append - solution 1.
+            self._df = self.df._append(df_append, ignore_index=True) # solution 2. backwards compatible, but not reccommended.https://stackoverflow.com/questions/75956209/error-dataframe-object-has-no-attribute-append
+
         self.check_integrity()
 
     def set_observations(self, l, start_idx=None):

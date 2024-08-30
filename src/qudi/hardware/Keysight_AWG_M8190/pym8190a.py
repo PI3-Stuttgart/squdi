@@ -434,6 +434,16 @@ class MultiChSeq:
                         #print(self.sequence) #UNFUG
                         self.mcas_dict.awgs[awg_str].setSequence(sequence, triggered=True,
                                                                  run=False, loops = 1) ## This have to be implemented now
+
+                elif awg_str is 'opx':
+                    if awg_str in self.ch_dict:
+                        sequence = self.sequences[awg_str][ch] # In green md there is no awg_str == ps.
+                        sequence = self.mcas_dict.awgs[awg_str].compile_qua(sequence)
+                        #self.sequence = sequence #UNFUG
+                        #print(self.sequence) #UNFUG
+                        self.mcas_dict.awgs[awg_str].setSequence(sequence, triggered=True,
+                                                                 run=False, loops = 1) ## This have to be implemented now
+
                 else:
                     if ch in self.ch_dict.get(awg_str, []):
                         sequence = self.sequences[awg_str][ch]
@@ -521,9 +531,9 @@ if __name__ == '__main__':
     #     s.asc(length_mus=400, pd128m2=dict(type='constant', constant_value=-.1))
 
 
-    s = pym8190a.pym8190a.MultiChSeq(seq_name='test', ch_dict={'2g': [1,2]})
-    s.start_new_segment('s1')
-    s.asc(length_mus=400, pd128m2=dict(type='constant', constant_value=.1))
+    s = pym8190a.pym8190a.MultiChSeq(seq_name='test', ch_dict={'2g': [1,2], 'ps':[1,2,3], 'opx':[1,2,3,2,3]})
+    s.start_new_segment('s1', loop_count=1)
+    s.asc(length_mus=400, pd128m2=dict(type='constant', constant_value=.1), green = True)
     s.asc(length_mus=400, pd128m2=dict(type='wait', frequencies=[2.5], amplitudes=[.8]))
     s.asc(length_mus=400, pd128m2=dict(type='constant', constant_value=-.1))
     md['test'] = s
