@@ -35,16 +35,16 @@ with program() as counter:
         # Loop over the chunks to measure for the total integration time
         with for_(n, 0, n < n_count, n + 1):
             # Play the laser pulse...
-            play("laser_ON", "Laser_520", duration=single_integration_time_ns)
+            play(pulse="active",element="Laser_520",duration=single_integration_time_ns)
             # ... while measuring the events from the SPC
             measure(
-                "readout",
+                pulse="readout",
                 "SPCM1",
                 None,
-                time_tagging.analog(times, single_integration_time_ns, counts),
+                time_tagging.analog(target=times, single_integration_time_ns, counts),
             )
             # Increment the received counts
-            assign(total_counts, total_counts + counts)
+            assign(total_counts, _exp=total_counts + counts)
         # Save the counts
         save(total_counts, counts_st)
         assign(total_counts, 0)

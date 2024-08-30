@@ -47,8 +47,7 @@ long_meas_len_1 = 5_000 * u.ns
 initialization_len_2 = 3000 * u.ns
 meas_len_2 = 500 * u.ns
 long_meas_len_2 = 5_000 * u.ns
-
-initialization_len_laser = 3_000 * u.ns
+initialization_len_laser: float = 3_000 * u.ns
 
 AOM_power_len = 80 * u.ns
 
@@ -134,12 +133,15 @@ config = {
                 },  # AOM Laser 620 nm (Red)
             },
             "digital_outputs": {
-                1: {},  # indicator
+                1: {},  # indicator - TBD what is this...
+                2: {},  # Master - slave trigger RESERVED for SETUP#2.
+                3: {},  # Gate Trigger - to the timetagger...
+                4: {},  # PPG trigger RESERVED
+                5: {},  # indicator RESERVED for some clock...
                 6: {},  # Laser 520 nm (Green)
-                4: {},  # indicator
                 7: {},  # Laser 450 nm (Blue)
                 8: {},  # AOM Laser 520 nm (Green)
-                9: {},  # AOM Laser 575 nm (Yellow)
+                9: {},  # AOM Laser 575 nm (Yellow) / or AOM2 for the 620 nm..
                 10: {},  # AOM Laser 620 nm (Red)
             },
             "analog_inputs": {
@@ -167,13 +169,14 @@ config = {
                 "y180": "y180_pulse",
             },
         },
-        # "RF": {
-        #     "singleInput": {"port": ("con1", 3)},
-        #     "intermediate_frequency": rf_frequency,
-        #     "operations": {
-        #         "const": "const_pulse_single",
-        #     },
-        # },
+        "RF": {
+            "singleInput": {"port": ("con1", 3)},
+            "intermediate_frequency": rf_frequency,
+            "operations": {
+                "const": "const_pulse_single",
+                # "x180": "x180_pulse",
+            },
+        },
         "Laser_450": {
             "digitalInputs": {
                 "marker": {
@@ -184,6 +187,18 @@ config = {
             },
             "operations": {
                 "active": "laser_ON",
+            },
+        },
+        "Gate_Trigger": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 3),
+                    "delay": 0,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "trigit": "laser_ON",
             },
         },
         "Laser_450_power": {
