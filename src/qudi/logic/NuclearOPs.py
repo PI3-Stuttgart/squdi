@@ -13,7 +13,7 @@ else:
 import importlib
 import zipfile
 import time
-import logic.misc as misc
+import qudi.logic.misc as misc
 importlib.reload(misc)
 import traceback
 import datetime
@@ -22,26 +22,19 @@ import os
 import numpy as np
 import pandas as pd
 import logging
-#from PyQt5 import QtTest
 from PySide2 import QtTest
-from PySide2 import QtCore, QtWidgets, QtGui
-#from qtpy import QtCore
 import collections
 
 from numbers import Number
-from logic.generic_logic import GenericLogic
-from qudi.core.connector import Connector
 #TODO replace import with a connector to that
-from logic.qudip_enhanced.data_generation import DataGeneration
-from logic.qudip_enhanced.util import ret_property_list_element
-from logic.qudip_enhanced import save_qutip_enhanced
+from qudi.logic.qudip_enhanced.data_generation import DataGeneration
+from qudi.logic.qudip_enhanced.util import ret_property_list_element
+from qudi.logic.qudip_enhanced import save_qutip_enhanced
 
 from qudi.util.mutex import Mutex
-import logic.qudip_enhanced.data_handling as data_handling
+import qudi.logic.qudip_enhanced.data_handling as data_handling
 import base64
 import hashlib
-
-#import qutip_enhanced.pddata
 from collections import OrderedDict
 
 class NuclearOPs(DataGeneration):

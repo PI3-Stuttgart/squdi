@@ -887,10 +887,22 @@ class TransitionTracker(GenericLogic):
     def load_rabi_parameters(self):
         self.rabi_parameters = dict()
         for f in os.listdir(self.log_folder):
-            if 'e_rabi_ou{:.0f}deg'.format(1000*self._awg.mcas_dict.awgs['2g'].ch[1].output_amplitude) in f:
-                if len(f.split('.')) > 2:
-                    raise Exception('Error: floating point values or any other reason to have points in the filename other than for the file extension may not a good idea. {}'.format(f))
-                self.rabi_parameters[f.split('.')[0]] = RabiParametersStatic(filepath=os.path.join(self.log_folder, f), transition_name='e_rabi')
+            if hasattr(self._awg.mcas_dict, 'awgs'):
+                if 'e_rabi_ou{:.0f}deg'.format(1000*self._awg.mcas_dict.awgs['2g'].ch[1].output_amplitude) in f:
+                    if len(f.split('.')) > 2:
+                        raise Exception('Error: floating point values or any other reason to have points in the '
+                                        'filename other than for the file extension may not a good idea. {}'.format(f))
+                    self.rabi_parameters[f.split('.')[0]] = RabiParametersStatic(
+                        filepath=os.path.join(self.log_folder, f), transition_name='e_rabi')
+            else:
+                if 'e_rabi_ou{:.0f}deg'.format(1000 * 0.35) in f: ###Here it is hardcoded 350 mV of Quantum Machine.
+                    if len(f.split('.')) > 2:
+                        raise Exception(
+                            'Error: floating point values or any other reason to have points in the '
+                            'filename other than for the file extension may not a good idea. {}'.format(
+                                f))
+                    self.rabi_parameters[f.split('.')[0]] = RabiParametersStatic(
+                        filepath=os.path.join(self.log_folder, f), transition_name='e_rabi')
         for t in self.transitions:
             if any([n in t.name for n in ['13c13', '13c6', '13c-5', '13c-6']]) and not 'ms0' in t.name:
                 t_name = "13c ms0"

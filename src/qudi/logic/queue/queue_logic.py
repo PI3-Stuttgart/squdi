@@ -146,6 +146,7 @@ class queue_logic(GenericLogic):
         super(queue_logic, self).__init__(config=config, **kwargs)
         self._threadlock=Mutex()
         self.script_history = []
+        self._user_script_folder = None
 
     def on_activate(self):
 
@@ -185,7 +186,7 @@ class queue_logic(GenericLogic):
     #     self._timetagger = TimeTaggerHandler.init_timetagger()
 
     def init_run(self):
-        self.user_script_folder = r"C:/src/qudi/notebooks/userscripts/electron_t2"
+        self.user_script_folder = r"C:/src/qudi/notebooks/UserScripts/electron_t2"
         self._script_queue = ScriptQueueList(oktypes=(ScriptQueueStep), list_owner=self)
         self.q = Queue() # use connector
         self.run_thread()
@@ -420,12 +421,14 @@ class queue_logic(GenericLogic):
     @user_script_folder.setter
     def user_script_folder(self, val):
         if os.path.isdir(val):
+            print(val, 'is a current folder opened for scripts...')
             self._user_script_folder = val
             self.set_user_script_list()
             #This now is done in gui automatically.
             #if hasattr(self, '_gui'):
                 #self.gui.update_user_script_folder_text_field(val)
-
+        else:
+            print(val, 'not a valid dir, cant open it right now')
     def add_to_queue(self, name=None, pd=None, folder=None):
         #self.confocal.counter_state = 'idle'
         #self.md.stop_awgs()
@@ -503,7 +506,7 @@ class queue_logic(GenericLogic):
                                                  'currently_unused',
                                                  ".idea",
                                                  ".hg",
-                                                 'userscripts',
+                                                 'UserScripts',
                                                  'log',
                                                  'notebooks' #FIXME - include logic, explode heavy stuff.
                                                  ]
