@@ -120,7 +120,8 @@ class ScanningOptimizeLogic(LogicBase):
     _scan_frequency = StatusVar(name='scan_frequency', default=None)
     _scan_range = StatusVar(name='scan_range', default=None)
     _scan_resolution = StatusVar(name='scan_resolution', default=None)
-
+    _delay_next_sequence_step = 0
+    
     _backwards_line_resolution = ConfigOption(name='backwards_line_resolution', default=20)
     do_get_max_from_spline = True
     _optimize_spline_options = {
@@ -411,6 +412,7 @@ class ScanningOptimizeLogic(LogicBase):
             worst_case_distance = (self.scan_range['x']**2 + self.scan_range['y']**2 + self.scan_range['z']**2)**0.5
             sleep_time = 2 * worst_case_distance/self._max_move_velocity + 0.1
         time.sleep(sleep_time)
+        time.sleep(self._delay_next_sequence_step)
         with self._thread_lock:
 
             if self.module_state() == 'idle':
