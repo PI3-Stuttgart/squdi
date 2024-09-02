@@ -733,6 +733,6 @@ class OptimizerScanSequence():
         # if remove_1d_in_2d:
         #     out_seqs = remove_1d_in_2d_axes_dupl(out_seqs)
 
-        out_seqs = [[("x", "y"), "z"], [("x", "y")], ["x", "y", "z"], ["x", "y"]]
+        out_seqs = [[("x", "y"), "z"], [("x", "y")], ['x'], ['y'], ['z'], ["x", "y", "z"], ["x", "y"]]
 
         return out_seqs

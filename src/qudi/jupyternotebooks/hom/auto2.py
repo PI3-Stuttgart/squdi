@@ -96,7 +96,9 @@ class MeasurementsBase:
         self.opti_counts = {2:np.inf,
                             3: np.inf}
         self._attodry_channel = 3
+        self.do_realign = False
         self._bf_channel = 2
+        self._green_fry_power = 5e3
         self._update_opti = True
         self.motordriver_pi3.current_motor = 0
         self.motordriver_pi3.motor_position = self.perpendicular_position
@@ -120,7 +122,13 @@ class MeasurementsBase:
     def get_remote_counts(self, channels=[1], num_samples = 5):
         cts = []
         for channel in channels:
-            cc = self.timetaggerlogic_remote.trace_data_avg[channel][1][-num_samples:].mean()
+            try:
+                cc = self.timetaggerlogic_remote.trace_data_avg[channel][1][-num_samples:].mean()
+                
+            except:
+                print("Failed getting counts")
+                time.sleep(0.5)
+                cc = self.timetaggerlogic_remote.trace_data_avg[channel][1][-num_samples:].mean()
             cts.append(float(cc))
         return np.array(cts)
 
@@ -135,7 +143,7 @@ class MeasurementsBase:
             self.poi_manager_logic_remote._optimizelogic().set_optimize_settings(
                     {
                         'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
-                        'data_channel': 'APD1',
+                        'data_channel': self._remote_scanner_channels['Off-res'],
                         'scan_sequence' : ('xy', 'z'),
                         'scan_range': {'z': 1.2e-06, 'x': 0.6e-06, 'y': 0.6e-06},
                         'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
@@ -353,8 +361,9 @@ class StarkHOM(MeasurementsBase):
         self.setpoint_story = []
         self.counts_story = []
         self.iteration = 0
-        self._refocus_threshold = 0.75
-
+        self._refocus_threshold = 0.8
+        self._remote_scanner_channels = {'PLE' : 'APD2',
+                                         'Off-res': 'APD1'}
         # Initialize timers
         self.timer = QTimer()
         self.timer.timeout.connect(self.refocus_and_realign)
@@ -408,32 +417,34 @@ class StarkHOM(MeasurementsBase):
             #Check the position didn't drift :
             self.polarization_is_parallel = False
             #Check that the counts are not drifted
-            cur_counts = self.get_counts(num_samples=1000, channels=[self._attodry_channel]).sum()
+            cur_counts = self.get_counts(num_samples=50, channels=[self._attodry_channel]).sum()
 
-            if self.current_measurement == 'hom':
-                
-                self.set_green_power('atto3', 5e3)
-                
-                self.align_resonances(dv=0.2, steps=40)
-                
-                self.setpoint_story.append(self.ao_electrodes.setpoint)
+            
 
 
             if cur_counts < self.opti_counts[self._attodry_channel] * self._refocus_threshold:
                 self.refocus_resonantly(remote=True)
+                self.refocus(remote=True, local=True)
             elif cur_counts > self.opti_counts[self._attodry_channel]:
                 print("Counts INCREASED....")
+
             
-            
-            self.measurement_mode('Off-res')
             time.sleep(2)
             #Check that the 
-            cur_counts = self.get_counts(num_samples=1000, channels=[self._bf_channel]).sum()
+            cur_counts = self.get_counts(num_samples=50, channels=[self._bf_channel]).sum()
             if cur_counts < self.opti_counts[self._bf_channel] * self._refocus_threshold:
                 self.refocus(local=True, remote=False)
             elif cur_counts > self.opti_counts[self._bf_channel]:
                 print("Counts INCREASED....")
             time.sleep(0.2)
+
+            if self.current_measurement == 'hom':
+                if self.do_realign:
+                    self.align_resonances(dv=0.3, steps=40)
+                    
+                    self.setpoint_story.append(self.ao_electrodes.setpoint)
+                    
+            self.measurement_mode('Off-res')
 
         if self.current_measurement == 'hom':
             
@@ -474,11 +485,14 @@ class StarkHOM(MeasurementsBase):
         self.iteration = self.iteration + 1
 
         if self._update_opti:
+            self.polarization_is_parallel = False
             time.sleep(10)
             #Let the atto3 settle
-            atto3, bf = self.get_counts(num_samples=1000, channels=[self._attodry_channel, self._bf_channel])
+            atto3, bf = self.get_counts(num_samples=50, channels=[self._attodry_channel, self._bf_channel])
             self.opti_counts[self._bf_channel] = bf
             self.opti_counts[self._attodry_channel] = atto3
+
+            self.polarization_is_parallel = True
         
         self.elapsed_timer.start()
         
@@ -552,12 +566,14 @@ class StarkHOM(MeasurementsBase):
             self.poi_manager_logic_remote._optimizelogic().set_optimize_settings(
                             {
                                 'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
-                                'data_channel': 'APD3',
+                                'data_channel': self._remote_scanner_channels['PLE'],
                                 'scan_sequence' : ('xy', 'z'),
                                 'scan_range': {'z': 1.2e-06, 'x': 1.2e-06, 'y': 1.2e-06},
                                 'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
                             }
                             )
+            
+
             self.poi_manager_logic_remote._optimizelogic().start_optimize()
             
             while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
@@ -685,7 +701,9 @@ class StarkHOM(MeasurementsBase):
 
 
 
-    def align_resonances(self, dv=0.3, steps=30, offset=0, align_iter = 2):
+    def align_resonances(self, dv=0.3, steps=30, offset=0, align_iter = 3):
+        self.measurement_mode('PLE')
+        self.set_green_power('atto3', self._green_fry_power)
         current_save_folder = os.path.join(self.folder_save, 
                                                 self.current_measurement)
         res = self.do_ple_scan(lines=1, 
@@ -695,6 +713,14 @@ class StarkHOM(MeasurementsBase):
 
         self.save_ple(tag=f'before_E_refocus_{self.iteration}', poi_name='', folder_name=current_save_folder) 
         
+        if offset > 0 :
+            self.go_to_ple_target(target=res.best_values['center'] + offset)
+
+            # res = self.do_ple_scan(lines=1, 
+            #                 in_range = self.laser_scanner_logic.scan_ranges["a"],
+            #                 channel = 'APD4')
+            
+            # self.go_to_ple_target(target=res.best_values['center'])
 
         # TODO: add the line switching to the required channel ('APD1')
         for i in range(align_iter):
@@ -718,7 +744,7 @@ class StarkHOM(MeasurementsBase):
             # optimal_setpoint = find_lorentzian_center(setpoints, counts)
             
             # Set the setpoint to the center of the Lorentzian plus any offset
-            self.ao_electrodes.setpoint = optimal_setpoint + offset
+            self.ao_electrodes.setpoint = optimal_setpoint
 
         res = self.do_ple_scan(lines=1, 
                             in_range = self.laser_scanner_logic.scan_ranges["a"],
