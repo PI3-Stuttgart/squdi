@@ -24,6 +24,8 @@ import pandas as pd
 import logging
 from PySide2 import QtTest
 import collections
+from qm import SimulationConfig
+simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
 
 from numbers import Number
 #TODO replace import with a connector to that
@@ -162,9 +164,6 @@ class NuclearOPs(DataGeneration):
                             zpl_counters.append(name)
 
                 if self.save_smartly:
-
-
-
                     # return zpl_counters + \
                     #        [
                     #            # 'trace',
@@ -180,7 +179,6 @@ class NuclearOPs(DataGeneration):
                         yell = ['yellow_freq_measured']
                     else:
                         yell = []
-
                     return ['result_{}'.format(i) for i in range(self.number_of_results)] + zpl_counters + \
                            ['trace',
                             'ple_A2', 'ple_A1',
@@ -307,7 +305,6 @@ class NuclearOPs(DataGeneration):
             
 
 
-
         else:
             self.thread = threading.Thread(target=self.run_measurement,args = args, kwargs = kwargs)
             self.thread.start()
@@ -341,6 +338,19 @@ class NuclearOPs(DataGeneration):
             QtTest.QTest.qSleep(1000)
 
     def run_measurement(self, abort, **kwargs):
+
+        simulate = True
+
+        if simulate:
+            # Simulates the QUA program for the specified duration
+            simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
+            job_sim = qmm.simulate(config, self.setup_rf(), simulation_config)
+            # Simulate blocks python until the simulation is done
+            # job_sim.get_simulated_samples().con1
+            job_sim.get_simulated_samples().con1.plot()
+            plt.show()
+
+
         print('NuclearOps run_measurement')
         
         self.init_run(**kwargs)
@@ -677,6 +687,8 @@ class NuclearOPs(DataGeneration):
 
 
     def run_debug_sequence(self, abort, **kwargs):
+        ## Here maybe is for the simulation mode...
+
         if any([key in kwargs for key in ['iff', 'init_from_file']]):
             raise Exception('Error: Data initialization from file (.hdf or .csv) not allwoed in sequence debug mode.')
         if len(self.parameters['sweeps']) != 1:
@@ -685,14 +697,22 @@ class NuclearOPs(DataGeneration):
         self.init_run(**kwargs)
         self.state = 'sequence_testing'
         try:
-            self._md.debug_mode = True
+            #self._md.debug_mode = True
+            self.queue._awg.debug_mode = True
             for idx, _ in enumerate(self.iterator()):
                 if abort.is_set(): break
                 self.data.set_observations([OrderedDict(start_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
                 
                 #self.dowork()
-                self.setup_rf(self.current_iterator_df, hashed=self.hashed) ##Is this guy stops the main loop?
-                
+                self.setup_rf(self.current_iterator_df, hashed=False)#self.hashed) ##Is this guy stops the main loop?
+
+                job_sim = self.queue._awg.simulate(config, self.queue._awg.mcas_dict[self.sequence_name], simulation_config)
+                # Simulate blocks python until the simulation is done
+                # job_sim.get_simulated_samples().con1
+                job_sim.get_simulated_samples().con1.plot() #
+                plt.show()
+
+
                 self.data.set_observations([OrderedDict(end_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
             if not abort.is_set():
                 self.state = 'sequence_ok'
@@ -704,7 +724,7 @@ class NuclearOPs(DataGeneration):
         finally:
             #TODO do this
             #self._md.debug_mode = False
-            self.queue._awg.mcas_dict.stop_awgs()
+            self.queue._awg.stop_awgs() #formely it was mcas_dict as the main...
             self.update_current_str()
             if os.path.exists(self.save_dir) and not os.listdir(self.save_dir):
                 os.rmdir(self.save_dir)
@@ -1244,7 +1264,8 @@ class NuclearOPs(DataGeneration):
         hash = base64.b64encode(hashlib.sha1((str(current_iterator_df)+"\n"+str(self.queue._gated_counter.readout_duration)).encode()).digest()) 
         #Added self.queue._gated_counter.readout_duration such that the hash recognizes a change in readout duration and will update n_values in the sequence accordingly
         self.sequence_name = "nuclear_op_hash_{}".format(hash)
-        if hashed:
+        if False:
+        #if hashed: - here is the hashing of the sequence for a faster writing, - not used here.
             if not self.sequence_name in self.queue._awg.mcas_dict:
                 self.queue._awg.mcas_dict.stop_awgs()
                 self.mcas = ''
@@ -1278,12 +1299,13 @@ class NuclearOPs(DataGeneration):
             #    self.queue._awg.mcas_dict.stop_awgs()
             #    self.mcas = self.queue._awg.mcas_dict[self.sequence_name]
             else:
-                print("Dont need to set up new RF.")
+                print("Don't need to set up new RF.")
 
         else: 
             # This is usual.
-            self.queue._awg.mcas_dict.stop_awgs()
-            self.mcas = ''
+            #self.queue._awg.mcas_dict.stop_awgs()
+            print('This time is the qua writing...')
+            self.queue._awg.stop_awgs()
             self.mcas = self.ret_mcas(self,current_iterator_df)
             while self.mcas=='':
                 #process_events() #TODO gui process events.
@@ -1295,7 +1317,7 @@ class NuclearOPs(DataGeneration):
         self.performedRefocus = False
             
          #pi3d.mcas_dict[sequence_name].initialize()
-        # pi3d.mcas_dict[sequence_name].start_awgs()
+         #pi3d.mcas_dict[sequence_name].start_awgs()
 
     def analyze(self, data=None, ana_trace=None, start_idx=None):
         if ana_trace is None:

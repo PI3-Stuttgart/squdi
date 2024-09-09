@@ -113,6 +113,7 @@ class queue_logic(GenericLogic):
 
     # declare connections
     mcas_holder = Connector(interface='McasDictHolderInterface')
+    opx_holder = Connector(interface = 'OPX')
     transition_tracker = Connector(interface = 'TransitionTracker') # Should be a name of the class
     confocal = Connector(interface='ScanningProbeLogic')
     gated_counter = Connector('GatedCounter') # Should be name of the class.
@@ -150,7 +151,8 @@ class queue_logic(GenericLogic):
 
     def on_activate(self):
 
-        self._awg = self.mcas_holder()
+        #self._awg = self.mcas_holder()
+        self._awg = self.opx_holder()
         self._transition_tracker = self.transition_tracker()
         self._gated_counter = self.gated_counter()
         self._optimizer = self.optimizer()
