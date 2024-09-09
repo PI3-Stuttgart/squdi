@@ -42,6 +42,9 @@ class QMDLProTTPLEScanner(ScanningProbeInterface):
     _ao_trigger_channel = ConfigOption(
         name="ao_trigger_channel", missing="error"
     )  # trigger from AO to timetagger
+    _ao_channel = ConfigOption(
+        name="ao_channel", missing="error"
+    )  # AO channel
     _ao_remote_trigger_channel = ConfigOption(
         name="ao_remote_trigger_channel", missing="nothing"
     )  # trigger from AO to timetagger
@@ -75,6 +78,9 @@ class QMDLProTTPLEScanner(ScanningProbeInterface):
 
         self._thread_lock_cursor = Mutex()
         self._thread_lock_data = Mutex()
+        
+        # Activate AO Hardware
+        self._AO = self.AO()
 
     def on_activate(self):
         assert (
@@ -126,7 +132,7 @@ class QMDLProTTPLEScanner(ScanningProbeInterface):
             square_px_only=False,
         )  # TODO incorporate in scanning_probe toolchain
         #
-        self._target_pos = self.get_position()  # get voltages/pos from ni_ao
+        self._target_pos = self.get_position() 
         self._toggle_ao_setpoint_channels(False)  # And free ao resources after that
         self._t_last_move = time.perf_counter()
         self.__t_last_follow = None
@@ -134,29 +140,16 @@ class QMDLProTTPLEScanner(ScanningProbeInterface):
             self._fetch_data_chunk, QtCore.Qt.QueuedConnection
         )
         self.sigStartScanner.connect(
-            lambda: self._triggered_ao().start_scan(), QtCore.Qt.QueuedConnection
+            self._start_qm_scan, QtCore.Qt.QueuedConnection
         )
 
     def _toggle_ao_setpoint_channels(self, enable: bool) -> None:
-        triggered_ao = self._triggered_ao()
-        for channel in triggered_ao.constraints.setpoint_channels:
-            triggered_ao.set_activity_state(channel, enable)
-
-    @property
-    def _ao_setpoint_channels_active(self) -> bool:
-        mapped_channels = set(self._channel_mapping.values())
-        return all(
-            state
-            for ch, state in self._triggered_ao().activity_states.items()
-            if ch in mapped_channels
-        )
-
+        self._AO.set_activity_state(self._ao_channel, enable)
+            
     def on_deactivate(self):
         """
         Deactivate the module
         """
-
-        self._triggered_ao().stop_scan()
 
     def get_constraints(self):
         """Get hardware constraints/limitations.
@@ -461,9 +454,6 @@ class QMDLProTTPLEScanner(ScanningProbeInterface):
         @return dict: current position per axis.
         """
         with self._thread_lock_cursor:
-            if not self._ao_setpoint_channels_active:
-                self._toggle_ao_setpoint_channels(True)
-
             pos = self._voltage_dict_to_position_dict(self._triggered_ao().setpoints)
             return pos
 
@@ -517,14 +507,19 @@ class QMDLProTTPLEScanner(ScanningProbeInterface):
         self._move_to_and_start_scan(first_scan_position)
 
         self.module_state.lock()
+        
+        
 
     def _move_to_and_start_scan(self, position):
         self.move_absolute(position)
         self._start_scan_after_cursor = True
         # self.log.debug("Starting timer to move to scan position")
-        self.sigStartScanner.emit()
+        self.sigStartScanner.emit() #_start_qm_scan
         self.sigNextDataChunk.emit()
 
+    def _start_qm_scan(self):
+        pass
+    
     def stop_scan(self):
         """
         @return bool: Failure indicator (fail=True)

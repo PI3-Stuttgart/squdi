@@ -79,55 +79,14 @@ class AdwinSamplingInput(FiniteSamplingInputInterface):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # NIDAQmx device handle
-        self._device_handle = None
-        # Task handles for NIDAQmx tasks
-        self._di_task_handles = list()
-        
-        self._timetagger_cbm_tasks = list()
-        self._ai_task_handle = None
-        # nidaqmx stream reader instances to help with data acquisition
-        self._di_readers = list()
-        self._ai_reader = None
-
-        # List of all available counters and terminals for this device
-        self.__all_counters = tuple()
-        self.__all_digital_terminals = tuple()
-        self.__all_analog_terminals = tuple()
-
-        # currently active channels
-        self.__active_channels = dict(di_channels=frozenset(), ai_channels=frozenset())
-
-        self._thread_lock = RecursiveMutex()
-        self._sample_rate = -1
-        self._frame_size = -1
-        self._constraints = None
-
     def on_activate(self):
         """
         Starts up the Adwin and Time Tagger and performs sanity checks.
         """
   
-        # Check connection and connect to adwin and Time Tagger
+        # Check connection and connect to Time Tagger
         self.module_state() == 'idle'
         self._tt = self._timetagger()
-        dev_names = ['adwin11']
-        
-        #TODO check here for multiple adwin systems?
-        
-        if self._device_name.lower() not in set(dev.lower() for dev in dev_names):
-            raise ValueError(
-                f'Device name "{self._device_name}" not found in list of connected devices: '
-                f'{dev_names}\nActivation of AdwinFiniteSamplingIO failed!'
-            )
-        for dev in dev_names:
-            if dev.lower() == self._device_name.lower():
-                self._device_name = dev
-                break
-        
-        self._adwin_trigger: AdwinTrigger = self.adwin_trigger()
-        # TODO - more checks similar to reconnections, bla.
-    
 
         digital_sources = set(src for src in self._digital_channel_units if 'tt' in src)
         analog_sources = set(src for src in self._analog_channel_units)
@@ -142,11 +101,6 @@ class AdwinSamplingInput(FiniteSamplingInputInterface):
                                          ', '.join(self.__all_analog_terminals)))
             analog_sources = set(natural_sort(source_set.difference(invalid_sources)))
 
-        # Check if all input channels fit in the device
-        # if len(digital_sources) > 3:
-        #     raise ValueError(
-        #         'Too many digital channels specified. Maximum number of digital channels is 3.'
-        #     )
         if len(analog_sources) > 16:
             raise ValueError(
                 'Too many analog channels specified. Maximum number of analog channels is 16.'

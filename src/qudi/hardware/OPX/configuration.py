@@ -52,6 +52,8 @@ initialization_len_laser = 3_000 * u.ns
 
 AOM_power_len = 80 * u.ns
 
+trigger_len = 500 * u.us
+
 # Relaxation time from the metastable state to the ground state after during initialization
 relaxation_time = 300 * u.ns
 wait_for_initialization = 5 * relaxation_time
@@ -135,8 +137,8 @@ config = {
             },
             "digital_outputs": {
                 1: {},  # indicator
+                4: {},  # trigger TT
                 6: {},  # Laser 520 nm (Green)
-                4: {},  # indicator
                 7: {},  # Laser 450 nm (Blue)
                 8: {},  # AOM Laser 520 nm (Green)
                 9: {},  # AOM Laser 575 nm (Yellow)
@@ -270,8 +272,15 @@ config = {
             "singleInput": {
                 "port": ("con1", 4),
             },
+            "digitalInputs": {  # for triggering TT
+                "marker": {
+                    "port": ("con1", 4),
+                    "delay": 0,
+                    "buffer": 0,
+                },
             "operations": {
                 "piezo_offset": "piezo_offset_red",
+                "trigger_TT": "trigger_TT"
             },
         },
         "SPCM1": {
@@ -406,9 +415,16 @@ config = {
         "piezo_offset_red": {
             "operation": "control",
             "length": ple_step_length_red,
+        #    "digital_marker": "ON",
             "waveforms": {
                 "single": "const_piezo_offset",
             },
+        "trigger_TT": {
+            "operation": "control",
+            "length": trigger_len,
+            "digital_marker": "ON",
+        },  
+        
         },
     },
     "waveforms": {
