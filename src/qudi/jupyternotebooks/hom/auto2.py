@@ -99,10 +99,29 @@ class MeasurementsBase:
         self.do_realign = False
         self._bf_channel = 2
         self._green_fry_power = 5e3
-        self._update_opti = True
+        self._update_opti = False
         self.motordriver_pi3.current_motor = 0
         self.motordriver_pi3.motor_position = self.perpendicular_position
         self._polarization_is_parallel = False
+        self._remote_scanner_channels = {'PLE' : 'APD2',
+                                         'Off-res': 'APD1'}
+        
+        self.remote_refocus_settings = {
+                        'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
+                        'data_channel': self._remote_scanner_channels['Off-res'],
+                        'scan_sequence' : ('xy', 'z'),
+                        'scan_range': {'z': 1.2e-06, 'x': 0.6e-06, 'y': 0.6e-06},
+                        'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
+                    }
+        self.local_refocus_settings = None
+        
+
+    def _get_counts(self, channels=[2,3], num_samples = 50, iters = 5, delay=0.25):
+        counts = np.array([])
+        for i in range(iters):
+            counts = np.append(counts, self.get_counts(channels=[2,3],num_samples = 50).sum())
+            time.sleep(delay)
+        return counts.mean()
 
     def get_counts(self, channels=[2,3], num_samples = 5):
         cts = []
@@ -140,16 +159,11 @@ class MeasurementsBase:
 
         time.sleep(1)
         if remote:
-            self.poi_manager_logic_remote._optimizelogic().set_optimize_settings(
-                    {
-                        'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
-                        'data_channel': self._remote_scanner_channels['Off-res'],
-                        'scan_sequence' : ('xy', 'z'),
-                        'scan_range': {'z': 1.2e-06, 'x': 0.6e-06, 'y': 0.6e-06},
-                        'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
-                        
-                    }
-                )
+            
+            if self.remote_refocus_settings:
+                self.poi_manager_logic_remote._optimizelogic().set_optimize_settings(
+                        self.remote_refocus_settings
+                    )
             time.sleep(0.2)
             self.poi_manager_logic_remote._optimizelogic().start_optimize()
         if local:
@@ -158,6 +172,10 @@ class MeasurementsBase:
                 time.sleep(1) # wait for a long time to 
         if remote:
             # self.poi_manager_logic_remote._optimizelogic().start_optimize()
+            if self.local_refocus_settings:
+                self.poi_manager_logic._optimizelogic().set_optimize_settings(
+                    self.local_refocus_settings
+                )
             while self.poi_manager_logic_remote._optimizelogic().module_state()=='locked':
                 time.sleep(1) # wait for a long time to 
         time.sleep(1) # wait for a long time to avoid conflicts with the countrate checker
@@ -362,8 +380,7 @@ class StarkHOM(MeasurementsBase):
         self.counts_story = []
         self.iteration = 0
         self._refocus_threshold = 0.8
-        self._remote_scanner_channels = {'PLE' : 'APD2',
-                                         'Off-res': 'APD1'}
+        
         # Initialize timers
         self.timer = QTimer()
         self.timer.timeout.connect(self.refocus_and_realign)
@@ -375,6 +392,14 @@ class StarkHOM(MeasurementsBase):
 
         self.scanning_probe_logic_remote = self.poi_manager_logic_remote._optimizelogic()._scan_logic()
         self.scanning_probe_logic = self.poi_manager_logic._optimizelogic()._scan_logic()
+
+        self.remote_resonant_refocus_settings = {
+                                'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
+                                'data_channel': self._remote_scanner_channels['PLE'],
+                                'scan_sequence' : ('xy', 'z'),
+                                'scan_range': {'z': 1.2e-06, 'x': 1.2e-06, 'y': 1.2e-06},
+                                'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
+                            }
 
 
         self.measurement_setpoints = [0] #, -0.3, -0.6]
@@ -410,45 +435,78 @@ class StarkHOM(MeasurementsBase):
         print("Iteraion", self.iteration)
         current_save_folder = os.path.join(self.folder_save, 
                                                 self.current_measurement)
-
+        self.timetaggerlogic._timetagger.tagger.setConditionalFilter(trigger=[5], filtered=[5])
+        
         self.save_tagger_plots(f'iter_{self.iteration}', 
                                 folder_path=current_save_folder)
         if self.iteration % 1 == 0:
             #Check the position didn't drift :
             self.polarization_is_parallel = False
             #Check that the counts are not drifted
-            cur_counts = self.get_counts(num_samples=50, channels=[self._attodry_channel]).sum()
+            cur_counts = self._get_counts(num_samples=50, channels=[self._attodry_channel]).sum()
 
             
 
 
             if cur_counts < self.opti_counts[self._attodry_channel] * self._refocus_threshold:
-                self.refocus_resonantly(remote=True)
-                self.refocus(remote=True, local=True)
+                # self.refocus_resonantly(remote=True)
+                print("Refocus Atto3")
+                self.refocus(remote=True, local=False)
+
             elif cur_counts > self.opti_counts[self._attodry_channel]:
                 print("Counts INCREASED....")
 
             
             time.sleep(2)
             #Check that the 
-            cur_counts = self.get_counts(num_samples=50, channels=[self._bf_channel]).sum()
+            cur_counts = self._get_counts(num_samples=50, channels=[self._bf_channel]).sum()
             if cur_counts < self.opti_counts[self._bf_channel] * self._refocus_threshold:
                 self.refocus(local=True, remote=False)
+                print("Refocus Bluefors")
             elif cur_counts > self.opti_counts[self._bf_channel]:
                 print("Counts INCREASED....")
             time.sleep(0.2)
 
             if self.current_measurement == 'hom':
-                if self.do_realign:
-                    self.align_resonances(dv=0.3, steps=40)
-                    
-                    self.setpoint_story.append(self.ao_electrodes.setpoint)
-                    
+                # if self.do_realign:
+                self.align_resonances(dv=0.2, align_iter = 3, offset=0)
+                
+                self.setpoint_story.append(self.ao_electrodes.setpoint)
+            
+            if self.current_measurement == 'hom_300':
+                # if self.do_realign:
+                self.align_resonances(dv=0.4, align_iter = 3, offset=-300)
+                
+                self.setpoint_story.append(self.ao_electrodes.setpoint)
+
+            if self.current_measurement == 'hom_500':
+                # if self.do_realign:
+                self.align_resonances(dv=0.4, align_iter = 3, offset=-500)
+                
+                self.setpoint_story.append(self.ao_electrodes.setpoint)
+            if self.current_measurement == 'hom_1000':
+                # if self.do_realign:
+                self.align_resonances(dv=0.4, align_iter = 3, offset=-1000)
+                
+                self.setpoint_story.append(self.ao_electrodes.setpoint)
+            
             self.measurement_mode('Off-res')
 
-        if self.current_measurement == 'hom':
+        if self.iteration % 2 == 0:
+            self.measurement_mode('Off-res')
             
-            if self.iteration % 4 == 0:
+            self.polarization_is_parallel = False
+
+            self.set_green_power('atto3', self.max_power)
+            self.set_green_power('bf', self.max_power)
+
+            self.refocus(local=True, remote=True)
+
+
+
+        if 'hom' in self.current_measurement:
+            
+            if self.iteration % 5 == 0:
                 target_laser = self.laser_scanner_logic.scanner_target
 
                 self.measurement_mode('PLE')
@@ -466,12 +524,12 @@ class StarkHOM(MeasurementsBase):
             self.measurement_mode('Off-res')
             self.set_green_power('atto3', self.max_power)
             self.set_green_power('bf', self.max_power)
-            
-
-        if self.current_measurement == 'hom_detuned':
+        
+        if self.current_measurement == 'hom_setpoint_0':
             self.set_green_power('atto3', self.max_power)
             self.set_green_power('bf', self.max_power)
             self.ao_electrodes.setpoint = -0.1
+        
 
         if self.current_measurement == 'g2_atto3':
             self.set_green_power('atto3', self.max_power)
@@ -482,6 +540,7 @@ class StarkHOM(MeasurementsBase):
             self.set_green_power('atto3', 0)
             
         self.polarization_is_parallel = True
+        self.timetaggerlogic._timetagger.tagger.setConditionalFilter(trigger=[5], filtered=[1])
         self.iteration = self.iteration + 1
 
         if self._update_opti:
@@ -538,7 +597,8 @@ class StarkHOM(MeasurementsBase):
     def next_measurement_time_left(self):
         # Time left for the next measurement timer (in milliseconds)
         elapsed = self.elapsed_timer.elapsed()
-        return max(0, self.next_measurement_timer.interval() - elapsed)
+        # return max(0, self.next_measurement_timer.interval() - elapsed)
+        return (self.next_measurement_timer.interval() - self.timer.interval() * self.iteration - self.time_left() ) #in secs
     
     def change_setpoint(self):
         self.stop_dump()
@@ -564,13 +624,7 @@ class StarkHOM(MeasurementsBase):
             self.go_to_ple_target(target=res.best_values['center'])
 
             self.poi_manager_logic_remote._optimizelogic().set_optimize_settings(
-                            {
-                                'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
-                                'data_channel': self._remote_scanner_channels['PLE'],
-                                'scan_sequence' : ('xy', 'z'),
-                                'scan_range': {'z': 1.2e-06, 'x': 1.2e-06, 'y': 1.2e-06},
-                                'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
-                            }
+                            self.remote_resonant_refocus_settings
                             )
             
 
@@ -586,13 +640,7 @@ class StarkHOM(MeasurementsBase):
             self.go_to_ple_target(target=res.best_values['center'])
 
             self.poi_manager_logic._optimizelogic().set_optimize_settings(
-                            {
-                                'scan_frequency': {'z': 5, 'x': 50, 'y': 50},
-                                'data_channel': 'APD1',
-                                'scan_sequence' : ('xy', 'z'),
-                                'scan_range': {'z': 1.2e-06, 'x': 1.2e-06, 'y': 1.2e-06},
-                                'scan_resolution': {'z': 150, 'x': 30, 'y': 30},
-                            }
+                            self.local_refocus_settings
                             )
             self.poi_manager_logic._optimizelogic().start_optimize()
             
