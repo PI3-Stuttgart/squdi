@@ -147,6 +147,10 @@ class queue_logic(GenericLogic):
         super(queue_logic, self).__init__(config=config, **kwargs)
         self._threadlock=Mutex()
         self.script_history = []
+        self.timer = QTimer(self)
+
+        self.timer.setInterval(3000)
+        self.timer.timeout.connect(self.mainloop_handler)
         self._user_script_folder = None
 
     def on_activate(self):
@@ -172,6 +176,7 @@ class queue_logic(GenericLogic):
 
     def on_deactivate(self):
         pass
+        self.timer.stop()
         #FIXME destroy me gently
 
     @property
@@ -188,9 +193,10 @@ class queue_logic(GenericLogic):
     #     self._timetagger = TimeTaggerHandler.init_timetagger()
 
     def init_run(self):
-        self.user_script_folder = r"C:/src/qudi/notebooks/UserScripts/electron_t2"
+        self.user_script_folder = r"C:\Users\yy3\git\squdi\src\qudi\UserScripts\electron_t2"#r"C:/src/qudi/notebooks/UserScripts/electron_t2"
         self._script_queue = ScriptQueueList(oktypes=(ScriptQueueStep), list_owner=self)
         self.q = Queue() # use connector
+        self.timer.start()
         self.run_thread()
         # self.track_memory_usage_thread()
 
@@ -273,10 +279,15 @@ class queue_logic(GenericLogic):
             else:
                 return self.current_script['module_name']
         else:
-            return sm[-1]
+            if len(sm)> 0:
+                return sm[-1]
+            else:
+                return -1
     @property
     def cun_modules(self):
         lrs = self.last_running_script_name
+        if lrs == -1:
+            return None
         if hasattr(sys.modules[lrs], 'nuclear'):
             return sys.modules[lrs]
         else:
@@ -286,7 +297,10 @@ class queue_logic(GenericLogic):
 
     @property
     def cun(self):
-        return self.cun_modules.nuclear
+        if self.cun_modules is None:
+            return None
+        else:
+            return self.cun_modules.nuclear
 
     def track_memory_usage(self):
         while True:
@@ -325,14 +339,93 @@ class queue_logic(GenericLogic):
     ####################################################################################################################
     # script queue
     ####################################################################################################################
-    def run(self):
+
+    def run_new(self):
+        """
+        it is not needed.
+        :return:
+        """
+        pass
+        #self.timer.start()
+
+    def mainloop_handler(self):
+
+        print('mainloop NOPS QUEUE watcher..')
+        if self.thread.stop_request.is_set():
+            print('stop request')
+            self.q.queue.clear()
+            self.script_queue.list = []
+            self.thread.stop_request.clear()
+
+        try:
+            if hasattr(self, 'cun') and self.cun is not None:
+                print('has already the CUN, check its state.')
+                if self.cun.state not in ['run', 'sequence_testing']:
+                    print('its finished, fininishing ')
+                    self.finish_measurement()
+                    self.start_next_measurement()
+                    #self.wait_for_a_measurement()
+                else:
+                    print('There is a cun but it is workin, check you later...')
+                    #we need to wait...
+            else:
+                print('starting a new measurements')
+                self.start_next_measurement()
+                    # waiting for the measurement to finish.
+
+        except Exception:
+                self.q.queue.clear()
+                self.script_queue.list = []
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                traceback.print_exception(exc_type, exc_value, exc_tb)
+                self.finish_measurement()
+        """
+        This should do what previously was in while loop of the run old function
+        :return: 
+        """
+
+    def start_next_measurement(self):
+        self.current_script = self.q.get()
+        self.thread.stop_request.clear()  # this is necessary although it shouldn't be.
+        self.log.info("Starting Userscript {}...{}".format(
+            self.current_script['module_name'][10:],self.thread.stop_request.is_set()))
+        sys.modules[self.current_script['module_name']].run_fun(self.thread.stop_request, queue=self, **self.current_script['pd'])  ## Creates a nuclear and runs it.!!!
+        print('entering waiting loop in queue...')
+
+        ### Here the queue should wait for the measurement to be finished...# TODO signal replacement for the future...
+
+    def wait_for_a_measurement(self):
+        """
+        not used... legacy module.,..
+        :return:
+        """
+        if hasattr(self, 'cun'):
+            while self.cun.state == 'run':
+                QtTest.QTest.qSleep(1000)  # This is Qt version for time.sleep to prevent freezinng. also doesnt work for PySide2.
+            else:
+                print("new measurement can be started")
+        else:
+            pass
+
+    def finish_measurement(self):
+        try:
+            self.script_queue.pop(0)
+            self.script_history.append(self.current_script)
+            self.log.info("Userscript {} has finished...".format(self.current_script['module_name'][10:]))
+            del self.current_script
+            self.q.task_done()
+
+        except IndexError:
+            print('no more scripts in the queue..')
+            return
+
+    def run_old(self):
 
 
         ## Why this is needed??????
 
         #from tools_2 import emod
         #emod.JobManager().start() ## maybe this is something which makes multiple sequences actuakly working.
-
         # start the CronDaemon
         #from tools_2 import cron
         #cron.CronDaemon().start()
@@ -352,6 +445,9 @@ class queue_logic(GenericLogic):
                 sys.modules[self.current_script['module_name']].run_fun(
                     self.thread.stop_request, queue = self, **self.current_script['pd']) ## Creates a nuclear and runs it.!!!
                 print('entering waiting loop in queue...')
+
+                ### Here the queue should wait for the measurement to be finished...# TODO signal replacement for the future...
+
                 if hasattr(self, 'cun'):
                     while self.cun.state == 'run':
                         QtTest.QTest.qSleep(1000)  #This is Qt version for time.sleep to prevent freezinng.
@@ -359,8 +455,7 @@ class queue_logic(GenericLogic):
                         print("new measurement can be started")
                 else:
                     pass
-                    
-                    
+
                 self.script_history.append(self.current_script)
                 self.script_queue.pop(0)
                 self.log.info("Userscript {} has finished...".format(self.current_script['module_name'][10:]))
@@ -373,7 +468,7 @@ class queue_logic(GenericLogic):
                 traceback.print_exception(exc_type, exc_value, exc_tb)
 
     def run_thread(self):
-        self.thread = threading.Thread(target=self.run)
+        self.thread = threading.Thread(target=self.run_new)
         self.thread.stop_request = multiprocess.Event()
         self.thread.start()
 

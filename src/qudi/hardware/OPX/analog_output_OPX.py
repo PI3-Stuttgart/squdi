@@ -58,23 +58,23 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         )
 
     def _connect_to_OPX(self) -> None:
-        try:
-            self._qm_manual_output_control = ManualOutputControl(
-                self._configuration.config,
-                host=self._configuration.qop_ip,
-                close_previous=False,
-                elements_to_control=self.constraints.setpoint_channels,
-            )
-        except qm.exceptions.OpenQmException:
-            self.log.warning(
-                "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
-            )
-            self._qm_manual_output_control = ManualOutputControl(
-                self._configuration.config,
-                host=self._configuration.qop_ip,
-                close_previous=True,
-                elements_to_control=self.constraints.setpoint_channels,
-            )
+        #try:
+        self._qm_manual_output_control = ManualOutputControl(
+            self._configuration.config,
+            host=self._configuration.qop_ip,
+            close_previous=False,
+            elements_to_control=self.constraints.setpoint_channels,
+        )
+        #except qm.exceptions.OpenQmException:
+        #        self.log.warning(
+        #            "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
+        #        )
+        #        self._qm_manual_output_control = ManualOutputControl(
+        #            self._configuration.config,
+        #            host=self._configuration.qop_ip,
+        #            close_previous=True,
+        #            elements_to_control=self.constraints.setpoint_channels,
+        #        )
 
     @property
     def constraints(self) -> ProcessControlConstraints:
@@ -115,7 +115,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         """Set new setpoint for a single channel"""
         try:
             self._qm_manual_output_control.set_amplitude(channel, value)
-        except qm.exceptions.QMConnectionError:
+        except: #qm.exceptions.QMConnectionError
             self.log.warning("Reconnecting OPX ...")
             self._connect_to_OPX()
             self._qm_manual_output_control.set_amplitude(channel, value)

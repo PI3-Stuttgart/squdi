@@ -11,6 +11,8 @@ from qm import QuantumMachinesManager
 from qm.qua._expressions import QuaVariable
 from configuration import *
 import matplotlib.pyplot as plt
+import json
+
 
 single_integration_time_ns = int(1000 * u.ns)
 ###################
@@ -21,17 +23,18 @@ with program() as hello_QUA:
         declare(fixed)
     )
     with infinite_loop_():
-        with for_(a, 0, a < 1.1, a + 0.05):
-            # play("x180" * amp(a), "NV")
-            play("const" * amp(1), "RF")
-            play(
-                pulse="trigit",
-                element="Gate_Trigger",
-                duration=single_integration_time_ns,
-            )
-            wait(single_integration_time_ns, "Gate_Trigger")
-        wait(25, "NV")
+        #with for_(a, 0, a < 1.1, a + 0.05):
 
+        play("active", "Laser_520", duration=50)
+        play("const" * amp(1), "RF")
+            #play(
+            #    pulse="trigit",
+             #   element="Gate_Trigger",
+             #   duration=single_integration_time_ns,
+            #)
+            #wait(single_integration_time_ns, "Gate_Trigger")
+        #wait(25, "NV")
+print(hello_QUA.__dict__)
 #####################################
 #  Open Communication with the QOP  #
 #####################################
@@ -43,16 +46,28 @@ qmm = QuantumMachinesManager(
 # Run or Simulate Program #
 ###########################
 
-simulate = True
-
+simulate = False
 if simulate:
     # Simulates the QUA program for the specified duration
     simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
     job_sim = qmm.simulate(config, hello_QUA, simulation_config)
     # Simulate blocks python until the simulation is done
-    # job_sim.get_simulated_samples().con1
+    job_sim.get_simulated_samples().con1
     job_sim.get_simulated_samples().con1.plot()
-    plt.show()
+
+    # get DAC and digital samples (optional).
+    samples = job_sim.get_simulated_samples()
+    # get the waveform report object
+    waveform_report = job_sim.get_simulated_waveform_report()
+    waveform_dict = waveform_report.to_dict()
+    with open('awg_file.json', 'w') as fp:
+        json.dump(waveform_dict, fp)
+
+    waveform_report.create_plot(samples, plot=True, save_path="./")
+    #print(waveform_dict.keys())
+    # prints:
+    #(dict_keys(['analog_waveforms', 'digital_waveforms', 'adc_acquisitions']))
+    #plt.show()
 else:
     qm = qmm.open_qm(config)
     job = qm.execute(hello_QUA)
@@ -62,3 +77,4 @@ else:
     job.halt()
     # time.sleep(10)
     # print(job.execution_report())
+print('end')

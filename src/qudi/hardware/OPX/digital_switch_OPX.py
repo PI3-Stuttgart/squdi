@@ -51,23 +51,23 @@ class DigitalSwitchOPX(SwitchInterface):
         """TODO: disconnect from OPX?"""
 
     def _connect_to_OPX(self) -> None:
-        try:
-            self._qm_manual_output_control = ManualOutputControl(
-                self._configuration.config,
-                host=self._configuration.qop_ip,
-                close_previous=False,
-                elements_to_control=self.available_states.keys(),
-            )
-        except qm.exceptions.OpenQmException:
-            self.log.warning(
-                "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
-            )
-            self._qm_manual_output_control = ManualOutputControl(
-                self._configuration.config,
-                host=self._configuration.qop_ip,
-                close_previous=True,
-                elements_to_control=self.available_states.keys(),
-            )
+       # try:
+        self._qm_manual_output_control = ManualOutputControl(
+            self._configuration.config,
+            host=self._configuration.qop_ip,
+            close_previous=False,
+            elements_to_control=self.available_states.keys(),
+        )
+        #except e: # qm.exceptions.OpenQmException:
+        #    self.log.warning(
+        #        "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
+        #    )
+        #    self._qm_manual_output_control = ManualOutputControl(
+         #       self._configuration.config,
+        #        host=self._configuration.qop_ip,
+        #        close_previous=True,
+        #        elements_to_control=self.available_states.keys(),
+        #    )
 
     @property
     def name(self) -> str:

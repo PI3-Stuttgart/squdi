@@ -20,6 +20,7 @@ import datetime
 import threading
 import os
 import numpy as np
+import time
 import pandas as pd
 import logging
 from PySide2 import QtTest
@@ -339,16 +340,14 @@ class NuclearOPs(DataGeneration):
 
     def run_measurement(self, abort, **kwargs):
 
-        simulate = True
-
-        if simulate:
-            # Simulates the QUA program for the specified duration
-            simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
-            job_sim = qmm.simulate(config, self.setup_rf(), simulation_config)
-            # Simulate blocks python until the simulation is done
-            # job_sim.get_simulated_samples().con1
-            job_sim.get_simulated_samples().con1.plot()
-            plt.show()
+        # if self.debug_mode:
+        #     # Simulates the QUA program for the specified duration
+        #     simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
+        #     job_sim = qmm.simulate(config, self.setup_rf(), simulation_config)
+        #     # Simulate blocks python until the simulation is done
+        #     # job_sim.get_simulated_samples().con1
+        #     job_sim.get_simulated_samples().con1.plot()
+        #     plt.show()
 
 
         print('NuclearOps run_measurement')
@@ -358,46 +357,53 @@ class NuclearOPs(DataGeneration):
         #logging.info('passed the init')
         #When the confocal connected #TODO 1
         confocal = self.queue._confocal
-        x = confocal._current_x
-        y = confocal._current_y
-        z = confocal._current_z
+        ### new qudi positions
+
+        x = confocal.scanner_position['x']
+        y = confocal.scanner_position['y']
+        z = confocal.scanner_position['z']
+
         #logging.info('got the confocal position')
         self.df_refocus_pos = pd.DataFrame(OrderedDict(confocal_x=[x],confocal_y = [y], confocal_z = [z]))
         #[self._confocal.x], confocal_y=[self._confocal.y], confocal_z=[self._confocal.z]))
         try:
-            #if hasattr(self.queue,'microwave'):
-            #   self.queue.microwave.On()
+            if hasattr(self.queue,'microwave'):
+                self.queue.microwave.On() ## SMIQ baby..
 
-            # TODO uncomment when on the setup
-            #self.queue._gated_counter.set_counter()#
-            #start_trigger_delay_ps_list = self.delay_ps_list ,window_ps_list = self.window_ps_list)
 
+            self.queue._gated_counter.set_counter()# as before, but now the channels for the gate are 5.
+            #start_trigger_delay_ps_list = self.delay_ps_list ,window_ps_list = self.window_ps_list) - this is for the pulse streamer.
             #enumerator=enumerate(self.iterator())
             #iterator_list=list(self.iterator()) # seems to laag imensely
             for idx, _ in enumerate(self.iterator()):#range(len(iterator_list)):
                 if abort.is_set(): break
                 while True:
                     if abort.is_set(): break
-                    self.checktime(abort) # Stops measurement during detector cycling # doesnt work yet.
-                    self.check_manual_pause(abort) #we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
-                    # Uncomment when on the setup #TODO
-                    #if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
-                     #    freq = self.queue.wavemeter.get_current_frequency()
-                     #    self.queue.wavemeter.set_lock_frequency(freq)
-                      #   self.queue.wavemeter.lock_frequency()
-                    #     time.sleep(0.1)
-                    # if 'defect_ids' in self.current_iterator_df.columns:
-                    #     defect_id = str(self.current_iterator_df.defect_ids.at[0])
-                    #     self.queue._poimanagerlogic.go_to_poi(defect_id)
-                    #     #QtTest.QTest.qSleep(1) #safety.
-                    #     time.sleep(0.1)
 
-                    while self.queue._counter.heating:
-                        now = datetime.datetime.now()
-                        current_time = now.strftime("%H:%M:%S")
-                        print("Current Time =", current_time)
-                        print("Countrate too high. Assuming hearting of photon detector. Going to sleep for 1min.")
-                        QtTest.QTest.qSleep(60000)
+                    self.checktime(abort) # Stops measurement during detector cycling # doesnt work yet.
+
+                    self.check_manual_pause(abort) #we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
+
+                    # Uncomment when on the setup #TODO
+                    if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
+                        freq = self.queue.wavemeter.get_current_frequency()
+                        self.queue.wavemeter.set_lock_frequency(freq)
+                        self.queue.wavemeter.lock_frequency()
+                        time.sleep(0.1)
+                    if 'defect_ids' in self.current_iterator_df.columns:
+                        defect_id = str(self.current_iterator_df.defect_ids.at[0])
+                        self.queue._poimanagerlogic.go_to_poi(defect_id)
+                        QtTest.QTest.qSleep(1) #safety.
+                        time.sleep(0.1)
+
+                    # while self.queue._counter.heating: # This is during the SNSPDs are recycled.
+                    # FIXME Here better to ask for the temperature of the photonspot cryostat.
+                    #     now = datetime.datetime.now()
+                    #     current_time = now.strftime("%H:%M:%S")
+                    #     print("Current Time =", current_time)
+                    #     print("Countrate too high. Assuming hearting of photon detector. Going to sleep for 1min.")
+                    #     QtTest.QTest.qSleep(60000)
+
                     if 'applied_voltage' in self.current_iterator_df.keys():
                         self.set_bias_voltage(abort)
                     if self.set_A1_power or self.set_A2_power:
@@ -486,6 +492,7 @@ class NuclearOPs(DataGeneration):
                             #self.queue.ple_repump.desired_freq = yellow_desired_freq
 
                         #self.queue.ple_repump.compensate_drift()
+
                     self.setup_rf(self.current_iterator_df, hashed = self.hashed) #MCAS is ready
                     
                     if abort.is_set(): break
@@ -509,7 +516,6 @@ class NuclearOPs(DataGeneration):
                     ##
                     # self.data.set_observations([OrderedDict(EOM_Ex_integrator_voltage=self.queue.power_calibration.pd_list[
                     #     'pd_Ex_integrator_voltage'].get_data())] * self.number_of_simultaneous_measurements)
-
 
                     if False:#not self._md.debug_mode: Laser power calibration #Fixme
                         self._md['red_Ex'].run()
@@ -566,7 +572,6 @@ class NuclearOPs(DataGeneration):
 
                     # # print('type(self.ana_trace.trace) ', type(self.ana_trace.trace))
                     # # print('self.ana_trace.trace.dtype ', self.ana_trace.trace.dtype)
-
                     # TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
                     #self.data.set_observations([OrderedDict(delays_ps=self.delay_ps_list)]*self.number_of_simultaneous_measurements)
                     #self.data.set_observations([OrderedDict(windows_ps=self.window_ps_list)]*self.number_of_simultaneous_measurements)
@@ -674,7 +679,7 @@ class NuclearOPs(DataGeneration):
                 os.rmdir(self.save_dir)
 
 
-            # if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
+            #if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
             #     self.queue.wavemeter.unlock_frequency()
             #     time.sleep(0.1)
 
@@ -705,17 +710,12 @@ class NuclearOPs(DataGeneration):
                 
                 #self.dowork()
                 self.setup_rf(self.current_iterator_df, hashed=False)#self.hashed) ##Is this guy stops the main loop?
+                self.queue._awg.simulate(self.mcas.program, plot = True)
 
-                job_sim = self.queue._awg.simulate(config, self.queue._awg.mcas_dict[self.sequence_name], simulation_config)
-                # Simulate blocks python until the simulation is done
-                # job_sim.get_simulated_samples().con1
-                job_sim.get_simulated_samples().con1.plot() #
-                plt.show()
-
-
+                #self.queue._awg.simulate(self.queue._awg.mcas_dict[self.sequence_name], plot = True)
                 self.data.set_observations([OrderedDict(end_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
             if not abort.is_set():
-                self.state = 'sequence_ok'
+                self.state = 'sequence_ok' # FIXME why never this reaches the state?
         except Exception:
             self.state = 'sequence_debug_interrupted'
             abort.set()
@@ -731,7 +731,8 @@ class NuclearOPs(DataGeneration):
             self.state = 'idle'
 
     def dowork(self,):
-        QtTest.QTest.qSleep(1000)
+        pass
+        #QtTest.QTest.qSleep(1000)
 
     def confocal_pos_moving_average(self, n):
         #FIXME ?
@@ -1166,7 +1167,8 @@ class NuclearOPs(DataGeneration):
             self.queue._awg.mcas_dict.stop_awgs()
             self.last_odmr_refocus=time.time()
             
-        QtTest.QTest.qSleep(1000)
+        time.sleep(1)
+        #QtTest.QTest.qSleep(1000)
         self.queue._gated_counter.set_counter()
 
         self.odmr_frequency_drift_ok = True # just to test, if sequence is running
@@ -1226,11 +1228,12 @@ class NuclearOPs(DataGeneration):
 
 
     def get_trace(self, abort, delay_ps_list = None,window_ps_list = None):
-        if not self._md.debug_mode:
-            #print("INITIALIZING")
-            #print(self.mcas.name)
-            self.mcas.initialize()
-            #print("init fininished")
+        if not self.debug_mode:
+            print("INITIALIZING")
+            print(self.mcas.name)
+            self.mcas.initialize() # We are talking now to the mcas --- I guess we need something to talk to the program
+            # to keep the syntax same to keysight... (important for crossplatform)...
+            print("init fininished")
         print("getting trace")
         self.queue._gated_counter.count(abort,
                                  ch_dict=self.mcas.ch_dict,
@@ -1307,13 +1310,13 @@ class NuclearOPs(DataGeneration):
             print('This time is the qua writing...')
             self.queue._awg.stop_awgs()
             self.mcas = self.ret_mcas(self,current_iterator_df)
-            while self.mcas=='':
+            # Writing the sequence...
+            #while self.mcas=='':
                 #process_events() #TODO gui process events.
-                QtTest.QTest.qSleep(10)
-            self.sequence_name = self.mcas.name
-            self.queue._awg.mcas_dict[self.sequence_name] = self.mcas
-        
-            
+                #QtTest.QTest.qSleep(10)
+            #self.sequence_name = self.mcas.name
+            self.queue._awg.mcas_dict[self.mcas.name] = self.mcas
+
         self.performedRefocus = False
             
          #pi3d.mcas_dict[sequence_name].initialize()
