@@ -135,9 +135,9 @@ config = {
             "digital_outputs": {
                 1: {},  # indicator - TBD what is this...
                 2: {},  # Master - slave trigger RESERVED for SETUP#2.
-                3: {},  # Gate Trigger - to the timetagger...channel 5 on the TT.
-                4: {},  # PPG trigger RESERVED
-                5: {},  # indicator RESERVED for some clock...
+                3: {},  # Gate Trigger - to the TT ...channel 5 on the TT.
+                4: {},  # Memory Trigger - to the TT ... channel 4 on the TT
+                5: {},  # PPG trigger RESERVED
                 6: {},  # Laser 520 nm (Green)
                 7: {},  # Laser 450 nm (Blue)
                 8: {},  # AOM Laser 520 nm (Green)
@@ -193,6 +193,18 @@ config = {
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 3),
+                    "delay": 0,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "trigit": "laser_ON",
+            },
+        },
+        "Memory_Trigger": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 4),
                     "delay": 0,
                     "buffer": 0,
                 },
@@ -286,7 +298,7 @@ config = {
                 "port": ("con1", 4),
             },
             "operations": {
-                "piezo_offset": "piezo_offset_red",
+                "power": "piezo_offset_red",
             },
         },
         "SPCM1": {
@@ -384,7 +396,7 @@ config = {
         },
         "AOM_power": {
             "operation": "control",
-            "length": AOM_power_len,
+            "length": initialization_len_laser,
             "waveforms": {
                 "single": "cw_aom",
             },

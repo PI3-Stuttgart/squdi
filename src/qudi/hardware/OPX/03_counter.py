@@ -38,10 +38,10 @@ with program() as counter:
             play(pulse="active",element="Laser_520",duration=single_integration_time_ns)
             # ... while measuring the events from the SPC
             measure(
-                pulse="readout",
+                "readout",
                 "SPCM1",
                 None,
-                time_tagging.analog(target=times, single_integration_time_ns, counts),
+                time_tagging.analog(times, single_integration_time_ns, counts),
             )
             # Increment the received counts
             assign(total_counts, _exp=total_counts + counts)
@@ -85,7 +85,7 @@ else:
     interrupt_on_close(fig, job)  # Interrupts the job when closing the figure
     while res_handles.is_processing():
         new_counts = counts_handle.fetch_all()
-        counts.append(new_counts["value"] / total_integration_time / 1000)
+        counts.append(new_counts["value"] / total_integration_time / 1000 * 1e9)
         time.append(new_counts["timestamp"] / u.s)  # Convert timestamps to seconds
         plt.cla()
         if len(time) > 50:

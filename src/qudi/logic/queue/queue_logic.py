@@ -158,7 +158,7 @@ class queue_logic(GenericLogic):
         #self._awg = self.mcas_holder()
         self._awg = self.opx_holder()
         self._transition_tracker = self.transition_tracker()
-        self._gated_counter = self.gated_counter()
+        self._gated_counter: GatedCounter = self.gated_counter()
         self._optimizer = self.optimizer()
         self._PLE_logic = self.PLE_logic()
         #self._ODMR_logic = self.odmr_logic()
@@ -350,7 +350,7 @@ class queue_logic(GenericLogic):
 
     def mainloop_handler(self):
 
-        print('mainloop NOPS QUEUE watcher..')
+        #print('mainloop NOPS QUEUE watcher..')
         if self.thread.stop_request.is_set():
             print('stop request')
             self.q.queue.clear()
@@ -359,14 +359,15 @@ class queue_logic(GenericLogic):
 
         try:
             if hasattr(self, 'cun') and self.cun is not None:
-                print('has already the CUN, check its state.')
+                #print('has already the CUN, check its state.')
                 if self.cun.state not in ['run', 'sequence_testing']:
                     print('its finished, fininishing ')
                     self.finish_measurement()
                     self.start_next_measurement()
                     #self.wait_for_a_measurement()
                 else:
-                    print('There is a cun but it is workin, check you later...')
+                    pass
+                    #print('There is a cun but it is workin, check you later...')
                     #we need to wait...
             else:
                 print('starting a new measurements')

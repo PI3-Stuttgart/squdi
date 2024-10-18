@@ -57,7 +57,7 @@ class AOLogic(LogicBase):
         name="autostart_watchdog", default=False, missing="nothing"
     )  # type: ignore
     # Defines the max and min values of the hardware AO output. used in the convertion function
-    _hardware_bounds_V: tuple[float, float] = (-0.5, 0.5)  # V
+    _hardware_bounds_V: tuple[float, float] = (-1, 1)  # V
     # If True, ignores the converstion of the setpoints and instead uses the direct hardware values
     use_hardware_setpoints = False
 

@@ -1,6 +1,7 @@
 from __future__ import print_function, absolute_import, division
 __metaclass__ = type
 
+import json
 import sys
 if sys.version_info.major == 2:
     from imp import reload
@@ -350,7 +351,7 @@ class NuclearOPs(DataGeneration):
         #     plt.show()
 
 
-        print('NuclearOps run_measurement')
+        print('cun:NuclearOps run_measurement')
         
         self.init_run(**kwargs)
         
@@ -370,7 +371,7 @@ class NuclearOPs(DataGeneration):
             if hasattr(self.queue,'microwave'):
                 self.queue.microwave.On() ## SMIQ baby..
 
-
+            print('cun:start the gc')
             self.queue._gated_counter.set_counter()# as before, but now the channels for the gate are 5.
             #start_trigger_delay_ps_list = self.delay_ps_list ,window_ps_list = self.window_ps_list) - this is for the pulse streamer.
             #enumerator=enumerate(self.iterator())
@@ -380,17 +381,17 @@ class NuclearOPs(DataGeneration):
                 while True:
                     if abort.is_set(): break
 
-                    self.checktime(abort) # Stops measurement during detector cycling # doesnt work yet.
+                    #self.checktime(abort) # Stops measurement during detector cycling # doesnt work yet.
 
                     self.check_manual_pause(abort) #we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
 
                     # Uncomment when on the setup #TODO
-                    if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
+                    if False:#self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
                         freq = self.queue.wavemeter.get_current_frequency()
                         self.queue.wavemeter.set_lock_frequency(freq)
                         self.queue.wavemeter.lock_frequency()
                         time.sleep(0.1)
-                    if 'defect_ids' in self.current_iterator_df.columns:
+                    if False:#'defect_ids' in self.current_iterator_df.columns:
                         defect_id = str(self.current_iterator_df.defect_ids.at[0])
                         self.queue._poimanagerlogic.go_to_poi(defect_id)
                         QtTest.QTest.qSleep(1) #safety.
@@ -426,7 +427,7 @@ class NuclearOPs(DataGeneration):
                     if self.refocus_cw_odmr or self.refocus_pulsed_odmr:
                          self.do_refocusodmr(abort, check_odmr_frequency_drift_ok=False, initial_odmr=False)
 
-
+                    print('cun:pass the refocuses')
                     #if self.set_laser_power:
                         # set laser power to wanted value
                     #Here put EOM!
@@ -492,12 +493,12 @@ class NuclearOPs(DataGeneration):
                             #self.queue.ple_repump.desired_freq = yellow_desired_freq
 
                         #self.queue.ple_repump.compensate_drift()
-
+                    print('cun:setting up the rf')
                     self.setup_rf(self.current_iterator_df, hashed = self.hashed) #MCAS is ready
                     
                     if abort.is_set(): break
                     
-                    if self.raw_clicks_processing:
+                    if False:#self.raw_clicks_processing:
                         self.data.set_observations(pd.concat([self.df_refocus_pos.iloc[-1:, :]]*self.number_of_simultaneous_measurements).reset_index(drop=True))
                         self.data.set_observations([OrderedDict(ple_A1=self.queue._transition_tracker.ple_A1)]*self.number_of_simultaneous_measurements)
                         self.data.set_observations([OrderedDict(ple_A2=self.queue._transition_tracker.ple_A2)]*self.number_of_simultaneous_measurements)
@@ -533,26 +534,26 @@ class NuclearOPs(DataGeneration):
                         #self.data.set_observations([OrderedDict(aom_A1_power_measured=self.queue.power_calibration.pd_list['pd_A1_power'].get_data())]*self.number_of_simultaneous_measurements)
                         time.sleep(0.1)
                         self._md.stop_awgs()
-                    if self.check_A2_power:
+                    if False:#self.check_A2_power:
                         self.queue._awg.mcas_dict['A2'].run()
-                        QtTest.QTest.qSleep(1500)
+                        #QtTest.QTest.qSleep(1500)
                         self.data.set_observations([OrderedDict(A2_Power=self.queue._powerstabilization_logic.current_power)]*self.number_of_simultaneous_measurements)
                         self.queue._awg.mcas_dict.stop_awgs()
                         #QtTest.QTest.qSleep(1000)
-                    if self.do_repump:
+                    if False:#self.do_repump:
                         self.queue._awg.mcas_dict['repump'].run()
                         # self.data.set_observations([OrderedDict(aom_A1_power_measured=self.queue.power_calibration.pd_list['pd_A1_power'].get_data())]*self.number_of_simultaneous_measurements)
-                        QtTest.QTest.qSleep(100)
+                        #QtTest.QTest.qSleep(100)
                         self.queue._awg.mcas_dict.stop_awgs()
                         #QtTest.QTest.qSleep(1000)
-                    
+                    print('cun:I am past here after a lot of ifs..')
                     #TODO add laser power meters to the df
                     #if self.yellow_repump_compensation:
                         #self.data.set_observations([OrderedDict(yellow_freq_measured=self.queue.wavemeter.dll.GetFrequencyNum(3, 0))] * self.number_of_simultaneous_measurements)
                     # Thread1=threading.Thread(target=self.get_trace, args=(abort), kwargs={'delay_ps_list': self.delay_ps_list ,'window_ps_list' : self.window_ps_list})
                     # Thread1.start()
                     self.get_trace(abort,delay_ps_list = self.delay_ps_list ,window_ps_list = self.window_ps_list) #Start AWGs...
-                    
+                    print('cun:pass the get trace...')
                     if abort.is_set(): break
 
                     self.data.set_observations([OrderedDict(end_time=datetime.datetime.now())]*self.number_of_simultaneous_measurements)
@@ -641,7 +642,7 @@ class NuclearOPs(DataGeneration):
                         odmr_frequency_drift_ok = True
 
                     if repeat_measurement:
-                        print('repeat_measurement ')
+                        print('cun:repeat_measurement ')
                     if odmr_frequency_drift_ok and not repeat_measurement:
                         break
                     # end of while
@@ -657,7 +658,7 @@ class NuclearOPs(DataGeneration):
                 # print("end of for")
                 
         except Exception as e:
-            print('ERROR: Nuclear op failed in run measuremt',e)
+            print('cun ERROR: Nuclear op failed in run measuremt',e)
             abort.set()
             exc_type, exc_value, exc_tb = sys.exc_info()
             traceback.print_exception(exc_type, exc_value, exc_tb)
@@ -697,7 +698,7 @@ class NuclearOPs(DataGeneration):
         if any([key in kwargs for key in ['iff', 'init_from_file']]):
             raise Exception('Error: Data initialization from file (.hdf or .csv) not allwoed in sequence debug mode.')
         if len(self.parameters['sweeps']) != 1:
-            print('Debug mode, number of sweeps set to one.')
+            print('cun:Debug mode, number of sweeps set to one.')
             self.parameters['sweeps'] = [0]
         self.init_run(**kwargs)
         self.state = 'sequence_testing'
@@ -1229,20 +1230,26 @@ class NuclearOPs(DataGeneration):
 
     def get_trace(self, abort, delay_ps_list = None,window_ps_list = None):
         if not self.debug_mode:
-            print("INITIALIZING")
+            print("cun:get_trace:INITIALIZING")
             print(self.mcas.name)
-            self.mcas.initialize() # We are talking now to the mcas --- I guess we need something to talk to the program
+            # This is only compilation of the sequence, test run for 1 s and stop..
+            # In principle we can cut it.
+            self.mcas.initialize() #FIXME might be usefull for something?
+
             # to keep the syntax same to keysight... (important for crossplatform)...
-            print("init fininished")
-        print("getting trace")
+            print("cun:get_trace:init fininished")
+        print("cun:get_trace:starting a longer trace")
+
+        ## This is preparing a gated counter and running a sequence.
         self.queue._gated_counter.count(abort,
                                  ch_dict=self.mcas.ch_dict,
+                                 mcas = self.mcas,
                                  start_trigger_delay_ps_list = delay_ps_list,
                                  window_ps_list = window_ps_list,
                                  two_zpl_apd = self.two_zpl_apd,
                                  raw_clicks_processing = self.raw_clicks_processing,
                                  raw_clicks_processing_channels = self.raw_clicks_processing_channels)
-        print("measurement finished")
+        print("cun:get_trace:measurement finished")
     # def setup_rf(self, current_iterator_df):
     #     t1 = time.time()
     #     #logging.info('setting up the rf')
@@ -1307,7 +1314,7 @@ class NuclearOPs(DataGeneration):
         else: 
             # This is usual.
             #self.queue._awg.mcas_dict.stop_awgs()
-            print('This time is the qua writing...')
+            print('cun:setup_rf:This time is the qua writing...')
             self.queue._awg.stop_awgs()
             self.mcas = self.ret_mcas(self,current_iterator_df)
             # Writing the sequence...
@@ -1387,25 +1394,35 @@ class NuclearOPs(DataGeneration):
     def save_sequence_file(self):
         pass
         seq_message = []
-        for k in self._md[self.mcas.name].sequences.keys():
-            for ch in [1,2]:
-                try:
-                    
-                    seq_message.append(self._md[self.mcas.name].sequences[k][ch].ret_info())
-                    seq_message.append("\n") 
-                except:
-                    
-                    pass
+        if hasattr(self.mcas, 'sequences'):
+            for k in self._md[self.mcas.name].sequences.keys():
+                for ch in [1,2]:
+                    try:
 
-        seq_message.append(str(self._md[self.mcas.name].sequences['ps'][1]))
-        awg_file_name = 'awg-file.txt'
-        awg_fp = os.path.join(self.save_dir, awg_file_name)
+                        seq_message.append(self._md[self.mcas.name].sequences[k][ch].ret_info())
+                        seq_message.append("\n")
+                    except Exception as e:
+                        print(e)
+                        pass
 
-        if not os.path.exists(awg_fp):
-            with open(awg_fp, 'w') as fp:
-                for page in seq_message:
-                    fp.write(page)
-                    fp.write('\n-------------------------------------------------------------------\n')
+            seq_message.append(str(self._md[self.mcas.name].sequences['ps'][1]))
+            awg_file_name = 'awg-file.txt'
+            awg_fp = os.path.join(self.save_dir, awg_file_name)
+
+            if not os.path.exists(awg_fp):
+                with open(awg_fp, 'w') as fp:
+                    for page in seq_message:
+                        fp.write(page)
+                        fp.write('\n-------------------------------------------------------------------\n')
+        else: ## quantum machine
+            seq_message.append(self.mcas.debug_info())
+            awg_file_name = 'awg-file.txt'
+            awg_fp = os.path.join(self.save_dir, awg_file_name)
+            if not os.path.exists(awg_fp):
+                with open(awg_fp, 'w') as fp:
+                    for page in seq_message:
+                        fp.write(json.dumps(page))
+                        fp.write('\n-------------------------------------------------------------------\n')
 
     def reset_settings(self):
         """

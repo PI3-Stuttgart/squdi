@@ -13,27 +13,21 @@ from configuration import *
 import matplotlib.pyplot as plt
 import json
 
-
 single_integration_time_ns = int(1000 * u.ns)
 ###################
 # The QUA program #
 ###################
+laser_list = ['Laser_520', 'AOM_520']
 with program() as hello_QUA:
     a: QuaVariable | QuaProgramArrayVarRefExpression | QuaProgramVarRefExpression = (
         declare(fixed)
     )
     with infinite_loop_():
         #with for_(a, 0, a < 1.1, a + 0.05):
+        for laser in do_list:
+            play("active", laser)
+        # play("const" * amp(1), "RF")
 
-        play("active", "Laser_520", duration=50)
-        play("const" * amp(1), "RF")
-            #play(
-            #    pulse="trigit",
-             #   element="Gate_Trigger",
-             #   duration=single_integration_time_ns,
-            #)
-            #wait(single_integration_time_ns, "Gate_Trigger")
-        #wait(25, "NV")
 print(hello_QUA.__dict__)
 #####################################
 #  Open Communication with the QOP  #
@@ -46,7 +40,7 @@ qmm = QuantumMachinesManager(
 # Run or Simulate Program #
 ###########################
 
-simulate = False
+simulate = True
 if simulate:
     # Simulates the QUA program for the specified duration
     simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
@@ -73,7 +67,7 @@ else:
     job = qm.execute(hello_QUA)
     # Execute does not block python! As this is an infinite loop, the job would run forever. In this case, we've put a 10
     # seconds sleep and then halted the job.
-    time.sleep(10)
+    time.sleep(1)
     job.halt()
     # time.sleep(10)
     # print(job.execution_report())

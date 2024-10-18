@@ -17,11 +17,13 @@ from configuration import *
 volt_factor = 5 # Defined at the laser
 # Frequency vector
 scan_freq = 0.1
-nr_amp_steps = 100
+nr_amp_steps = 1_000
 amp_vec = np.linspace(-1, 1, nr_amp_steps)
 n_avg = 1_000  # number of averages
 readout_len = (1/scan_freq/nr_amp_steps) * u.s  # Readout duration for this experiment
 i_avg = 1_000 # number of averages per voltage
+repump_len = 2 * u.ms
+repump_pulse_len = repump_len / i_avg
 
 with program() as ple:
     times = declare(int, size=100)  # QUA vector for storing the time-tags  
@@ -33,7 +35,7 @@ with program() as ple:
     n = declare(int)  # number of iterations
     n_st = declare_stream()  # stream for number of iterations
     i = declare(int) # number of iterations per 
-
+    k = declare(int)
     # integrations of ehole scan
     with for_(n, 0, n < n_avg, n + 1):
         assign(i_amp, 0)
@@ -41,6 +43,7 @@ with program() as ple:
         with for_(*from_array(_amp, amp_vec)):  
             # Integration per voltage step
             with for_(i, 0, i < i_avg, i + 1):
+                play('active', 'AOM_620', duration=readout_len/i_avg * u.ns)
                 play("piezo_offset" * amp(_amp), "LaserScanner_red", duration=readout_len/i_avg * u.ns)
                 measure("long_readout", "SPCM1", None, time_tagging.analog(times, readout_len/i_avg * u.ns, counts))
                 assign(total_counts, total_counts + counts)
@@ -48,7 +51,10 @@ with program() as ple:
             save(total_counts, counts_st)  # save counts on stream
             assign(total_counts, 0)
             assign(i_amp, i_amp + 1)
-        save(n, n_st)  # save number of iteration inside for_loop
+            save(n, n_st)  # save number of iteration inside for_loop
+        with for_(k, 0, k < i_avg, k + 1):
+            play("piezo_offset" * amp(-1), "LaserScanner_red", duration=repump_pulse_len)
+            play("active", "Laser_450", duration=repump_pulse_len)
 
     with stream_processing():
         # Cast the data into a 1D vector, average the 1D vectors together and store the results on the OPX processor
@@ -97,7 +103,7 @@ else:
         progress_counter(iteration, n_avg, start_time=results.get_start_time())
         # Plot data
         plt.cla()
-        plt.plot(amp_vec/0.5 * volt_factor, counts / 1000 / (readout_len * n_avg  * 1e-9), label="photon counts")
+        plt.plot(amp_vec * 0.5 * volt_factor, counts / readout_len / 1000 * 1e9, label="photon counts")
         #plt.plot((NV_LO_freq * 0 + f_vec) / u.MHz, counts_dark / 1000 / (readout_len * 1e-9), label="dark counts")
         plt.xlabel("Piezo Voltage [V]")
         plt.ylabel("Counts [kcps]")

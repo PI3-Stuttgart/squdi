@@ -433,7 +433,7 @@ class Data:
                 print('Ok.. hdf_lock acquired.')
             t.append(time.time() - t0)
             store = pd.HDFStore(filepath)
-            store.put('df', df_save, table=True)
+            store.put('df', df_save, format='table')# table=True)
             #store.get_storer('df').attrs.metadata = {"Datatypes":list(self.df.dtypes)}
             for key in ["parameter_names", 'observation_names', 'dtypes']:
                 setattr(store.get_storer('df').attrs, key, getattr(self, key))

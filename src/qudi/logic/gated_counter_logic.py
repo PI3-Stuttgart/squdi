@@ -21,7 +21,7 @@ import numpy as np
 import logging
 
 #from hardware.Keysight_AWG_M8190.pym8190a import MultiChSeq as MCAS
-#from hardware.Keysight_AWG_M8190.pym8190a import start_awgs as start_awgs
+#from hardware.Keysight_AWG_M8190.pym8190a import start_awgs as start_awgs # here we dont have it....
 import zmq
 #import logic.qudip_enhanced.qtgui.gui_helpers
 from numbers import Number
@@ -121,7 +121,7 @@ class GatedCounter(GenericLogic):
     def n_values(self, val):
         self._n_values = val
 
-    def set_n_values(self, mcas, sm, analyze_sequence=None):
+    def set_n_values(self, mcas, sm, n_values = None, analyze_sequence=None):
         """
         mcas: sequence
         sm: number of simulatanious measurements
@@ -132,9 +132,14 @@ class GatedCounter(GenericLogic):
         # print('analyze sequence in gated counter logic: ',analyze_sequence)
         # for step in analyze_sequence:
         #     print(step)
-        self.n_values = int(self.readout_duration/ (mcas.length_mus/sm) * sum([step[3] for step in analyze_sequence]))
+        if n_values is None:
+
+            self.n_values = int(self.readout_duration/ (mcas.length_mus/sm) * sum([step[3] for step in analyze_sequence]))
+        else:
+            self.n_values = n_values
         
     def read_trace(self):
+        print('GC:read_trace')
         self.gated_counter_data = self._fast_counter_device.gated_counter_countbetweenmarkers.getData() #If readout takes too long, ask Javid for optimized Readout sequence
         if self.ZPL_counter:
             print("ZPL_counter in gated_counter_logic")
@@ -284,29 +289,46 @@ class GatedCounter(GenericLogic):
                             counter_name = 'gated_cbm_2_zpl_{i}_{j}'.format(i=i, j=j)
                             getattr(self._fast_counter_device, counter_name).start()
 
-    def count(self, abort, ch_dict, turn_off_awgs=True,
+    def count(self, abort, mcas, ch_dict = None, turn_off_awgs=True,
               start_trigger_delay_ps_list = None,window_ps_list=None,
               raw_clicks_processing=False, two_zpl_apd = False,raw_clicks_processing_channels = [0,1,2,3,4,5,6,7],
               hashed = False, seq_name=''):
+        """
+        Main function which collects the raw clicks in the gated counter.
+        :param abort:
+        :param ch_dict: default None, This is the AWG ch dict, used for the MCAS. Here we can use it in principle.
+        :param turn_off_awgs:
+        :param start_trigger_delay_ps_list:
+        :param window_ps_list:
+        :param raw_clicks_processing:
+        :param two_zpl_apd:
+        :param raw_clicks_processing_channels:
+        :param hashed:
+        :param seq_name:
+        :return:
+        """
         self.start_trigger_delay_ps_list = start_trigger_delay_ps_list
-        self.window_ps_list = window_ps_list
+        self.window_ps_list = window_ps_list # This is needed for the ps for time filtering.
         self.two_zpl_apd = two_zpl_apd
         self.raw_clicks_processing = raw_clicks_processing
         self.raw_clicks_processing_channels = raw_clicks_processing_channels
         number_of_subtraces = 1 #fixme, later put a len of analyze sequence
-        
+
+        print('GC: count started')
         if hasattr(self, '_gui'):
             self.clear_plot_signal.emit(number_of_subtraces)
         try:
-            self.set_counter()
-            if not self._mcas_dict.mcas_dict.debug_mode:
-                print('start awgs in gated_counter_logic via "start_awgs(self._mcas_dict._mcas_dict.awgs)", which is direct connection to hardware file')
-                # shouldnt it be started via mcas_dict['"sequence_name"].run()
-                # How does awgs know which sequence to run?
-                start_awgs(self._mcas_dict.mcas_dict.awgs, ch_dict=ch_dict)
+            self.set_counter() #Prepares the gated counter to collect the data.
+            #if not self._awg.debug_mode: # Actually start the AWG...
+            print('start awgs in gated_counter_logic via mcas.run(), which is qm.execute(program)')
+            # shouldnt it be started via mcas_dict['"sequence_name"].run()
+            # How does awgs know which sequence to run?
+
+            mcas.run()
             self.progress = 0
             i=0
             while True:
+                #print('stuck in Ready for data...')
                 if abort.is_set():
                     break
                 # print('Gated counter is falling asleep for ',self.readout_duration / 1e6)
@@ -318,14 +340,14 @@ class GatedCounter(GenericLogic):
                     #why get counts here already? its done at the end of measurement when self.read_trace() is called
                     # seems like read_trace() is not doing much...
                     dat=self._fast_counter_device.gated_counter_countbetweenmarkers.getData()
-                    #print("-----------------------------------------------------\n",np.sum(dat),len(dat))
+                    print("-----------------------------------------------------\n",np.sum(dat),len(dat))
                 i+=1
                 if ready:
                     # print(self._fast_counter_device.gated_counter_countbetweenmarkers.getData())
                     break
                 else:
-                    #time.sleep(0.1)
-                    QtTest.QTest.qSleep(100)
+                    time.sleep(0.1)
+                    #QtTest.QTest.qSleep(100)
             self.read_trace()
             self.update_plot()
             
@@ -336,7 +358,7 @@ class GatedCounter(GenericLogic):
             traceback.print_exception(exc_type, exc_value, exc_tb)
         finally:
             if turn_off_awgs:
-                self._mcas_dict.mcas_dict.stop_awgs()
+                mcas.stop()
 
             self.stop_timetaggers()
 
@@ -344,6 +366,8 @@ class GatedCounter(GenericLogic):
             self.state = 'idle'
 
     def set_counter(self):
+
+        print('GC:set_counter')
         self.ZPL_counter = False
         ## Needs to be adjusted tohas the qudi gated counter #TODO
         def f():
@@ -351,8 +375,10 @@ class GatedCounter(GenericLogic):
                 step[3] for step in self.trace.analyze_sequence])
 
             #TODO redo the interfaces . Init counter to gated counter now, or make it inside the TT class?
-            self._fast_counter_device.count_between_markers(
-                n_values=self.n_values - self.n_values % nlp_per_point if hasattr(self, '_n_values') else nlp_per_point * self.points
+            n_vals = self.n_values - self.n_values % nlp_per_point if hasattr(self, '_n_values') else nlp_per_point * self.points
+            print('GC:set_counter:nvas',n_vals)
+            self._fast_counter_device.count_between_markers_nops(
+                n_values=n_vals
             )
 
             #ZPL STUF
@@ -413,7 +439,7 @@ class GatedCounter(GenericLogic):
                 break
         else:
             raise Exception('Error: timeout.')
-
+        print('GC: set_counter finished.')
     def set_progress(self):
         if self._fast_counter_device.gated_counter_countbetweenmarkers.ready():
             self.progress = int(len(self.gated_counter_data))
@@ -446,6 +472,7 @@ class GatedCounter(GenericLogic):
                 pass
 
     def update_plot(self):
+        print('GC: update_plot')
         if hasattr(self, '_gui'):
             self.update_plot_data()
 

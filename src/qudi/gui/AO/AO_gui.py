@@ -149,7 +149,6 @@ class AOGui(GuiBase):
 
         # for remove_channel in self._ignore_aos:
         #    channels.pop(remove_channel, None)
-        print(channels)
         for ii, channel in enumerate(channels):
             label: QtWidgets.QLabel = self._get_channel_label(channel)
 
@@ -310,24 +309,25 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
     def slider_value_changed(self, value: int) -> None:
         """Slot to handle changes in the slider's value."""
         float_value = self.slider_value_to_float(value)
-        self.spin_box.setValue(float_value)
-        self.sigValueChanged.emit(float_value)
+        if self.spin_box.value() != float_value:
+            self.spin_box.setValue(float_value)
+            self.sigValueChanged.emit(float_value)
 
     def spin_box_value_changed(self) -> None:
         """Slot to handle changes in the spin box's value."""
         slider_value = self.float_to_slider_value(self.spin_box.value())
-        self.slider.setValue(slider_value)
-        self.sigValueChanged.emit(self.spin_box.value())
+        if self.slider.value() != slider_value:
+            self.slider.setValue(slider_value)
+            self.sigValueChanged.emit(self.spin_box.value())
 
-    def slider_value_to_float(self, value: int) -> float:
+    def slider_value_to_float(self, value: int, round_digit:int = 5) -> float:
         """Convert the slider's integer value to a float."""
         min_value, max_value = self.value_range
         float_range = max_value - min_value
-        return (value / self.num_slider_points) * float_range + min_value
+        return round((value / self.num_slider_points) * float_range + min_value, round_digit)
 
     def float_to_slider_value(self, value: float) -> int:
         """Convert a float value to the slider's integer scale."""
-        print(self.value_range)
         min_value, max_value = self.value_range
         float_range: float = max_value - min_value
         return int((value - min_value) / float_range * self.num_slider_points)
@@ -345,7 +345,6 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
     @QtCore.Slot(str)
     def set_value(self, value: float) -> None:
         """Sets value of spinbox and slider"""
-        print(f"slider set: {value}")
         slider_value: int = self.float_to_slider_value(value)
         self.slider.setValue(slider_value)
         self.spin_box.setValue(value)

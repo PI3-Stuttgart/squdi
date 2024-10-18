@@ -10,6 +10,7 @@ class TT(Base):
     _serial = ConfigOption('serial', None, missing='info')
     _hist = ConfigOption('hist', dict(), missing='warn')
     _corr = ConfigOption('corr', dict(), missing='warn')
+    _count_between_markers = ConfigOption('count_between_markers', dict(), missing='warn')
     _counter = ConfigOption('counter', dict(), missing='warn')
     _combiner = ConfigOption('combiner', dict(), missing='warn')
     _channels_params = ConfigOption('channels_params', dict(), missing='info')
@@ -55,6 +56,7 @@ class TT(Base):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.sample_rate = 50
+        self.gated_counter_countbetweenmarkers = None
 
     def on_activate(self):
         try:
@@ -176,7 +178,23 @@ class TT(Base):
                                 click_channel,
                                 begin_channel,
                                 end_channel,
-                                n_values)     
+                                n_values)
+
+    def count_between_markers_nops(self, n_values=1):
+        ## Adapted to work best with nuclear ops, might be rewritten with return statement, but takes time to see
+        ## how it affects usage of the class.
+        print('Setting the gated counter with n values', n_values)
+        print('channels: start stop -- ',self._count_between_markers['begin_channel'],self._count_between_markers['end_channel'])
+        # TODO parse the channels from kwargs, otherwise if not present keep default.
+        # something liek this.  cl_ch = getattr(kwargs['cl_ch'], self._click_channel)
+        self.gated_counter_countbetweenmarkers = CountBetweenMarkers(self.tagger,
+                                                                     click_channel=self._count_between_markers[
+                                                                         'click_channel'],
+                                                                     begin_channel=self._count_between_markers[
+                                                                         'begin_channel'],
+                                                                     end_channel=self._count_between_markers[
+                                                                         'end_channel'],
+                                                                     n_values=n_values)
 
     #@remote_tagger
     def time_differences(self, click_channel, start_channel,

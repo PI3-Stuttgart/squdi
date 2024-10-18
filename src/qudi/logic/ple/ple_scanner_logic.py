@@ -309,7 +309,6 @@ class PLEScannerLogic(ScanningProbeLogic):
     def update_number_of_repeats(self, number_of_repeats):
         self._number_of_repeats = number_of_repeats
 
-    
     def set_target_position(self, pos_dict, caller_id=None, move_blocking=False):
         with self._thread_lock:
             if self.module_state() != 'idle':
@@ -365,13 +364,14 @@ class PLEScannerLogic(ScanningProbeLogic):
             
 
             self.module_state.lock()
-
+            print('test_1')
             settings = {'axes': scan_axes,
                         'range': tuple(self._scan_ranges[ax] for ax in scan_axes),
                         'resolution': tuple(self._scan_resolution[ax] for ax in scan_axes),
                         'frequency': self._scan_frequency[scan_axes[0]],
                         'lines_to_scan': self._number_of_repeats}
             fail, new_settings = self._scanner().configure_scan(settings)
+            print(fail)
             if fail:
                 self.module_state.unlock()
                 self.stop_scan() 
@@ -387,14 +387,15 @@ class PLEScannerLogic(ScanningProbeLogic):
             # self.__scan_poll_interval = max(self._min_poll_interval,
             #                                 line_points / self._scan_frequency[scan_axes[0]])
             self.__scan_poll_timer.setInterval(int(round(self._scan_poll_interval)))# * 1000)))
-            
+            print('test_2')
             if self._scanner().start_scan() < 0:  # TODO Current interface states that bool is returned from start_scan
                 
                 self.module_state.unlock()
                 self.sigScanStateChanged.emit(False, None, self._curr_caller_id)
                 return -1
-            
+            print('test_3')
             self.sigScanStateChanged.emit(True, self.scan_data, self._curr_caller_id)
+            print('test_3')
             self.__start_timer()
             return 0
 

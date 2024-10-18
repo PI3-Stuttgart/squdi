@@ -507,13 +507,13 @@ class ScanningOptimizeLogic(LogicBase):
             y_middle = (y_max - y_min) / 2 + y_min
             self.log.exception('2D Gaussian fit unsuccessful.')
             return (x_middle, y_middle), None, None
-        if max_is_spline:
-            z_max, max_x, max_y = find_max_spline_2d(data.reshape(xy[0].shape[0], xy[1].shape[0]).T, 
-                                                     xy 
-                                                    )
-        else:
-            max_x = fit_result.best_values['center_x']
-            max_y = fit_result.best_values['center_y']
+        #if max_is_spline:
+        #    z_max, max_x, max_y = find_max_spline_2d(data.reshape(xy[0].shape[0], xy[1].shape[0]).T,
+        #                                             xy
+        #                                            )
+        #else:
+        max_x = fit_result.best_values['center_x']
+        max_y = fit_result.best_values['center_y']
         print((max_x,
                 max_y))
         return (max_x,
