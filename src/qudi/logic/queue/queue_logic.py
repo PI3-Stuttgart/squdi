@@ -1,16 +1,20 @@
 # coding=utf-8
 from __future__ import print_function, absolute_import, division
+
 __metaclass__ = type
 
 import sys, os
 import imp
-#from gui.queue.Queue import queue_gui
+
+# from gui.queue.Queue import queue_gui
 from queue import Queue
 from PySide2.QtCore import Signal as pyqtSignal
 from qudi.logic.qudip_enhanced import *
+
 # FIXME
 from PySide2.QtCore import QTimer
 from PySide2 import QtTest
+
 # import multi_channel_awg_seq as MCAS; reload(MCAS)
 import qudi.logic.misc as misc
 import datetime
@@ -27,9 +31,12 @@ import logging
 
 import collections
 import importlib
-#import qudi.logic.ODMR_nops as odmr; importlib.reload(odmr)
+
+# import qudi.logic.ODMR_nops as odmr; importlib.reload(odmr)
 from qudi.util.mutex import Mutex
-#from qudi.logic.currentmeasurement.current_measurement import CurrentMeasurementLogic # Voltage and Current measurements
+
+
+# from qudi.logic.currentmeasurement.current_measurement import CurrentMeasurementLogic # Voltage and Current measurements
 # from logic.biaslogic import BiasLogic
 class ScriptQueueStep:
     def __init__(self, name, pd):
@@ -68,7 +75,11 @@ class ScriptQueueList(collections.abc.MutableSequence):
 
     def check(self, val):
         if not isinstance(val, self.oktypes):
-            raise TypeError("list item {} is not allowed, as it can not be found in {}".format(val, self.oktypes))
+            raise TypeError(
+                "list item {} is not allowed, as it can not be found in {}".format(
+                    val, self.oktypes
+                )
+            )
 
     # def check_duplicate(self, v):
     #     duplicates = [item.name for item in self.list if item.name == v.name]
@@ -97,7 +108,7 @@ class ScriptQueueList(collections.abc.MutableSequence):
 
     def insert(self, i, v):
         if i != len(self.list):
-            raise Exception('Only appending and popping items allowed')
+            raise Exception("Only appending and popping items allowed")
         self.check(v)
         # self.check_duplicate(v)
         self.list.insert(i, v)
@@ -109,32 +120,34 @@ class ScriptQueueList(collections.abc.MutableSequence):
     def __repr__(self):
         return str(self.list)
 
+
 class queue_logic(GenericLogic):
 
     # declare connections
-    mcas_holder = Connector(interface='McasDictHolderInterface')
-    opx_holder = Connector(interface = 'OPX')
-    transition_tracker = Connector(interface = 'TransitionTracker') # Should be a name of the class
-    confocal = Connector(interface='ScanningProbeLogic')
-    gated_counter = Connector('GatedCounter') # Should be name of the class.
-    optimizer= Connector('ScanningOptimizeLogic')
-    fastcounter = Connector(interface='TT')
-    PLE_logic= Connector(interface="PLEOptimizeScannerLogic") #only for refocuses...
-    #odmr_logic= Connector("ODMRLogic_holder")
-    #currentmeasurementlogic= Connector("CurrentMeasurementLogic")
+    mcas_holder = Connector(interface="McasDictHolderInterface")
+    opx_holder = Connector(interface="OPX")
+    transition_tracker = Connector(
+        interface="TransitionTracker"
+    )  # Should be a name of the class
+    confocal = Connector(interface="ScanningProbeLogic")
+    gated_counter = Connector("GatedCounter")  # Should be name of the class.
+    optimizer = Connector("ScanningOptimizeLogic")
+    fastcounter = Connector(interface="TT")
+    PLE_logic = Connector(interface="PLEOptimizeScannerLogic")  # only for refocuses...
+    # odmr_logic= Connector("ODMRLogic_holder")
+    # currentmeasurementlogic= Connector("CurrentMeasurementLogic")
     # biaslogic= Connector("BiasLogic")
-    #poimanagerlogic = Connector('PoiManagerLogic')
-    #powerstabilization_logic = Connector("PowerStabilizationLogic")
-    counterlogic1=Connector(interface="TimeTaggerLogic")
-
+    # poimanagerlogic = Connector('PoiManagerLogic')
+    # powerstabilization_logic = Connector("PowerStabilizationLogic")
+    counterlogic1 = Connector(interface="TimeTaggerLogic")
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
     update_queue_list = pyqtSignal(collections.OrderedDict)
-    user_script_list = misc.ret_property_array_like_typ('user_script_list', str)
-    guis = []  #stores names of all open guis (later on used to dump them periodically)
-    _StopTimeout = 60.
+    user_script_list = misc.ret_property_array_like_typ("user_script_list", str)
+    guis = []  # stores names of all open guis (later on used to dump them periodically)
+    _StopTimeout = 60.0
 
-    __TIME_FORMAT_STR__ = '%Y%m%d-h%Hm%Ms%S'
+    __TIME_FORMAT_STR__ = "%Y%m%d-h%Hm%Ms%S"
 
     # smiq_visa_device = 'GPIB0::28::INSTR'
     # app_dir = r'D:/Python/pi3diamond'
@@ -143,9 +156,9 @@ class queue_logic(GenericLogic):
     # log_single_val_dir = '{}/log/single_values/'.format(app_dir)
     # log_tmp = '{}/log/temp/'.format(app_dir)
 
-    def __init__(self, config , **kwargs):
+    def __init__(self, config, **kwargs):
         super(queue_logic, self).__init__(config=config, **kwargs)
-        self._threadlock=Mutex()
+        self._threadlock = Mutex()
         self.script_history = []
         self.timer = QTimer(self)
 
@@ -155,33 +168,33 @@ class queue_logic(GenericLogic):
 
     def on_activate(self):
 
-        #self._awg = self.mcas_holder()
+        # self._awg = self.mcas_holder()
         self._awg = self.opx_holder()
         self._transition_tracker = self.transition_tracker()
         self._gated_counter: GatedCounter = self.gated_counter()
         self._optimizer = self.optimizer()
         self._PLE_logic = self.PLE_logic()
-        #self._ODMR_logic = self.odmr_logic()
-        #self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic() ### : is important for clicking through.
+        # self._ODMR_logic = self.odmr_logic()
+        # self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic() ### : is important for clicking through.
         # self._biaslogic:BiasLogic = self.biaslogic()
-        #self._powerstabilization_logic = self.powerstabilization_logic() ##: TODO - here we can recover it with our own code
-        #self._poimanagerlogic = self.poimanagerlogic() # :TODO - this is legacy poi manager, but we can use the new one.
-        self._counter=self.counterlogic1() #
+        # self._powerstabilization_logic = self.powerstabilization_logic() ##: TODO - here we can recover it with our own code
+        # self._poimanagerlogic = self.poimanagerlogic() # :TODO - this is legacy poi manager, but we can use the new one.
+        self._counter = self.counterlogic1()  #
         self._fast_counter_device = self.fastcounter()  # FIXME
-        #self.create_odmr()  #only logic (no gui)
+        # self.create_odmr()  #only logic (no gui)
         self.init_run()
-        #self.write_standard_awg_sequences()
+        # self.write_standard_awg_sequences()
         self._confocal = self.confocal()
         self.tt = self._transition_tracker
 
     def on_deactivate(self):
         pass
         self.timer.stop()
-        #FIXME destroy me gently
+        # FIXME destroy me gently
 
     @property
     def md(self):
-        return self._mcas_dict#
+        return self._mcas_dict  #
 
     @property
     def gui(self):
@@ -193,9 +206,9 @@ class queue_logic(GenericLogic):
     #     self._timetagger = TimeTaggerHandler.init_timetagger()
 
     def init_run(self):
-        self.user_script_folder = r"C:\Users\yy3\git\squdi\src\qudi\UserScripts\electron_t2"#r"C:/src/qudi/notebooks/UserScripts/electron_t2"
+        self.user_script_folder = r"C:\Users\yy3\git\squdi\src\qudi\UserScripts\electron_t2"  # r"C:/src/qudi/notebooks/UserScripts/electron_t2"
         self._script_queue = ScriptQueueList(oktypes=(ScriptQueueStep), list_owner=self)
-        self.q = Queue() # use connector
+        self.q = Queue()  # use connector
         self.timer.start()
         self.run_thread()
         # self.track_memory_usage_thread()
@@ -203,17 +216,18 @@ class queue_logic(GenericLogic):
     @property
     def script_queue(self):
         return self._script_queue
+
     @property
     def nowstr(self):
-        return datetime.datetime.now().strftime('%Y%m%d-h%Hm%Ms%S')
+        return datetime.datetime.now().strftime("%Y%m%d-h%Hm%Ms%S")
 
     @property
     def nowstr_colon(self):
-        return datetime.datetime.now().strftime('%Y/%m/%d-%H:%M:%S')
+        return datetime.datetime.now().strftime("%Y/%m/%d-%H:%M:%S")
 
     @property
     def nowstr_pd(self):
-        return datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
+        return datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
 
     @property
     def awgs(self):
@@ -224,41 +238,52 @@ class queue_logic(GenericLogic):
     ####################################################################################################################
 
     def persistent_file_name(self, model):
-        if hasattr(model, 'pi3d_dump_filename'):
+        if hasattr(model, "pi3d_dump_filename"):
             return self.log_dir + model.pi3d_dump_filename
-        return self.log_dir + str(model.__class__).replace('>', '').replace('<',
+        return (
+            self.log_dir
+            + str(model.__class__).replace(">", "").replace("<", "")
+            + ".pyd"
+        )  # windows does not allow '>' and '<' in filenames
 
-                                                                            '') + '.pyd'  # windows does not allow '>' and '<' in filenames
     #
     def restore(self, model, fp=None):
         filename = self.persistent_file_name(model) if fp is None else fp
 
         if os.access(filename, os.F_OK):
 
-            self.log.info('Restoring state of ' + model.__str__() + '\nfrom ' + filename + '..')
+            self.log.info(
+                "Restoring state of " + model.__str__() + "\nfrom " + filename + ".."
+            )
 
             try:
-                a = pickle.load(open(filename, 'rb'))
+                a = pickle.load(open(filename, "rb"))
                 a = a if type(a) is dict else a.__getstate__()
                 model.set_items(a)
-                self.log.info('[DONE1]')
+                self.log.info("[DONE1]")
 
             except Exception as inst:
                 self.log.exception(str(inst))
-                self.log.warning('[FAILED]')
+                self.log.warning("[FAILED]")
                 raise inst
 
     def dump(self, model):
         filename = self.persistent_file_name(model)
-        self.log.info('attempting to save state of ' + model.__str__() + '\nto ' + filename + '..', )
+        self.log.info(
+            "attempting to save state of "
+            + model.__str__()
+            + "\nto "
+            + filename
+            + "..",
+        )
         try:
-            fil = open(filename, 'wb')
+            fil = open(filename, "wb")
             pickle.dump(model.__getstate__(), fil)
             fil.close()
-            self.log.info('[DONE]')
+            self.log.info("[DONE]")
         except Exception:
             self.log.exception(str(Exception))
-            self.log.warning('[FAILED]')
+            self.log.warning("[FAILED]")
 
     # @property
     # def current_nuclear(self):
@@ -268,31 +293,32 @@ class queue_logic(GenericLogic):
 
     @property
     def script_module_names(self):
-        return [i for i in sys.modules if '__script__' in i]
+        return [i for i in sys.modules if "__script__" in i]
 
     @property
     def last_running_script_name(self):
         sm = self.script_module_names
-        if hasattr(self, 'current_script'):
-            if not self.current_script['module_name'] in sm:
-                raise Exception('Error: {}, {}'.format(sm, self.current_script))
+        if hasattr(self, "current_script"):
+            if not self.current_script["module_name"] in sm:
+                raise Exception("Error: {}, {}".format(sm, self.current_script))
             else:
-                return self.current_script['module_name']
+                return self.current_script["module_name"]
         else:
-            if len(sm)> 0:
+            if len(sm) > 0:
                 return sm[-1]
             else:
                 return -1
+
     @property
     def cun_modules(self):
         lrs = self.last_running_script_name
         if lrs == -1:
             return None
-        if hasattr(sys.modules[lrs], 'nuclear'):
+        if hasattr(sys.modules[lrs], "nuclear"):
             return sys.modules[lrs]
         else:
             for smi in self.script_module_names[::-1]:
-                if hasattr(sys.modules[smi], 'nuclear'):
+                if hasattr(sys.modules[smi], "nuclear"):
                     return sys.modules[smi]
 
     @property
@@ -304,10 +330,10 @@ class queue_logic(GenericLogic):
 
     def track_memory_usage(self):
         while True:
-            self.save_value_to_file(self.current_memory_usage(), 'memory_mb')
+            self.save_value_to_file(self.current_memory_usage(), "memory_mb")
             # CAREFUL WITH THREADING AND WRITING TO SAME HDF FILE self.save_values_hdf(classifier='memory_mb', vd=dict(none=self.current_memory_usage()))
             # possible solution: https://stackoverflow.com/questions/22522551/pandas-hdf5-as-a-database
-            QtTest.QTest.qSleep(5000)#time.sleep(5)
+            QtTest.QTest.qSleep(5000)  # time.sleep(5)
 
     # def current_memory_usage(self):
     #     print(os.getpid())
@@ -327,12 +353,12 @@ class queue_logic(GenericLogic):
         return self._script_queue_table_data
 
     def update_script_queue_table_data(self):
-        out = collections.OrderedDict([('name', []), ('pd', [])])
+        out = collections.OrderedDict([("name", []), ("pd", [])])
         for ridx, i in enumerate(self.script_queue):
-            for cidx, attr_name in enumerate(['name', 'pd']):
+            for cidx, attr_name in enumerate(["name", "pd"]):
                 out[attr_name].append(getattr(i, attr_name))
         self._script_queue_table_data = out
-        if hasattr(self, '_gui'): # this is the problem.
+        if hasattr(self, "_gui"):  # this is the problem.
             self.gui.update_script_queue_table_data(self.script_queue_table_data)
         self.update_queue_list.emit(self.script_queue_table_data)
 
@@ -346,40 +372,40 @@ class queue_logic(GenericLogic):
         :return:
         """
         pass
-        #self.timer.start()
+        # self.timer.start()
 
     def mainloop_handler(self):
 
-        #print('mainloop NOPS QUEUE watcher..')
+        # print('mainloop NOPS QUEUE watcher..')
         if self.thread.stop_request.is_set():
-            print('stop request')
+            print("stop request")
             self.q.queue.clear()
             self.script_queue.list = []
             self.thread.stop_request.clear()
 
         try:
-            if hasattr(self, 'cun') and self.cun is not None:
-                #print('has already the CUN, check its state.')
-                if self.cun.state not in ['run', 'sequence_testing']:
-                    print('its finished, fininishing ')
+            if hasattr(self, "cun") and self.cun is not None:
+                # print('has already the CUN, check its state.')
+                if self.cun._state not in ["run", "sequence_testing"]:
+                    print("its finished, fininishing ")
                     self.finish_measurement()
                     self.start_next_measurement()
-                    #self.wait_for_a_measurement()
+                    # self.wait_for_a_measurement()
                 else:
                     pass
-                    #print('There is a cun but it is workin, check you later...')
-                    #we need to wait...
+                    # print('There is a cun but it is workin, check you later...')
+                    # we need to wait...
             else:
-                print('starting a new measurements')
+                print("starting a new measurements")
                 self.start_next_measurement()
-                    # waiting for the measurement to finish.
+                # waiting for the measurement to finish.
 
         except Exception:
-                self.q.queue.clear()
-                self.script_queue.list = []
-                exc_type, exc_value, exc_tb = sys.exc_info()
-                traceback.print_exception(exc_type, exc_value, exc_tb)
-                self.finish_measurement()
+            self.q.queue.clear()
+            self.script_queue.list = []
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            traceback.print_exception(exc_type, exc_value, exc_tb)
+            self.finish_measurement()
         """
         This should do what previously was in while loop of the run old function
         :return: 
@@ -388,10 +414,16 @@ class queue_logic(GenericLogic):
     def start_next_measurement(self):
         self.current_script = self.q.get()
         self.thread.stop_request.clear()  # this is necessary although it shouldn't be.
-        self.log.info("Starting Userscript {}...{}".format(
-            self.current_script['module_name'][10:],self.thread.stop_request.is_set()))
-        sys.modules[self.current_script['module_name']].run_fun(self.thread.stop_request, queue=self, **self.current_script['pd'])  ## Creates a nuclear and runs it.!!!
-        print('entering waiting loop in queue...')
+        self.log.info(
+            "Starting Userscript {}...{}".format(
+                self.current_script["module_name"][10:],
+                self.thread.stop_request.is_set(),
+            )
+        )
+        sys.modules[self.current_script["module_name"]].run_fun(
+            self.thread.stop_request, queue=self, **self.current_script["pd"]
+        )  ## Creates a nuclear and runs it.!!!
+        print("entering waiting loop in queue...")
 
         ### Here the queue should wait for the measurement to be finished...# TODO signal replacement for the future...
 
@@ -400,9 +432,11 @@ class queue_logic(GenericLogic):
         not used... legacy module.,..
         :return:
         """
-        if hasattr(self, 'cun'):
-            while self.cun.state == 'run':
-                QtTest.QTest.qSleep(1000)  # This is Qt version for time.sleep to prevent freezinng. also doesnt work for PySide2.
+        if hasattr(self, "cun"):
+            while self.cun.state == "run":
+                QtTest.QTest.qSleep(
+                    1000
+                )  # This is Qt version for time.sleep to prevent freezinng. also doesnt work for PySide2.
             else:
                 print("new measurement can be started")
         else:
@@ -412,24 +446,27 @@ class queue_logic(GenericLogic):
         try:
             self.script_queue.pop(0)
             self.script_history.append(self.current_script)
-            self.log.info("Userscript {} has finished...".format(self.current_script['module_name'][10:]))
+            self.log.info(
+                "Userscript {} has finished...".format(
+                    self.current_script["module_name"][10:]
+                )
+            )
             del self.current_script
             self.q.task_done()
 
         except IndexError:
-            print('no more scripts in the queue..')
+            print("no more scripts in the queue..")
             return
 
     def run_old(self):
 
-
         ## Why this is needed??????
 
-        #from tools_2 import emod
-        #emod.JobManager().start() ## maybe this is something which makes multiple sequences actuakly working.
+        # from tools_2 import emod
+        # emod.JobManager().start() ## maybe this is something which makes multiple sequences actuakly working.
         # start the CronDaemon
-        #from tools_2 import cron
-        #cron.CronDaemon().start()
+        # from tools_2 import cron
+        # cron.CronDaemon().start()
         self.dummy_test_variable = 123
 
         while True:
@@ -437,21 +474,27 @@ class queue_logic(GenericLogic):
                 self.q.queue.clear()
                 self.script_queue.list = []
                 self.thread.stop_request.clear()
-            try: ### runs the measurement!
+            try:  ### runs the measurement!
                 self.current_script = self.q.get()
-                self.thread.stop_request.clear() # this is necessary although it shouldn't be.
-                self.log.info("Starting Userscript {}...{}".format(
-                    self.current_script['module_name'][10:],
-                   self.thread.stop_request.is_set()))
-                sys.modules[self.current_script['module_name']].run_fun(
-                    self.thread.stop_request, queue = self, **self.current_script['pd']) ## Creates a nuclear and runs it.!!!
-                print('entering waiting loop in queue...')
+                self.thread.stop_request.clear()  # this is necessary although it shouldn't be.
+                self.log.info(
+                    "Starting Userscript {}...{}".format(
+                        self.current_script["module_name"][10:],
+                        self.thread.stop_request.is_set(),
+                    )
+                )
+                sys.modules[self.current_script["module_name"]].run_fun(
+                    self.thread.stop_request, queue=self, **self.current_script["pd"]
+                )  ## Creates a nuclear and runs it.!!!
+                print("entering waiting loop in queue...")
 
                 ### Here the queue should wait for the measurement to be finished...# TODO signal replacement for the future...
 
-                if hasattr(self, 'cun'):
-                    while self.cun.state == 'run':
-                        QtTest.QTest.qSleep(1000)  #This is Qt version for time.sleep to prevent freezinng.
+                if hasattr(self, "cun"):
+                    while self.cun.state == "run":
+                        QtTest.QTest.qSleep(
+                            1000
+                        )  # This is Qt version for time.sleep to prevent freezinng.
                     else:
                         print("new measurement can be started")
                 else:
@@ -459,10 +502,14 @@ class queue_logic(GenericLogic):
 
                 self.script_history.append(self.current_script)
                 self.script_queue.pop(0)
-                self.log.info("Userscript {} has finished...".format(self.current_script['module_name'][10:]))
+                self.log.info(
+                    "Userscript {} has finished...".format(
+                        self.current_script["module_name"][10:]
+                    )
+                )
                 del self.current_script
                 self.q.task_done()
-            except Exception: #Not running the measurement.
+            except Exception:  # Not running the measurement.
                 self.q.queue.clear()
                 self.script_queue.list = []
                 exc_type, exc_value, exc_tb = sys.exc_info()
@@ -475,19 +522,23 @@ class queue_logic(GenericLogic):
 
     def set_user_script_list(self):
         file_list = []
-        unwanted_files = ['__init__.py', 'refocus_confocal_odmr.py']
+        unwanted_files = ["__init__.py", "refocus_confocal_odmr.py"]
         for files in os.listdir(self.user_script_folder):
             if files.endswith(".py") and not files in unwanted_files:
-                file_list.append(str(files.split('.')[0]))
+                file_list.append(str(files.split(".")[0]))
         self._user_script_list = file_list
         if len(self.user_script_list) > 0:
             self._selected_user_script = self.user_script_list[0]
-            #if hasattr(self, '_gui'):
-            val = collections.OrderedDict([('user_script_list', self.user_script_list), ('selected_user_script', self.selected_user_script)])
-            #self.update_selected_user_script_combo_box(val)
-            #Instead emit a signal which will updates it.
+            # if hasattr(self, '_gui'):
+            val = collections.OrderedDict(
+                [
+                    ("user_script_list", self.user_script_list),
+                    ("selected_user_script", self.selected_user_script),
+                ]
+            )
+            # self.update_selected_user_script_combo_box(val)
+            # Instead emit a signal which will updates it.
             self.update_selected_user_script_combo_box_signal.emit(val)
-
 
     @property
     def selected_user_script(self):
@@ -495,22 +546,26 @@ class queue_logic(GenericLogic):
 
     @selected_user_script.setter
     def selected_user_script(self, val):
-        if val != '':
+        if val != "":
             if val not in self.user_script_list:
-                raise Exception('Script {} not in {}'.format(val, self.user_script_list))
+                raise Exception(
+                    "Script {} not in {}".format(val, self.user_script_list)
+                )
             self._selected_user_script = val
-            #if hasattr(self, '_gui'):
-            val = collections.OrderedDict([('selected_user_script', self.selected_user_script)])
+            # if hasattr(self, '_gui'):
+            val = collections.OrderedDict(
+                [("selected_user_script", self.selected_user_script)]
+            )
             self.update_selected_user_script_combo_box_signal.emit(val)
-            #self.gui.update_selected_user_script_combo_box(val)
+            # self.gui.update_selected_user_script_combo_box(val)
 
     @property
     def user_script_params(self):
-        return getattr(self, '_user_script_params', {})
+        return getattr(self, "_user_script_params", {})
 
     @user_script_params.setter
     def user_script_params(self, val):
-        self.user_script_params = misc.check_type(val, 'user_script_params', dict)
+        self.user_script_params = misc.check_type(val, "user_script_params", dict)
 
     @property
     def user_script_folder(self):
@@ -519,26 +574,29 @@ class queue_logic(GenericLogic):
     @user_script_folder.setter
     def user_script_folder(self, val):
         if os.path.isdir(val):
-            print(val, 'is a current folder opened for scripts...')
+            print(val, "is a current folder opened for scripts...")
             self._user_script_folder = val
             self.set_user_script_list()
-            #This now is done in gui automatically.
-            #if hasattr(self, '_gui'):
-                #self.gui.update_user_script_folder_text_field(val)
+            # This now is done in gui automatically.
+            # if hasattr(self, '_gui'):
+            # self.gui.update_user_script_folder_text_field(val)
         else:
-            print(val, 'not a valid dir, cant open it right now')
+            print(val, "not a valid dir, cant open it right now")
+
     def add_to_queue(self, name=None, pd=None, folder=None):
-        #self.confocal.counter_state = 'idle'
-        #self.md.stop_awgs()
+        # self.confocal.counter_state = 'idle'
+        # self.md.stop_awgs()
         folder = self.user_script_folder if folder is None else folder
         name = self.selected_user_script if name is None else name
         pd = self.user_script_params if pd is None else pd
-        if name == '':
+        if name == "":
             return
         try:
             module_name = self.init_task(name, folder)
-            self.q.put({'module_name': module_name, 'pd': pd})
-            self.script_queue.append(ScriptQueueStep(module_name[10:], self.user_script_params))
+            self.q.put({"module_name": module_name, "pd": pd})
+            self.script_queue.append(
+                ScriptQueueStep(module_name[10:], self.user_script_params)
+            )
         except Exception:
             print("Queuelogic: Could not add script to queue.")
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -546,8 +604,8 @@ class queue_logic(GenericLogic):
 
     def add_rco(self):
         folder = r"C:\src\qudi\notebooks\UserScripts"
-        print('I am here', 'who has called me?')
-        name = 'refocus_confocal_odmr'
+        print("I am here", "who has called me?")
+        name = "refocus_confocal_odmr"
         pd = self.user_script_params
         self.add_to_queue(name, pd, folder)
 
@@ -576,7 +634,6 @@ class queue_logic(GenericLogic):
 
         self.odmr = odmr.ODMR(self)
 
-
     def init_task(self, name, folder=None):
         folder = self.user_script_folder if folder is None else folder
         funa = "{}/{}.py".format(folder, name)
@@ -588,30 +645,48 @@ class queue_logic(GenericLogic):
         self.thread.stop_request.set()
 
     def write_standard_awg_sequences(self):
-        self.add_to_queue('standard_awg_sequences', folder=r'C:\src\qudi\notebooks\UserScripts\helpers')
+        self.add_to_queue(
+            "standard_awg_sequences",
+            folder=r"C:\src\qudi\notebooks\UserScripts\helpers",
+        )
 
     def dl(self, key, *args, **kwargs):
         return self._mcas_dict[key].dl(*args, **kwargs)
 
     def save_pi3diamond(self, destination_dir):
         src = os.getcwd()
-        f = '{}/qudi.zip'.format(destination_dir)
+        f = "{}/qudi.zip".format(destination_dir)
         if not os.path.isfile(f):
-            zf = zipfile.ZipFile(f, 'a')
+            zf = zipfile.ZipFile(f, "a")
             for root, dirs, files in os.walk(src):
-                if (not any([i in root for i in ['__pycache__',
-                                                 'awg_settings',
-                                                 'currently_unused',
-                                                 ".idea",
-                                                 ".hg",
-                                                 'UserScripts',
-                                                 'log',
-                                                 'notebooks' #FIXME - include logic, explode heavy stuff.
-                                                 ]
-                             ]
-                            )
-                ) or root.endswith('transition_tracker_log') or root.endswith('helpers'):
+                if (
+                    (
+                        not any(
+                            [
+                                i in root
+                                for i in [
+                                    "__pycache__",
+                                    "awg_settings",
+                                    "currently_unused",
+                                    ".idea",
+                                    ".hg",
+                                    "UserScripts",
+                                    "log",
+                                    "notebooks",  # FIXME - include logic, explode heavy stuff.
+                                ]
+                            ]
+                        )
+                    )
+                    or root.endswith("transition_tracker_log")
+                    or root.endswith("helpers")
+                ):
                     for file in files:
-                        if any([file.endswith(i) for i in ['.py', '.dat', '.ui']]):
-                            zf.write(os.path.join(root, file), os.path.join(root.replace(os.path.commonprefix([root, src]), ""), file))
+                        if any([file.endswith(i) for i in [".py", ".dat", ".ui"]]):
+                            zf.write(
+                                os.path.join(root, file),
+                                os.path.join(
+                                    root.replace(os.path.commonprefix([root, src]), ""),
+                                    file,
+                                ),
+                            )
             zf.close()

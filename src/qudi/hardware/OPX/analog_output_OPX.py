@@ -21,7 +21,9 @@ from qm.qua import *
 from qm import SimulationConfig
 import matplotlib.pyplot as plt
 from typing import Iterable, Mapping, Union, Optional, Tuple, Type, Dict
+
 _Real = Union[int, float]
+
 
 class AnalogOutputOPX(ProcessSetpointInterface):
     """Module to set the manually set the Analog Outputs of the QuantumMachines OPX+.
@@ -34,7 +36,8 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         options:
             qm_config_file: "configuration"
     """
-    OPX = Connector(interface='OPX')
+
+    OPX = Connector(interface="OPX")
     _qm_config_file = ConfigOption(
         name="qm_config_file", default="configuration", missing="nothing"
     )
@@ -46,7 +49,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     _opx = None
     _scan_parameters = None
     _ple_job = None
-    qm_prog_file_name = 'qudi.hardware.OPX.PLE_program'
+    qm_prog_file_name = "qudi.hardware.OPX.PLE_program"
 
     def on_activate(self) -> None:
         """Loads QM config and establishs connection to OPX+"""
@@ -61,7 +64,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         # Check connection to OPX+
         self._opx = self.OPX()
         if not self._opx.is_connected:
-            self.log.error('no connection to OPX')
+            self.log.error("no connection to OPX")
 
         self._opx.cw_ao_values = {ao: 0 for ao in self.constraints.setpoint_channels}
         self.qm_scan_module = importlib.import_module(self.qm_prog_file_name)
@@ -80,9 +83,12 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         print(self._ao_options)
         for ch in _channels:
             if ch in self._ao_options.keys():
-                _limits[ch] = tuple(self._ao_options[ch]['limits'])
+                _limits[ch] = tuple(self._ao_options[ch]["limits"])
             else:
-                _limits[ch] = (-1, 1) # V (It should be 0.5, but for what ever reason it is 1
+                _limits[ch] = (
+                    -1,
+                    1,
+                )  # V (It should be 0.5, but for what ever reason it is 1
 
         self._constraints = ProcessControlConstraints(
             setpoint_channels=_channels,
@@ -130,42 +136,45 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         """Get current setpoint for a single channel"""
         return self._opx.cw_ao_values[channel]
 
-    def set_scan_parameters(self,
-                            voltage_start: _Real,
-                            voltage_stop: _Real,
-                            sweep_duration: _Real,
-                            nr_of_scans: int,
-                            nr_steps: int = 1000,) -> None:
+    def set_scan_parameters(
+        self,
+        voltage_start: _Real,
+        voltage_stop: _Real,
+        sweep_duration: _Real,
+        nr_of_scans: int,
+        nr_steps: int = 1000,
+        back_scan_duration: float = 1,
+    ) -> None:
         self._scan_parameters = {
-            'channel': "LaserScanner_red",
-            'voltage_start': voltage_start,
-            'voltage_stop': voltage_stop,
-            'sweep_duration': sweep_duration,
-            'nr_amp_steps': nr_steps,
-            'nr_of_scans': nr_of_scans
+            "channel": "LaserScanner_red",
+            "voltage_start": voltage_start,
+            "voltage_stop": voltage_stop,
+            "sweep_duration": sweep_duration,
+            "nr_amp_steps": nr_steps,
+            "nr_of_scans": nr_of_scans,
+            "back_scan_duration": back_scan_duration,
         }
-        print('beep')
 
     def get_scan_parameters(self, channel: str) -> (_Real, _Real, _Real):
-        if channel == self._scan_parameters['channel']:
+        if channel == self._scan_parameters["channel"]:
             scan_parameters = (
-                self._scan_parameters['voltage_start'],
-                self._scan_parameters['voltage_stop'],
-                self._scan_parameters['sweep_duration']
+                self._scan_parameters["voltage_start"],
+                self._scan_parameters["voltage_stop"],
+                self._scan_parameters["sweep_duration"],
             )
             return scan_parameters
         else:
-            self.log.error('For this channel no scan parameters are defined')
+            self.log.error("For this channel no scan parameters are defined")
 
     def start_scan(self):
-        print('Hello')
-        #if channel == self._scan_parameters['channel']:
+        print("Hello")
+        # if channel == self._scan_parameters['channel']:
         self._ple_job = self._opx.qm.execute(self.get_qm_scan_program())
-        #self._opx.simulate(self.get_qm_scan_program(), plot=True)
+        # self._opx.simulate(self.get_qm_scan_program(), plot=True)
+
     def stop_scan(self):
         self._ple_job.halt()
 
     def get_qm_scan_program(self):
         importlib.reload(self.qm_scan_module)
         return self.qm_scan_module.qm_scan_program(self)
-

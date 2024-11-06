@@ -1,48 +1,106 @@
 import numpy as np
 from qm.qua import *
 from qudi.hardware.OPX.configuration import *
+from qm import SimulationConfig, LoopbackInterface
+from qm.quantum_machines_manager import QuantumMachinesManager
+from qualang_tools.loops import qua_linspace
+
+
 def qm_scan_program(aoOPX):
 
-    nr_amp_steps = aoOPX._scan_parameters['nr_amp_steps']
-    duration = aoOPX._scan_parameters['sweep_duration']
-    nr_of_scanns = aoOPX._scan_parameters['nr_of_scans']
+    nr_amp_steps = aoOPX._scan_parameters["nr_amp_steps"]
+    duration = aoOPX._scan_parameters["sweep_duration"]
+    back_scan_duration = aoOPX._scan_parameters["back_scan_duration"]
+    nr_of_scanns = aoOPX._scan_parameters["nr_of_scans"]
+    min_amp = aoOPX._scan_parameters["voltage_start"]
+    max_amp = aoOPX._scan_parameters["voltage_stop"]
+    nr_amp_steps_back = nr_of_scanns
 
-    repump_len = 20 * u.ms
+    power_620 = aoOPX.get_setpoint("AOM_620_power")
+
+    amp_array = np.linspace(min_amp, max_amp, nr_amp_steps)
+    repump_len = 1 * u.ms
     i_avg = 1_000  # number of averages per voltage
 
-    amp_vec = np.linspace(-1, 1, nr_amp_steps)
-    readout_len = (duration / nr_amp_steps) * u.s
-    repump_pulse_len = repump_len / i_avg
+    readout_len = duration / nr_amp_steps * u.s
+    back_scan_len = back_scan_duration / 2 / nr_amp_steps_back * u.s
 
-    curr_do: list = [key for key, value in aoOPX._opx.cw_do_states.items() if value == 'on']
-    curr_ao = {key: value for key, value in aoOPX._opx.cw_ao_values.items() if value != 0.0}
+    repump_pulse_len = repump_len / i_avg * u.s
+    curr_do: list = [
+        key for key, value in aoOPX._opx.cw_do_states.items() if value == "on"
+    ]
+    curr_ao = {
+        key: value for key, value in aoOPX._opx.cw_ao_values.items() if value != 0.0
+    }
+    del curr_ao["LaserScanner_red"]
+    print(curr_ao)
+    print(curr_do)
 
     with program() as ple:
-        i_amp = declare(int)  # iterator amplitudes
-        _amp = declare(float)  # amplitude
+        _amp = declare(fixed)  # amplitude
+        _amp2 = declare(fixed)
         n = declare(int)  # number of iterations
         i = declare(int)  # number of iterations per
         k = declare(int)
+
         # integrations of whole scan
         with for_(n, 0, n < nr_of_scanns, n + 1):
             # play("trigit", "Gate_Trigger", duration=200 * u.us)
             # looping over voltages
-            with for_(*from_array(_amp, amp_vec)):
-                play("trigit", "Gate_Trigger", duration=1 * u.us)
+            with for_each_(_amp, amp_array):
+
+                play("trigit", "Gate_Trigger", duration=10 * u.us)
                 # Integration per voltage step
+                play(
+                    "power" * amp(_amp),
+                    "LaserScanner_red",
+                    duration=10 * u.us,
+                )
+                align()
                 with for_(i, 0, i < i_avg, i + 1):
+
                     # for ao, power in curr_ao.items():
-                    #     play('power' * amp(aoOPX._opx._volt2amp(power)), ao, duration=readout_len / i_avg * u.ns)
+                    #     play(
+                    #         "power" * amp(power),
+                    #         ao,
+                    #         duration=readout_len / i_avg * u.ns,
+                    #     )
                     # for do in curr_do:
-                    #     play('active', do, duration=readout_len / i_avg * u.ns)
-                    play('active', 'AOM_620', duration=readout_len / i_avg * u.ns)
-                    play("power" * amp(_amp), "LaserScanner_red", duration=readout_len / i_avg * u.ns)
+                    #     play("active", do, duration=readout_len / i_avg * u.ns)
+
+                    play("active", "AOM_620", duration=readout_len / i_avg * u.ns)
+                    play(
+                        "power" * amp(aoOPX._opx._volt2amp(power_620)),
+                        element="AOM_620_power",
+                        duration=readout_len / i_avg * u.ns,
+                    )
+                    play("active", "Laser_520", duration=readout_len / i_avg * u.ns)
+                    play(
+                        "power" * amp(_amp),
+                        "LaserScanner_red",
+                        duration=readout_len / i_avg * u.ns,
+                    )
                 align()
                 play("trigit", "Memory_Trigger", duration=1 * u.us)
                 play("power" * amp(_amp), "LaserScanner_red", duration=1 * u.us)
 
-            with for_(k, 0, k < i_avg, k + 1):
-                play("power" * amp(-1), "LaserScanner_red", duration=repump_pulse_len)
-                play("active", "Laser_520", duration=repump_pulse_len)
-        # play("trigit", "Memory_Trigger", duration=2 * u.us)
+            with for_(*qua_linspace(_amp2, max_amp, min_amp, nr_amp_steps_back)):
+                with for_(i, 0, i < i_avg, i + 1):
+                    play(
+                        "power" * amp(_amp2),
+                        "LaserScanner_red",
+                        duration=back_scan_len / i_avg * u.ns,
+                    )
+                    play("active", "Laser_520", duration=back_scan_len / i_avg * u.ns)
+
+            # with for_(k, 0, k < i_avg, k + 1):
+            #     play(
+            #         "power" * amp(min_amp),
+            #         "LaserScanner_red",
+            #         duration=repump_pulse_len,
+            #     )
+            #     play("active", "Laser_520", duration=repump_pulse_len)
+    # play("trigit", "Memory_Trigger", duration=2 * u.us)
+
+    # aoOPX._opx.simulate(ple, plot=True, duration=10000)
     return ple
