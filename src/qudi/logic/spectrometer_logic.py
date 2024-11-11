@@ -177,7 +177,7 @@ class SpectrometerLogic(LogicBase):
             #key = self.flip_mirror().available_states.keys()[0]
             #state = self.flip_mirror().get_state(key)
             self.spectrometer().clearBuffer()
-            self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'On')
+            self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'Off')
             time.sleep(1)
         # get data from the spectrometer
         data = np.array(self.spectrometer().record_spectrum())
