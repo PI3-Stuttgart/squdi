@@ -727,8 +727,9 @@ class NI_TT_XSeriesFiniteSamplingIO(FiniteSamplingIOInterface):
                         data_cbm = self._timetagger_cbm_tasks[num].getData()
                         di_data[num] = data_cbm
                         data[di_channel] = di_data[num] * self.sample_rate  # To go to c/s # TODO What if unit not c/s
-                    self._scanner_ready = self._timetagger_cbm_tasks[0].getIndex()[-1] > 0 #ready() fix for remote. Interesting approach for 2D scans asa well!
-                    
+                    self._scanner_ready = self._timetagger_cbm_tasks[0].ready() #fix for remote. Interesting approach for 2D scans asa well!
+                    if not self._scanner_ready:
+                        self._scanner_ready = self._timetagger_cbm_tasks[0].getIndex()[-5] > 0 # some last bins dont get values because of some delays of the trigger?
                     
                 if self._ai_reader is not None:
                     data_buffer = np.zeros(samples_to_read * len(self.__active_channels['ai_channels']))
