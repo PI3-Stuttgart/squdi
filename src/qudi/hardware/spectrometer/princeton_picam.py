@@ -55,21 +55,31 @@ class PrincetonPICAM(SpectrometerInterface):
         """
         
         self.controller = SpectrometerController(self._library_path)
-        self.controller.initialize()
         self.wavelength = np.linspace(0, 1340, 1340)
-        cameras = self.controller.list_cameras()
-        self.log.info(f'available spectrometers: {cameras}')
-        self.controller.open_camera(cameras[0])  # Open the first available camera
-        # self._spectrometer.features['thermo_electric'][0].set_temperature_setpoint_degrees_celsius(-22)
 
-        # self.log.info(''.format(self._spectrometer.model, self._spectrometer.serial_number))
-        self.exposure_time = self.controller.get_exposure_time()
-        self.log.info(f'Exposure set to {self.exposure_time} seconds')
+        try:
+            self.controller.initialize()
+            cameras = self.controller.list_cameras()
+
+            if not cameras:
+                self.log.error("No cameras available. Please ensure the spectrometer is connected.")
+                raise Exception("No cameras found.")
+
+            self.log.info(f'Available spectrometers: {cameras}')
+            self.controller.open_camera(cameras[0])  # Open the first available camera
+
+            self.exposure_time = self.controller.get_exposure_time() / 1e3
+            self.log.info(f'Exposure set to {self.exposure_time} seconds')
+
+        except Exception as e:
+            self.log.error(f"An error occurred during initialization: {e}")
+            # Optionally, re-raise the exception if you want to stop further execution
+            raise
 
     def on_deactivate(self):
         """ Deactivate module.
         """
-        self._spectrometer.close()
+        self.controller.close_camera()
 
     def record_spectrum(self):
         """ Record spectrum from Ocean Optics spectrometer.
@@ -79,7 +89,9 @@ class PrincetonPICAM(SpectrometerInterface):
       
         specdata = np.empty((2, len(self.wavelength)), dtype=np.double)
         specdata[0] = self.wavelength
-        specdata[1] = self.controller.acquire_data()[0]
+        print(self.exposure_time * 1e3 + 1500)
+        specdata[1] = self.controller.acquire_data(readout_count=2, timeout_ms=int(self.exposure_time * 1e3 +1500) )[1].sum(axis=0)
+
         return specdata
 
     @property
@@ -88,7 +100,7 @@ class PrincetonPICAM(SpectrometerInterface):
             @return float: exposure time
             Not implemented.
         """
-        return self.controller.get_exposure_time()
+        return self.controller.get_exposure_time() / 1e3
 
     @exposure_time.setter
     def exposure_time(self, value):
@@ -97,8 +109,10 @@ class PrincetonPICAM(SpectrometerInterface):
         """
         assert isinstance(value, (float, int)), f'exposure_time needs to be a float in seconds, but was {value}'
         self._integration_time = float(value)
-        print("Integration time", self._integration_time)
-        self.controller.set_exposure_time(float(self._integration_time))# * 1e6))
+        print("Integration time, ms", self._integration_time * 1e3)
+        self.controller.set_exposure_time(float(self._integration_time * 1e3))# * 1e6))
+        print("Writtte", self.controller.get_exposure_time() / 1e3)
+        self.controller.commit_params()
 
     def clearBuffer(self):
         self.controller.stop_acquisition()

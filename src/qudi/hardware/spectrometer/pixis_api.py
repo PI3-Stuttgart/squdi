@@ -170,7 +170,7 @@ class SpectrometerController:
 
         return data, d2d
 
-    def set_parameter(self, parameter, value):
+    def set_parameter(self, parameter_id, value):
         """
         Set a camera parameter.
 
@@ -178,9 +178,9 @@ class SpectrometerController:
         :param value: Value to set for the parameter.
         """
         if isinstance(value, int):
-            self.check_error(self.dll.Picam_SetParameterIntegerValue(self.camera_handle, parameter, c_int(value)))
+            self.check_error(self.dll.Picam_SetParameterIntegerValue(self.camera_handle, parameter_id, c_int(value)))
         elif isinstance(value, float):
-            self.check_error(self.dll.Picam_SetParameterFloatingPointValue(self.camera_handle, parameter, c_double(value)))
+            self.check_error(self.dll.Picam_SetParameterFloatingPointValue(self.camera_handle, parameter_id, c_double(value)))
         else:
             raise TypeError("Unsupported parameter value type. Must be int or float.")
 
@@ -211,9 +211,9 @@ class SpectrometerController:
 
     def get_exposure_time(self):
         #exposure_time
-        return  self.get_parameter(parameter=33685527)
+        return  self.get_parameter(parameter_id=33685527)
 
     def set_exposure_time(self, value):
         #exposure_time
-        self.set_parameter(parameter=33685527, 
+        self.set_parameter(parameter_id=33685527, 
                            value=float(value))
