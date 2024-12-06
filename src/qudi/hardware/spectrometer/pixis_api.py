@@ -1,9 +1,9 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import ctypes
-from ctypes import c_int64, c_int, c_double, c_void_p, byref, POINTER, Structure, c_longlong
+from ctypes import c_int64, c_int, c_double, c_size_t, c_void_p, byref, POINTER, Structure, c_longlong
 
-FIXED_FRAME_SIZE = int(268000)
+FIXED_FRAME_SIZE = int(134000)
 class PicamCameraID(ctypes.Structure):
     _fields_ = [
         ("model", c_int),
@@ -82,7 +82,7 @@ class SpectrometerController:
         self.camera_handle = None
 
 
-    def acquire_data(self, readout_count=3, timeout_ms=1000):
+    def acquire_data(self, readout_count=1, timeout_ms=-1):
         """
         Acquire data from the spectrometer and ensure frame size matches the requirement.
 
@@ -93,16 +93,6 @@ class SpectrometerController:
         """
         available_data = PicamAvailableData()
         errors = PicamAcquisitionErrorsMask()
-
-        readouts = (PicamReadout * readout_count)()  # Array of structures
-        for i in range(readout_count):
-            # Pre-allocate memory for the frame data
-            frame_buffer = (ctypes.c_int64 * FIXED_FRAME_SIZE)()
-            readouts[i].data = frame_buffer
-            readouts[i].frame_size = FIXED_FRAME_SIZE * ctypes.sizeof(ctypes.c_int64)  # Byte size
-
-
-        available_data.initial_readout = ctypes.cast(readouts, c_void_p)
 
         self.check_error(
             self.dll.Picam_Acquire(
@@ -162,12 +152,14 @@ class SpectrometerController:
         :param readout_count: Number of readouts to process.
         :return: List of processed frames.
         """
-        dataArrayType = ctypes.c_uint16 * int(FIXED_FRAME_SIZE) #readoutstride
+     
+        dataArrayType = ctypes.c_uint16 * int(FIXED_FRAME_SIZE) * available_data.readout_count #readoutstride
         dataArrayPointerType = ctypes.POINTER(dataArrayType)
         dataPointer = ctypes.cast(available_data.initial_readout, dataArrayPointerType)
         data = np.frombuffer(dataPointer.contents, dtype=np.uint16)
-        d2d = np.array(data).reshape((int(200), int(1340)))
-
+       
+        d2d = np.array(data).reshape((int(100), int(1340)))
+     
         return data, d2d
 
     def set_parameter(self, parameter_id, value):
@@ -217,3 +209,79 @@ class SpectrometerController:
         #exposure_time
         self.set_parameter(parameter_id=33685527, 
                            value=float(value))
+
+
+from ctypes import POINTER, c_long, c_int, byref
+
+class CameraParameterManager:
+    def __init__(self, controller):
+        """
+        Initializes the CameraParameterManager with the provided controller.
+        
+        :param controller: The SpectrometerController instance with DLL and camera handle.
+        """
+        self.controller = controller
+        self.parameters = {}
+        self.parameter_count = 0
+
+    def load_parameters(self):
+        """
+        Loads all supported parameters for the connected camera.
+        """
+        parameter_count = c_int()
+        parameters = POINTER(c_long)()
+
+        # Call the Picam_GetParameters function
+        error_code = self.controller.dll.Picam_GetParameters(
+            self.controller.camera_handle,
+            byref(parameters),
+            byref(parameter_count)
+        )
+        self.controller.check_error(error_code)
+
+        # Save parameters to a dictionary mapping ID to function number
+        self.parameters = {
+            parameters[i]: self.get_function_number(parameters[i])
+            for i in range(parameter_count.value)
+        }
+        self.parameter_count = parameter_count.value
+        print("Loaded parameters successfully.")
+
+    @staticmethod
+    def get_function_number(parameter_id):
+        """
+        Extracts the function number (n) from a PicamParameter ID.
+
+        :param parameter_id: The parameter ID as an integer (hexadecimal value in numeric form).
+        :return: The function number (n).
+        """
+        return parameter_id & 0xFFFF  # Mask the lower 16 bits
+
+    def is_parameter_supported(self, parameter_id):
+        """
+        Checks if a specific parameter is supported by the camera.
+
+        :param parameter_id: The parameter ID to check.
+        :return: True if the parameter is supported, False otherwise.
+        """
+        return parameter_id in self.parameters
+
+    def query_parameter(self, parameter_id):
+        """
+        Queries the camera for a specific parameter and prints its function number if supported.
+
+        :param parameter_id: The parameter ID to query.
+        :return: The function number if supported, or a message if not.
+        """
+        if self.is_parameter_supported(parameter_id):
+            return f"Parameter ID: {hex(parameter_id)} is supported. Function Number: {self.parameters[parameter_id]}"
+        else:
+            return f"Parameter ID: {hex(parameter_id)} is not supported by the camera."
+
+    def print_all_parameters(self):
+        """
+        Prints all available parameters and their function numbers.
+        """
+        print("Supported Parameters and Function Numbers:")
+        for param_id, func_num in self.parameters.items():
+            print(f"Parameter ID: {hex(param_id)}, Function Number: {func_num}")

@@ -29,6 +29,7 @@ from qudi.hardware.spectrometer.pixis_api import *
 import numpy as np
 import ctypes
 from ctypes import c_int64, c_int, c_double, c_void_p, byref, POINTER, Structure, c_longlong
+import time
 
 FIXED_FRAME_SIZE = int(268000)
 
@@ -89,9 +90,9 @@ class PrincetonPICAM(SpectrometerInterface):
       
         specdata = np.empty((2, len(self.wavelength)), dtype=np.double)
         specdata[0] = self.wavelength
-        print(self.exposure_time * 1e3 + 1500)
-        specdata[1] = self.controller.acquire_data(readout_count=2, timeout_ms=int(self.exposure_time * 1e3 +1500) )[1].sum(axis=0)
-
+        
+        specdata[1] = self.controller.acquire_data()[1].sum(axis=0)
+        time.sleep(0.1)
         return specdata
 
     @property
@@ -109,9 +110,9 @@ class PrincetonPICAM(SpectrometerInterface):
         """
         assert isinstance(value, (float, int)), f'exposure_time needs to be a float in seconds, but was {value}'
         self._integration_time = float(value)
-        print("Integration time, ms", self._integration_time * 1e3)
+ 
         self.controller.set_exposure_time(float(self._integration_time * 1e3))# * 1e6))
-        print("Writtte", self.controller.get_exposure_time() / 1e3)
+       
         self.controller.commit_params()
 
     def clearBuffer(self):
