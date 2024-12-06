@@ -92,7 +92,7 @@ class PrincetonPICAM(SpectrometerInterface):
         specdata[0] = self.wavelength
         
         specdata[1] = self.controller.acquire_data()[1].sum(axis=0)
-        time.sleep(0.1)
+        time.sleep(0.02)
         return specdata
 
     @property

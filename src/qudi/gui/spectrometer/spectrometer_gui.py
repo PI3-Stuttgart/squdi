@@ -272,8 +272,8 @@ class SpectrometerGui(GuiBase):
         # erase previous fit line
         if self._delete_fit:
             self._mw.data_widget.fit_curve.setData(x=[], y=[])
-
-        self.target_changed()
+        #!TODO!!!!!
+        # self.target_changed()
 
         # draw new data
         self._mw.data_widget.data_curve.setData(x=x_data, y=spectrum)
