@@ -63,11 +63,25 @@ class SettingsDialog(QtWidgets.QDialog):
         layout.addWidget(exposure_time_label, 2, 0)
         layout.addWidget(self.exposure_time_spinbox, 2, 1)
 
+        self.grating_label = QtWidgets.QLabel('Grating:')
+        self.grating_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.grating_switch = ToggleSwitch(state_names=('1', '2'))
+        layout.addWidget(self.grating_label, 3, 0)
+        layout.addWidget(self.grating_switch, 3, 1)
+
+        self.cwavelength_label = QtWidgets.QLabel("Center Wavelength:")
+        layout.addWidget(self.cwavelength_label, 4, 0)
+        self.cwavelength_input = QtWidgets.QDoubleSpinBox()
+        self.cwavelength_input.setRange(0.0, 1000.0)  # Set range for the input
+        self.cwavelength_input.setDecimals(2)  # Set number of decimal places
+        self.cwavelength_input.setValue(620.0)  # Set default value
+        layout.addWidget(self.cwavelength_input, 4, 1)
+
         buttonbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok
                                                | QtWidgets.QDialogButtonBox.Cancel
                                                | QtWidgets.QDialogButtonBox.Apply)
         buttonbox.setOrientation(QtCore.Qt.Horizontal)
-        layout.addWidget(buttonbox, 3, 0, 1, 2)
+        layout.addWidget(buttonbox, 5, 0, 1, 2)
 
         # Add internal signals
         buttonbox.accepted.connect(self.accept)

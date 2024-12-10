@@ -369,6 +369,12 @@ class SpectrometerGui(GuiBase):
         self._mw.control_widget.progress_bar.setValue(0)
         self._mw.control_widget.progress_bar.setRange(0, round(100 * exposure_time))
         self._delete_fit = self._mw.settings_dialog.delete_fit.isChecked()
+        cwavelength = self._mw.settings_dialog.cwavelength_input.value()
+        self._spectrometer_logic().cwavelength = cwavelength
+        grating = 2 if self._mw.settings_dialog.grating_switch.isChecked() else 1
+        self._spectrometer_logic().grating = grating
+
+
 
     def keep_settings(self):
         exposure_time = float(self._spectrometer_logic().exposure_time)
@@ -376,6 +382,11 @@ class SpectrometerGui(GuiBase):
         self._mw.settings_dialog.max_repetitions_spinbox.setValue(self._spectrometer_logic().max_repetitions)
         self._mw.control_widget.progress_bar.setRange(0, round(100 * exposure_time))
         self._mw.settings_dialog.delete_fit.setChecked(self._delete_fit)
+        cwavelength = float(self._spectrometer_logic().cwavelength)
+        grating = float(self._spectrometer_logic().grating)
+        self._mw.settings_dialog.cwavelength_input.setValue(cwavelength)
+        self._mw.settings_dialog.grating_switch.setChecked(grating)
+
 
     def target_changed(self):
         x_data = self._spectrometer_logic().x_data
