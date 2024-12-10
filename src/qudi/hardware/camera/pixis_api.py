@@ -58,7 +58,8 @@ class SpectrometerController:
         self.dll.Picam_GetEnumerationString.restype = ctypes.POINTER(ctypes.c_char_p)
         error_string = ctypes.c_char_p()
         self.dll.Picam_GetEnumerationString(c_int(1), error_code, byref(error_string))  # 1 = PicamEnumeratedType_Error
-        return error_string.value.decode()
+        if error_string is not None:
+            return error_string.value.decode()
 
     def initialize(self):
         """Initialize the PICam library."""

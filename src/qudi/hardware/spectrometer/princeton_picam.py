@@ -24,14 +24,12 @@ If not, see <https://www.gnu.org/licenses/>.
 
 from qudi.core.configoption import ConfigOption
 from qudi.core.statusvariable import StatusVar
+from qudi.core.connector import Connector
 from qudi.interface.spectrometer_interface import SpectrometerInterface
-from qudi.hardware.spectrometer.pixis_api import *
+from qudi.hardware.camera.pixis_api import *
 import numpy as np
-import ctypes
-from ctypes import c_int64, c_int, c_double, c_void_p, byref, POINTER, Structure, c_longlong
 import time
 
-FIXED_FRAME_SIZE = int(268000)
 
 class PrincetonPICAM(SpectrometerInterface):
     """ Hardware module for reading spectra from the Ocean Optics spectrometer software.
@@ -44,7 +42,7 @@ class PrincetonPICAM(SpectrometerInterface):
             spectrometer_serial: 'QEP01583' #insert here the right serial number.
 
     """
-    _library_path = ConfigOption(name='dll_path', default=None, missing='warn')
+    _camera = Connector(name='camera', interface='CameraInterface')
     _integration_time = StatusVar(name='integration_time', default=0.1)
 
     def __init__(self, *args, **kwargs):
@@ -54,33 +52,15 @@ class PrincetonPICAM(SpectrometerInterface):
     def on_activate(self):
         """ Activate module.
         """
-        
-        self.controller = SpectrometerController(self._library_path)
+        self._camera = self._camera()
         self.wavelength = np.linspace(0, 1340, 1340)
 
-        try:
-            self.controller.initialize()
-            cameras = self.controller.list_cameras()
-
-            if not cameras:
-                self.log.error("No cameras available. Please ensure the spectrometer is connected.")
-                raise Exception("No cameras found.")
-
-            self.log.info(f'Available spectrometers: {cameras}')
-            self.controller.open_camera(cameras[0])  # Open the first available camera
-
-            self.exposure_time = self.controller.get_exposure_time() / 1e3
-            self.log.info(f'Exposure set to {self.exposure_time} seconds')
-
-        except Exception as e:
-            self.log.error(f"An error occurred during initialization: {e}")
-            # Optionally, re-raise the exception if you want to stop further execution
-            raise
+        
 
     def on_deactivate(self):
         """ Deactivate module.
         """
-        self.controller.close_camera()
+        self._camera.disconnect()
 
     def record_spectrum(self):
         """ Record spectrum from Ocean Optics spectrometer.
@@ -91,7 +71,7 @@ class PrincetonPICAM(SpectrometerInterface):
         specdata = np.empty((2, len(self.wavelength)), dtype=np.double)
         specdata[0] = self.wavelength
         
-        specdata[1] = self.controller.acquire_data()[1].sum(axis=0)
+        specdata[1] = self._camera.get_acquired_data().sum(axis=0)
         time.sleep(0.02)
         return specdata
 
@@ -101,7 +81,7 @@ class PrincetonPICAM(SpectrometerInterface):
             @return float: exposure time
             Not implemented.
         """
-        return self.controller.get_exposure_time() / 1e3
+        return self._camera.get_exposure() 
 
     @exposure_time.setter
     def exposure_time(self, value):
@@ -111,9 +91,7 @@ class PrincetonPICAM(SpectrometerInterface):
         assert isinstance(value, (float, int)), f'exposure_time needs to be a float in seconds, but was {value}'
         self._integration_time = float(value)
  
-        self.controller.set_exposure_time(float(self._integration_time * 1e3))# * 1e6))
-       
-        self.controller.commit_params()
+        self._camera.set_exposure(value)
 
     def clearBuffer(self):
-        self.controller.stop_acquisition()
+        self._camera.stop_acquisition()
