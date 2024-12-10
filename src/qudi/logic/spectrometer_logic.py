@@ -488,7 +488,20 @@ class SpectrometerLogic(LogicBase):
     @exposure_time.setter
     def exposure_time(self, value):
         self.spectrometer().exposure_time = float(value)
+    @property
+    def grating(self):
+        return self.spectrometer().grating
 
+    @grating.setter
+    def grating(self, value):
+        self.spectrometer().grating = float(value)
+    @property
+    def cwavelength(self):
+        return self.spectrometer().cwavelength
+
+    @cwavelength.setter
+    def cwavelength(self, value):
+        self.spectrometer().cwavelength = float(value)
     ################
     # Fitting things
 
