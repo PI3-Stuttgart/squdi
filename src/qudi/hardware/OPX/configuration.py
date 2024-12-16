@@ -82,7 +82,7 @@ signal_threshold_2 = (
 ple_step_length_red = 1 * u.us
 
 # Delays
-detection_delay_1 = 144 * u.ns  # 144
+detection_delay_1 = 36 * u.ns  # 144
 detection_delay_2 = 80 * u.ns
 # Lasers
 laser_delay_520 = 0 * u.ns
@@ -122,15 +122,15 @@ config = {
                 8: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_520,
-                },  # AOM Laser 520 nm (Green)
+                },  # AOM Laser 620 nm 2 (Orange)
                 9: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_575,
-                },  # AOM Laser 575 nm (Yellow)
+                },  # AOM Laser 520 (Green)
                 10: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_620,
-                },  # AOM Laser 620 nm (Red)
+                },  # AOM Laser 620 nm (Orange)
             },
             "digital_outputs": {
                 1: {},  # indicator - TBD what is this...
@@ -140,9 +140,9 @@ config = {
                 5: {},  # PPG trigger RESERVED
                 6: {},  # Laser 520 nm (Green)
                 7: {},  # Laser 450 nm (Blue)
-                8: {},  # AOM Laser 520 nm (Green)
-                9: {},  # AOM Laser 575 nm (Yellow) / or AOM2 for the 620 nm..
-                10: {},  # AOM Laser 620 nm (Red)
+                8: {},  # AOM Laser 620 nm 2 (Orange)
+                9: {},  # AOM Laser 520 nm (Green)
+                10: {},  # AOM Laser 620 nm (Orange)
             },
             "analog_inputs": {
                 1: {"offset": 0, "gain_db": -3},  # SPCM1
@@ -189,6 +189,14 @@ config = {
                 "active": "laser_ON",
             },
         },
+        "Laser_450_power": {
+            "singleInput": {
+                "port": ("con1", 7),
+            },
+            "operations": {
+                "power": "AOM_power",
+            },
+        },
         "Gate_Trigger": {
             "digitalInputs": {
                 "marker": {
@@ -213,14 +221,6 @@ config = {
                 "trigit": "laser_ON",
             },
         },
-        "Laser_450_power": {
-            "singleInput": {
-                "port": ("con1", 7),
-            },
-            "operations": {
-                "power": "AOM_power",
-            },
-        },
         "Laser_520": {
             "digitalInputs": {
                 "marker": {
@@ -236,7 +236,7 @@ config = {
         "AOM_520": {
             "digitalInputs": {
                 "marker": {
-                    "port": ("con1", 8),
+                    "port": ("con1", 9),
                     "delay": AOM_delay_520,
                     "buffer": 0,
                 },
@@ -246,26 +246,6 @@ config = {
             },
         },
         "AOM_520_power": {
-            "singleInput": {
-                "port": ("con1", 8),
-            },
-            "operations": {
-                "power": "AOM_power",
-            },
-        },
-        "AOM_575": {
-            "digitalInputs": {
-                "marker": {
-                    "port": ("con1", 9),
-                    "delay": AOM_delay_575,
-                    "buffer": 0,
-                },
-            },
-            "operations": {
-                "active": "AOM_ON",
-            },
-        },
-        "AOM_575_power": {
             "singleInput": {
                 "port": ("con1", 9),
             },
@@ -293,6 +273,26 @@ config = {
                 "power": "AOM_power",
             },
         },
+        "AOM_620_2": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 8),
+                    "delay": AOM_delay_575,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "active": "AOM_ON",
+            },
+        },
+        "AOM_620_2_power": {
+            "singleInput": {
+                "port": ("con1", 8),
+            },
+            "operations": {
+                "power": "AOM_power",
+            },
+        },
         "LaserScanner_red": {
             "singleInput": {
                 "port": ("con1", 4),
@@ -303,23 +303,23 @@ config = {
         },
         "SPCM1": {
             "singleInput": {"port": ("con1", 1)},  # not used
-            "digitalInputs": {  # for visualization in simulation
-                "marker": {
-                    "port": ("con1", 1),
-                    "delay": detection_delay_1,
-                    "buffer": 0,
-                },
-            },
+            # "digitalInputs": {  # for visualization in simulation
+            #     "marker": {
+            #         "port": ("con1", 1),
+            #         "delay": detection_delay_1,
+            #         "buffer": 0,
+            #     },
+            # },
             "operations": {
                 "readout": "readout_pulse_1",
                 "long_readout": "long_readout_pulse_1",
             },
             "outputs": {"out1": ("con1", 1)},
             "outputPulseParameters": {
-                "signalThreshold": signal_threshold_1,  # ADC units
-                "signalPolarity": "Descending",
-                "derivativeThreshold": 1023,
-                "derivativePolarity": "Descending",
+                "signalThreshold": -200,  # ADC units
+                "signalPolarity": "Below",
+                "derivativeThreshold": -82,
+                "derivativePolarity": "Below",
             },
             "time_of_flight": detection_delay_1,
             "smearing": 0,

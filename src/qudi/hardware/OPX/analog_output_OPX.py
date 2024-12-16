@@ -15,6 +15,7 @@ from qudi.interface.process_control_interface import (
 from qudi.interface.triggered_ao_interface import TriggeredAOInterface
 
 from qudi.core.connector import Connector
+from qudi.hardware.OPX.OPX_holder import OPX as _OPX
 
 from qm import QuantumMachinesManager
 from qm.qua import *
@@ -37,7 +38,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             qm_config_file: "configuration"
     """
 
-    OPX = Connector(interface="OPX")
+    OPX: _OPX = Connector(interface="OPX")
     _qm_config_file = ConfigOption(
         name="qm_config_file", default="configuration", missing="nothing"
     )
@@ -170,6 +171,12 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         print("Hello")
         # if channel == self._scan_parameters['channel']:
         self._ple_job = self._opx.qm.execute(self.get_qm_scan_program())
+
+        res_handles = self._ple_job.result_handles
+        counts_handle = res_handles.get("counts")
+        counts_handle.wait_for_values(1)
+        # while res_handles.is_processing():
+        # print(counts_handle.fetch_all()["value"])
         # self._opx.simulate(self.get_qm_scan_program(), plot=True)
 
     def stop_scan(self):

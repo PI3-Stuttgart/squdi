@@ -90,41 +90,9 @@ class OPX(Base):  # hardware, awg,
         if not curr_do and not curr_ao:
             if self.cw_job:
                 self.cw_job.halt()
-
-            # bool_laser_520 = declare(bool)
-            # bool_laser_450 = declare(bool)
-            # bool_aom_620 = declare(bool)
-
-            # assign(bool_laser_520, dict_curr_do["Laser_520"])
-            # assign(bool_laser_450, dict_curr_do["Laser_520"])
-            # assign(bool_aom_620, dict_curr_do["AOM_620"])
-
-            # play(
-            #     "active",
-            #     "Laser_520",
-            #     condition=bool_laser_520,
-            #     duration=duration,
-            # )
-            # play(
-            #     "active",
-            #     "Laser_450",
-            #     condition=bool_laser_450,
-            #     duration=duration,
-            # )
-            # play("active", "AOM_620", condition=bool_aom_620, duration=duration)
-
-            # play(
-            #     "power"
-            #     * amp(
-            #         self.cw_ao_values["LaserScanner_red"],
-            #     ),
-            #     "LaserScanner_red",
-            #     duration=duration,
-            # )
-
-        # if there should be outputs set, create a program to set the outputs and then execute it
         else:
             duration = 1 * u.us
+
             with program() as cw_program:
                 with infinite_loop_():
                     for ao, power in curr_ao.items():

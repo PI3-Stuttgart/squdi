@@ -1,6 +1,7 @@
 """
 A Rabi experiment sweeping the duration of the MW pulse.
 """
+
 from qm.QuantumMachinesManager import QuantumMachinesManager
 from qm.qua import *
 import matplotlib.pyplot as plt
@@ -33,18 +34,25 @@ with program() as time_rabi:
             assign(counts, 0)
             with while_(counts < threshold):
                 play("laser_ON", "AOM_green")
-                align('AOM_green', 'AOM_orange', 'SPCM')
-                wait(100, 'AOM_orange', 'SPCM')
+                align("AOM_green", "AOM_orange", "SPCM")
+                wait(100, "AOM_orange", "SPCM")
                 play("laser_ON", "AOM_orange")
-                measure("readout_orange", "SPCM", None, time_tagging.analog(times, meas_len_orange, counts))
-            align('NV1', 'AOM_green','SPCM')
-            wait(500, 'NV1', "AOM_green", "SPCM")
+                measure(
+                    "readout_orange",
+                    "SPCM",
+                    None,
+                    time_tagging.analog(times, meas_len_orange, counts),
+                )
+            align("NV1", "AOM_green", "SPCM")
+            wait(500, "NV1", "AOM_green", "SPCM")
             ## Rabi
             play("pi", "NV1", duration=t)  # pulse of varied lengths
             align()
-            wait(50, 'AOM_green')
+            wait(50, "AOM_green")
             play("laser_ON", "AOM_green")
-            measure("readout", "SPCM", None, time_tagging.analog(times, meas_len, counts))
+            measure(
+                "readout", "SPCM", None, time_tagging.analog(times, meas_len, counts)
+            )
             save(counts, counts_st)  # save counts
             wait(1000)
 
@@ -61,12 +69,22 @@ qmm = QuantumMachinesManager(qop_ip)
 
 qm = qmm.open_qm(config)
 
-simulate = False
+simulate = True
 
 if simulate:
-    simulation_duration = 2000
-    job_sim = qm.simulate(time_rabi,SimulationConfig(simulation_duration))
-    job_sim.get_simulated_samples().con1.plot()
+    simulation_duration = 100000
+    simulation_config = SimulationConfig(
+        duration=simulation_duration
+    )  # In clock cycles = 4ns
+    job_sim = qmm.simulate(config, time_rabi, simulation_config)
+    samples = job_sim.get_simulated_samples()
+    # get the waveform report object
+    waveform_report = job_sim.get_simulated_waveform_report()
+    waveform_dict = waveform_report.to_dict()
+    waveform_report.create_plot(
+        samples,
+    )
+
 else:
     job = qm.execute(time_rabi)  # execute QUA program
 
@@ -76,11 +94,9 @@ else:
     counts_handle.wait_for_values(1)
     iteration_handle.wait_for_values(1)
 
-
     def on_close(event):
         event.canvas.stop_event_loop()
         job.halt()
-
 
     f = plt.figure()
     f.canvas.mpl_connect("close_event", on_close)

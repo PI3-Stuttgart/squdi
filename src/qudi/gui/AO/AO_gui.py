@@ -26,6 +26,9 @@ from qudi.core.connector import Connector
 from qudi.core.statusvariable import StatusVar
 from qudi.core.module import GuiBase
 from qudi.core.configoption import ConfigOption
+from qudi.logic.aom_power_calibration import AomPowerCalibration
+from qudi.logic.AO_logic import AOLogic
+from qudi.util.mutex import RecursiveMutex
 
 from qudi.util.widgets.scientific_spinbox import ScienDSpinBox
 
@@ -78,7 +81,8 @@ class AOGui(GuiBase):
     """
 
     # declare connectors
-    aologic = Connector(interface="AOLogic")
+    aologic: AOLogic = Connector(interface="AOLogic")
+    power_conversion: AomPowerCalibration = Connector(interface="LogicBase")
 
     # declare config options
     _slider_row_num_max = ConfigOption(name="_slider_row_num_max", default=None)
@@ -90,6 +94,8 @@ class AOGui(GuiBase):
 
     # declare signals
     sigSetpointChanged = QtCore.Signal(str, float)
+    sigCalibratePower = QtCore.Signal(str, object)
+    sigShowPowerCalibrationDialog = QtCore.Signal(bool)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -102,9 +108,33 @@ class AOGui(GuiBase):
 
         self._populate_sliders()
 
+        self._power_calibration_dialog = CalibrateWaitDialog(self._mw)
+
+        self.sigShowPowerCalibrationDialog.connect(
+            lambda x: (
+                self._power_calibration_dialog.show()
+                if x
+                else self._power_calibration_dialog.hide()
+            ),
+            QtCore.Qt.DirectConnection,
+        )
+
+        self.calibration_thread = QtCore.QThread()
+        self.calibration_worker = CalibrationWorker()
+        self.calibration_worker.moveToThread(self.calibration_thread)
+
+        self.sigCalibratePower.connect(self.calibration_worker.run_calibration)
+        self.calibration_worker.finished.connect(self._calibration_measurement_finished)
+        self.calibration_thread.start()
+
         self.sigSetpointChanged.connect(
             self.aologic().set_setpoint, QtCore.Qt.QueuedConnection
         )
+        # self.sigCalibratePower.connect(
+        #     self.power_conversion().calibrate_power,
+        #     QtCore.Qt.QueuedConnection,
+        # )
+
         self._mw.action_periodic_state_check.toggled.connect(
             self.aologic().toggle_watchdog, QtCore.Qt.QueuedConnection
         )
@@ -116,20 +146,22 @@ class AOGui(GuiBase):
         )
 
         self._restore_window_geometry(self._mw)
-
         self._watchdog_updated(self.aologic().watchdog_active)
         self._sliders_updated(self.aologic().setpoints)
         self.show()
 
     def on_deactivate(self):
         """Hide window empty the GUI and disconnect signals"""
-        self.aologic().sigSwitchesChanged.disconnect(self._sliders_updated)
-        self.aologic().sigWatchdogToggled.disconnect(self._watchdog_updated)
-        self._mw.action_view_highlight_state.triggered.disconnect()
-        self._mw.action_view_alt_toggle_style.triggered.disconnect()
-        self._mw.switch_view_action_group.triggered.disconnect()
+        # self.aologic().sigSwitchesChanged.disconnect(self._sliders_updated)
+        # self.aologic().sigWatchdogToggled.disconnect(self._watchdog_updated)
+        # self._mw.action_view_highlight_state.triggered.disconnect()
+        # self._mw.action_view_alt_toggle_style.triggered.disconnect()
+        # self._mw.switch_view_action_group.triggered.disconnect()
         self._mw.action_periodic_state_check.toggled.disconnect()
         self.sigSetpointChanged.disconnect()
+        self.sigCalibratePower.disconnect()
+        self.sigShowPowerCalibrationDialog.disconnect()
+        self.calibration_thread.terminate()
 
         self._save_window_geometry(self._mw)
         self._delete_switches()
@@ -150,7 +182,6 @@ class AOGui(GuiBase):
         # for remove_channel in self._ignore_aos:
         #    channels.pop(remove_channel, None)
         for ii, channel in enumerate(channels):
-            label: QtWidgets.QLabel = self._get_channel_label(channel)
 
             if self._slider_row_num_max is None:
                 grid_pos: list[int] = [ii, 0]
@@ -160,29 +191,46 @@ class AOGui(GuiBase):
                     int(ii / self._slider_row_num_max) * 2,
                 ]
 
-            if self.aologic().use_conversion(channel):
-                value_range = self.aologic().ao_parameters[channel]["conv_bounds"]
+            value_range = self.aologic().constraints.channel_limits[channel]
+            unit: str = self.aologic().constraints.channel_units[channel]
+
+            slider_w_spinbox = QSliderWithSpinBox(value_range, unit=unit)
+            label: QtWidgets.QLabel = self._get_channel_label(channel)
+
+            # Add Button for Power measurement, if this is defined for the current channel
+            if channel in self.power_conversion().channels_w_power_measurement:
+                power_meas_button: QtWidgets.QPushButton = (
+                    self._get_power_measurement_button()
+                )
+                self._widgets[channel] = (label, slider_w_spinbox, power_meas_button)
+                self._mw.main_layout.addWidget(
+                    power_meas_button, grid_pos[0], grid_pos[1] + 2
+                )
+                power_meas_button.clicked.connect(self.__get_power_meas_func(channel))
             else:
-                value_range = self.aologic().constraints.channel_limits[channel]
+                self._widgets[channel] = (label, slider_w_spinbox)
 
-            if self.aologic().use_unit(channel):
-                unit: str = self.aologic().ao_parameters[channel]["unit"]
-            else:
-                unit = self.default_unit
-
-            _curr_widget = QSliderWithSpinBox(value_range, unit=unit)
-
-            self._widgets[channel] = (label, _curr_widget)
+            self._mw.main_layout.addWidget(label, grid_pos[0], grid_pos[1])
             self._mw.main_layout.addWidget(
-                self._widgets[channel][0], grid_pos[0], grid_pos[1]
+                slider_w_spinbox, grid_pos[0], grid_pos[1] + 1
             )
-            self._mw.main_layout.addWidget(_curr_widget, grid_pos[0], grid_pos[1] + 1)
+
             self._mw.main_layout.setColumnStretch(grid_pos[1], 0)
             self._mw.main_layout.setColumnStretch(grid_pos[1] + 1, 1)
+
             # Connect the correct function to update the analog output of a defined channel
-            _curr_widget.sigValueChanged.connect(
+            slider_w_spinbox.sigValueChanged.connect(
                 self.__get_setpoint_update_func(channel)
             )
+
+    def _get_power_measurement_button(self) -> QtWidgets.QPushButton:
+        power_meas_button = QtWidgets.QPushButton("Calibrate Power")
+        # font: QtGui.QFont = power_meas_button.font()
+        # font.setBold(True)
+        # font.setPointSize(11)
+        # power_meas_button.setFont(font)
+
+        return power_meas_button
 
     def _get_channel_label(self, channel: str) -> QtWidgets.QLabel:
         """Helper function to create a QLabel for a single switch.
@@ -245,6 +293,51 @@ class AOGui(GuiBase):
 
         return update_func
 
+    def __get_power_meas_func(self, channel):
+        def update_power_func():
+            self._power_calib_func(channel)
+
+        return update_power_func
+
+    def _power_calib_func(self, channel):
+        self.sigShowPowerCalibrationDialog.emit(True)
+        self.sigCalibratePower.emit(channel, self.power_conversion().calibrate_power)
+
+    def _calibration_measurement_finished(self, channel):
+        print(f"Calibration finished for {channel}")
+        self._populate_sliders()
+        self.sigShowPowerCalibrationDialog.emit(False)
+
+
+class CalibrationWorker(QtCore.QObject):
+    finished = QtCore.Signal(str)
+
+    @QtCore.Slot(str)
+    def run_calibration(self, channel, function):
+        # Simulate the calibration process
+        print(f"Starting calibration for {channel}...")
+        function(channel)
+        # After calibration is done, emit the finished signal
+        self.finished.emit(channel)
+
+
+class CalibrateWaitDialog(QtWidgets.QDialog):
+    """Dialog to provide feedback and block GUI while saving"""
+
+    def __init__(self, parent, title="Please wait", text="Calibrating Power ..."):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setWindowModality(QtCore.Qt.WindowModal)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+
+        # Dialog layout
+        self.text = QtWidgets.QLabel("<font size='16'>" + text + "</font>")
+        self.hbox = QtWidgets.QHBoxLayout()
+        self.hbox.addSpacerItem(QtWidgets.QSpacerItem(50, 0))
+        self.hbox.addWidget(self.text)
+        self.hbox.addSpacerItem(QtWidgets.QSpacerItem(50, 0))
+        self.setLayout(self.hbox)
+
 
 class QSliderWithSpinBox(QtWidgets.QWidget):
     """
@@ -260,6 +353,7 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
     """
 
     sigValueChanged = QtCore.Signal(float)
+    _internal_update = False
 
     def __init__(
         self,
@@ -308,23 +402,31 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
 
     def slider_value_changed(self, value: int) -> None:
         """Slot to handle changes in the slider's value."""
-        float_value = self.slider_value_to_float(value)
-        if self.spin_box.value() != float_value:
-            self.spin_box.setValue(float_value)
-            self.sigValueChanged.emit(float_value)
+        if not self._internal_update:
+            self._internal_update = True
+            float_value = self.slider_value_to_float(value)
+            if self.spin_box.value() != float_value:
+                self.spin_box.setValue(float_value)
+                self.sigValueChanged.emit(float_value)
+            self._internal_update = False
 
     def spin_box_value_changed(self) -> None:
         """Slot to handle changes in the spin box's value."""
-        slider_value = self.float_to_slider_value(self.spin_box.value())
-        if self.slider.value() != slider_value:
-            self.slider.setValue(slider_value)
-            self.sigValueChanged.emit(self.spin_box.value())
+        if not self._internal_update:
+            self._internal_update = True
+            slider_value = self.float_to_slider_value(self.spin_box.value())
+            if self.slider.value() != slider_value:
+                self.slider.setValue(slider_value)
+                self.sigValueChanged.emit(self.spin_box.value())
+            self._internal_update = False
 
-    def slider_value_to_float(self, value: int, round_digit:int = 5) -> float:
+    def slider_value_to_float(self, value: int, round_digit: int = 5) -> float:
         """Convert the slider's integer value to a float."""
         min_value, max_value = self.value_range
         float_range = max_value - min_value
-        return round((value / self.num_slider_points) * float_range + min_value, round_digit)
+        return round(
+            (value / self.num_slider_points) * float_range + min_value, round_digit
+        )
 
     def float_to_slider_value(self, value: float) -> int:
         """Convert a float value to the slider's integer scale."""
@@ -344,7 +446,10 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
 
     @QtCore.Slot(str)
     def set_value(self, value: float) -> None:
-        """Sets value of spinbox and slider"""
-        slider_value: int = self.float_to_slider_value(value)
-        self.slider.setValue(slider_value)
-        self.spin_box.setValue(value)
+        """Sets value of spinbox and slider."""
+        if not self._internal_update:
+            self._internal_update = True
+            slider_value: int = self.float_to_slider_value(value)
+            self.slider.setValue(slider_value)
+            self.spin_box.setValue(value)
+            self._internal_update = False
