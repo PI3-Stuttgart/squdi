@@ -761,7 +761,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
             # for num, output_channel in enumerate(self.active_channels[1]):
             #    output_data[num] = self.__frame_buffer[output_channel]
-            
+
+
             # not doing anything right now
             status = self._adwin_scanning_device.configure_scan(line_path=output_data)
             # self._adwin_scanning_device.scan_line(line_path = output_data, pixel_clock = True)

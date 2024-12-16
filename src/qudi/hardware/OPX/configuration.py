@@ -47,8 +47,9 @@ long_meas_len_1 = 5_000 * u.ns
 initialization_len_2 = 3000 * u.ns
 meas_len_2 = 500 * u.ns
 long_meas_len_2 = 5_000 * u.ns
+initialization_len_laser: float = 3_000 * u.ns
 
-initialization_len_575 = 3_000 * u.ns
+AOM_power_len = 80 * u.ns
 
 # Relaxation time from the metastable state to the ground state after during initialization
 relaxation_time = 300 * u.ns
@@ -81,16 +82,26 @@ signal_threshold_2 = (
 ple_step_length_red = 1 * u.us
 
 # Delays
-detection_delay_1 = 144 * u.ns  # 144
+detection_delay_1 = 36 * u.ns  # 144
 detection_delay_2 = 80 * u.ns
-laser_delay_green = 0 * u.ns
+# Lasers
+laser_delay_520 = 0 * u.ns
+laser_delay_450 = 0 * u.ns
+
+laser_power_delay_450 = 0 * u.ns
+
+LaserScanner_delay = 0 * u.ns
+# AOMs
+AOM_delay_520 = 0 * u.ns
 AOM_delay_575 = 0 * u.ns
-AOM_575_power_delay = 0 * u.ns
-AOM_power_len_575 = 80 * u.ns
-laser_delay_2 = 0 * u.ns
+AOM_delay_620 = 0 * u.ns
+
+AOM_power_delay_520 = 0 * u.ns
+AOM_power_delay_575 = 0 * u.ns
+AOM_power_delay_620 = 0 * u.ns
+# MW/RF
 mw_delay = 0 * u.ns
 rf_delay = 0 * u.ns
-LaserScanner_delay = 0 * u.ns
 
 
 wait_between_runs = 1500
@@ -104,17 +115,38 @@ config = {
                 2: {"offset": 0.0, "delay": mw_delay},  # NV Q
                 3: {"offset": 0.0, "delay": rf_delay},  # RF
                 4: {"offset": 0.0, "delay": LaserScanner_delay},
-                7: {"offset": 0.0, "delay": AOM_575_power_delay},  # AOM 575 power
+                7: {
+                    "offset": 0.0,
+                    "delay": laser_power_delay_450,
+                },  # Laser 450 nm (Blue)
+                8: {
+                    "offset": 0.0,
+                    "delay": AOM_power_delay_520,
+                },  # AOM Laser 620 nm 2 (Orange)
+                9: {
+                    "offset": 0.0,
+                    "delay": AOM_power_delay_575,
+                },  # AOM Laser 520 (Green)
+                10: {
+                    "offset": 0.0,
+                    "delay": AOM_power_delay_620,
+                },  # AOM Laser 620 nm (Orange)
             },
             "digital_outputs": {
-                1: {},  # indicator
-                2: {},  # AOM/green Laser
-                3: {},  # AOM/orange Laser
-                4: {},  # AOM/red Laser
-                7: {},  # AOM/yellow (575) laseer
+                1: {},  # indicator - TBD what is this...
+                2: {},  # Master - slave trigger RESERVED for SETUP#2.
+                3: {},  # Gate Trigger - to the TT ...channel 5 on the TT.
+                4: {},  # Memory Trigger - to the TT ... channel 4 on the TT
+                5: {},  # PPG trigger RESERVED
+                6: {},  # Laser 520 nm (Green)
+                7: {},  # Laser 450 nm (Blue)
+                8: {},  # AOM Laser 620 nm 2 (Orange)
+                9: {},  # AOM Laser 520 nm (Green)
+                10: {},  # AOM Laser 620 nm (Orange)
             },
             "analog_inputs": {
                 1: {"offset": 0, "gain_db": -3},  # SPCM1
+                2: {"offset": 0, "gain_db": -3},  # SPCM2
             },
         }
     },
@@ -142,34 +174,123 @@ config = {
             "intermediate_frequency": rf_frequency,
             "operations": {
                 "const": "const_pulse_single",
+                # "x180": "x180_pulse",
             },
         },
-        "AOM_green": {
+        "Laser_450": {
             "digitalInputs": {
                 "marker": {
-                    "port": ("con1", 2),
-                    "delay": laser_delay_green,
+                    "port": ("con1", 7),
+                    "delay": laser_delay_450,
                     "buffer": 0,
                 },
             },
             "operations": {
-                "laser_ON": "laser_ON_green",
+                "active": "laser_ON",
             },
         },
-        "AOM_575": {
-            "digitalInputs": {
-                "marker": {
-                    "port": ("con1", 7),
-                    "delay": AOM_delay_575,
-                    "buffer": 0,
-                },
-            },
+        "Laser_450_power": {
             "singleInput": {
                 "port": ("con1", 7),
             },
             "operations": {
-                "active": "AOM_ON_575",
-                "power": "power_AOM_575",
+                "power": "AOM_power",
+            },
+        },
+        "Gate_Trigger": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 3),
+                    "delay": 0,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "trigit": "laser_ON",
+            },
+        },
+        "Memory_Trigger": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 4),
+                    "delay": 0,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "trigit": "laser_ON",
+            },
+        },
+        "Laser_520": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 6),
+                    "delay": laser_delay_520,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "active": "laser_ON",
+            },
+        },
+        "AOM_520": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 9),
+                    "delay": AOM_delay_520,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "active": "AOM_ON",
+            },
+        },
+        "AOM_520_power": {
+            "singleInput": {
+                "port": ("con1", 9),
+            },
+            "operations": {
+                "power": "AOM_power",
+            },
+        },
+        "AOM_620": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 10),
+                    "delay": AOM_delay_620,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "active": "AOM_ON",
+            },
+        },
+        "AOM_620_power": {
+            "singleInput": {
+                "port": ("con1", 10),
+            },
+            "operations": {
+                "power": "AOM_power",
+            },
+        },
+        "AOM_620_2": {
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 8),
+                    "delay": AOM_delay_575,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "active": "AOM_ON",
+            },
+        },
+        "AOM_620_2_power": {
+            "singleInput": {
+                "port": ("con1", 8),
+            },
+            "operations": {
+                "power": "AOM_power",
             },
         },
         "LaserScanner_red": {
@@ -177,67 +298,55 @@ config = {
                 "port": ("con1", 4),
             },
             "operations": {
-                "piezo_offset": "piezo_offset_red",
-            },
-        },
-        "AOM2": {
-            "digitalInputs": {
-                "marker": {
-                    "port": ("con1", 2),
-                    "delay": laser_delay_2,
-                    "buffer": 0,
-                },
-            },
-            "operations": {
-                "laser_ON": "laser_ON_2",
+                "power": "piezo_offset_red",
             },
         },
         "SPCM1": {
             "singleInput": {"port": ("con1", 1)},  # not used
-            "digitalInputs": {  # for visualization in simulation
-                "marker": {
-                    "port": ("con1", 1),
-                    "delay": detection_delay_1,
-                    "buffer": 0,
-                },
-            },
+            # "digitalInputs": {  # for visualization in simulation
+            #     "marker": {
+            #         "port": ("con1", 1),
+            #         "delay": detection_delay_1,
+            #         "buffer": 0,
+            #     },
+            # },
             "operations": {
                 "readout": "readout_pulse_1",
                 "long_readout": "long_readout_pulse_1",
             },
             "outputs": {"out1": ("con1", 1)},
             "outputPulseParameters": {
-                "signalThreshold": signal_threshold_1,  # ADC units
-                "signalPolarity": "Descending",
-                "derivativeThreshold": 1023,
-                "derivativePolarity": "Descending",
+                "signalThreshold": -200,  # ADC units
+                "signalPolarity": "Below",
+                "derivativeThreshold": -82,
+                "derivativePolarity": "Below",
             },
             "time_of_flight": detection_delay_1,
             "smearing": 0,
         },
-        # "SPCM2": {
-        #     "singleInput": {"port": ("con1", 1)},  # not used
-        #     "digitalInputs": {  # for visualization in simulation
-        #         "marker": {
-        #             "port": ("con1", 4),
-        #             "delay": detection_delay_2,
-        #             "buffer": 0,
-        #         },
-        #     },
-        #     "operations": {
-        #         "readout": "readout_pulse_2",
-        #         "long_readout": "long_readout_pulse_2",
-        #     },
-        #     "outputs": {"out1": ("con1", 2)},
-        #     "outputPulseParameters": {
-        #         "signalThreshold": signal_threshold_2,  # ADC units
-        #         "signalPolarity": "Below",
-        #         "derivativeThreshold": -2_000,
-        #         "derivativePolarity": "Above",
-        #     },
-        #     "time_of_flight": detection_delay_2,
-        #     "smearing": 0,
-        # },
+        "SPCM2": {
+            "singleInput": {"port": ("con1", 1)},  # not used
+            "digitalInputs": {  # for visualization in simulation
+                "marker": {
+                    "port": ("con1", 4),
+                    "delay": detection_delay_2,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "readout": "readout_pulse_2",
+                "long_readout": "long_readout_pulse_2",
+            },
+            "outputs": {"out1": ("con1", 2)},
+            "outputPulseParameters": {
+                "signalThreshold": signal_threshold_2,  # ADC units
+                "signalPolarity": "Below",
+                "derivativeThreshold": -2_000,
+                "derivativePolarity": "Above",
+            },
+            "time_of_flight": detection_delay_2,
+            "smearing": 0,
+        },
     },
     "pulses": {
         "const_pulse": {
@@ -280,26 +389,21 @@ config = {
             "length": rf_length,  # in ns
             "waveforms": {"single": "rf_const_wf"},
         },
-        "laser_ON_green": {
+        "AOM_ON": {
             "operation": "control",
-            "length": initialization_len_green,
+            "length": initialization_len_laser,
             "digital_marker": "ON",
         },
-        "AOM_ON_575": {
+        "AOM_power": {
             "operation": "control",
-            "length": initialization_len_575,
-            "digital_marker": "ON",
-        },
-        "AOM_power_575": {
-            "operation": "control",
-            "length": AOM_power_len_575,
+            "length": initialization_len_laser,
             "waveforms": {
-                "single": "const_piezo_offset",
+                "single": "cw_aom",
             },
         },
-        "laser_ON_2": {
+        "laser_ON": {
             "operation": "control",
-            "length": initialization_len_2,
+            "length": initialization_len_laser,
             "digital_marker": "ON",
         },
         "readout_pulse_1": {
@@ -333,13 +437,6 @@ config = {
                 "single": "const_piezo_offset",
             },
         },
-        "power_AOM_575": {
-            "operation": "control",
-            "length": 0 * u.ns,
-            "waveforms": {
-                "single": "const_piezo_offset",
-            },
-        },
     },
     "waveforms": {
         "cw_wf": {"type": "constant", "sample": mw_amp_NV},
@@ -352,6 +449,10 @@ config = {
             "type": "constant",
             "sample": 0.5,
         },  # Piezo offset puls for PLE
+        "cw_aom": {
+            "type": "constant",
+            "sample": 0.5,
+        },
     },
     "digital_waveforms": {
         "ON": {"samples": [(1, 0)]},  # [(on/off, ns)]

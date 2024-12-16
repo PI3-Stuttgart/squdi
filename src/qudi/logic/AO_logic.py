@@ -28,6 +28,11 @@ from qudi.core.module import LogicBase
 from qudi.core.connector import Connector
 from qudi.core.configoption import ConfigOption
 from qudi.util.mutex import RecursiveMutex
+from qudi.interface.process_control_interface import (
+    ProcessSetpointInterface,
+    ProcessControlConstraints,
+)
+from qudi.logic.aom_power_calibration import AomPowerCalibration
 
 
 class AOLogic(LogicBase):
@@ -47,7 +52,13 @@ class AOLogic(LogicBase):
             ao_hardware: <hardware name>
     """
 
-    ao_hardware = Connector(interface="ProcessSetpointInterface")
+    ao_hardware: ProcessSetpointInterface = Connector(
+        interface="ProcessSetpointInterface"
+    )
+    power_conversion: AomPowerCalibration = Connector(interface="LogicBase")
+    _power_conversion: AomPowerCalibration
+    _ao_hardware: ProcessSetpointInterface
+
     ao_parameters: dict[str, dict[str, Any]] = ConfigOption(name="AO_parameters", missing="nothing")  # type: ignore
 
     _watchdog_interval: float = ConfigOption(
@@ -57,7 +68,7 @@ class AOLogic(LogicBase):
         name="autostart_watchdog", default=False, missing="nothing"
     )  # type: ignore
     # Defines the max and min values of the hardware AO output. used in the convertion function
-    _hardware_bounds_V: tuple[float, float] = (-0.5, 0.5)  # V
+    _hardware_bounds_V: tuple[float, float] = (-1, 1)  # V
     # If True, ignores the converstion of the setpoints and instead uses the direct hardware values
     use_hardware_setpoints = False
 
@@ -67,7 +78,7 @@ class AOLogic(LogicBase):
     sigWatchdogToggled = QtCore.Signal(bool)
 
     # directly wrapped attributes from hardware module
-    __wrapped_hw_attributes = frozenset({"constraints"})
+    __wrapped_hw_attributes = frozenset({""})
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -79,9 +90,12 @@ class AOLogic(LogicBase):
 
     def on_activate(self):
         """Activate module"""
+        self._power_conversion = self.power_conversion()
+        self._ao_hardware = self.ao_hardware()
         self._old_setpoints = self.setpoints
+        self._set_constraints()
         self._watchdog_interval_ms = int(round(self._watchdog_interval * 1000))
-
+        self._curr_conversion_channels = self._power_conversion.channels_w_conversion
         if self._autostart_watchdog:
             self._watchdog_active = True
             QtCore.QMetaObject.invokeMethod(
@@ -94,41 +108,62 @@ class AOLogic(LogicBase):
         """Deactivate module"""
         self._watchdog_active = False
 
-    def __getattr__(self, item):
-        if item in self.__wrapped_hw_attributes:
-            return getattr(self.ao_hardware(), item)
-        raise AttributeError(f'SwitchLogic has no attribute with name "{item}"')
+    # def __getattr__(self, item):
+    #     if item in self.__wrapped_hw_attributes:
+    #         return getattr(self._ao_hardware, item)
+    #     # raise AttributeError(f'AOLogic has no attribute with name "{item}"')
 
     def use_conversion(self, channel: str) -> bool:
         """Checks if conversion is used"""
-        if not self.ao_parameters:
-            return False
-
-        if channel not in self.ao_parameters:
-            return False
-
-        if "conv_bounds" not in self.ao_parameters[channel]:
-            return False
-
-        return True
-
-    def use_unit(self, channel: str) -> bool:
-        """Checks if unit is used"""
-        if not self.ao_parameters:
-            return False
-
-        if channel not in self.ao_parameters:
-            return False
-
-        if "unit" not in self.ao_parameters[channel]:
-            return False
-
-        return True
+        return channel in self._power_conversion.channels_w_conversion
 
     @property
     def watchdog_active(self) -> bool:
         """Returns a bool indicating if the watchdog is active"""
         return self._watchdog_active
+
+    def _set_constraints(self) -> None:
+        channels = list(self._ao_hardware.constraints.setpoint_channels)
+        units = {}
+        limits = {}
+        for channel in channels:
+            if (
+                channel in self._power_conversion.channels_w_conversion
+                and self.use_conversion
+            ):
+                units[channel] = "W"  # TODO: Needs to be generalized
+
+                limits[channel] = tuple(
+                    [
+                        self._power_conversion.convert_voltage_to_power(v, channel)
+                        for v in self._ao_hardware.constraints.channel_limits[channel]
+                    ]
+                )
+
+            else:
+                units[channel] = self._ao_hardware.constraints.channel_units[channel]
+                limits[channel] = self._ao_hardware.constraints.channel_limits[channel]
+
+        print(limits)
+        print(units)
+        self._constraints = ProcessControlConstraints(
+            setpoint_channels=channels,
+            units=units,
+            limits=limits,
+            dtypes={ch: float for ch in channels},
+        )
+
+    @property
+    def constraints(self) -> ProcessControlConstraints:
+        if (
+            self._curr_conversion_channels
+            == self._power_conversion.channels_w_conversion
+        ):
+
+            return self._constraints
+        else:
+            self._set_constraints()
+            return self._constraints
 
     @property
     def setpoints(self) -> dict[str, float]:
@@ -139,13 +174,9 @@ class AOLogic(LogicBase):
         """
         with self._thread_lock:
             try:
-                setpoints_dict_hw = self.ao_hardware().setpoints
-                if self.use_hardware_setpoints:
-                    setpoints_dict = setpoints_dict_hw.copy()
-                else:
-                    setpoints_dict = self.convert_setpoints_dict(
-                        setpoints_dict_hw, invert=True
-                    )
+                setpoints_dict = self.convert_setpoints_dict(
+                    self._ao_hardware.setpoints, reverse=True
+                )
             except BaseException:
                 if self._watchdog_active:
                     self.toggle_watchdog(False)
@@ -169,12 +200,7 @@ class AOLogic(LogicBase):
         """
         with self._thread_lock:
             try:
-                if self.use_hardware_setpoints:
-                    self.ao_hardware().setpoints = setpoints_dict
-                else:
-                    self.ao_hardware().setpoint(
-                        self.convert_setpoints_dict(setpoints_dict)
-                    )
+                self._ao_hardware.setpoint(self.convert_setpoints_dict(setpoints_dict))
             except BaseException:
                 self.log.exception("Error while trying to set setpoints.")
 
@@ -192,11 +218,11 @@ class AOLogic(LogicBase):
         """
         with self._thread_lock:
             try:
-                setpoint_hw = self.ao_hardware().get_setpoint(channel)
+                setpoint_hw = self._ao_hardware.get_setpoint(channel)
                 if get_hardware_value:
                     setpoint = setpoint_hw.copy()
                 else:
-                    setpoint = self.convert_setpoint(channel, setpoint_hw, invert=True)
+                    setpoint = self.convert_setpoint(channel, setpoint_hw, reverse=True)
             except BaseException:
                 self.log.exception(
                     f'Error while trying to query setpoint of channel "{channel}".'
@@ -215,50 +241,33 @@ class AOLogic(LogicBase):
         """
         with self._thread_lock:
             try:
-                #
-                if use_hardware_value:
-                    self.ao_hardware().set_setpoint(channel, value)
-                else:
-                    self.ao_hardware().set_setpoint(
-                        channel, self.convert_setpoint(channel, value)
-                    )
+                self._ao_hardware.set_setpoint(
+                    channel, self.convert_setpoint(channel, value)
+                )
             except BaseException:
                 self.log.exception(
                     f'Error while trying to set channel "{channel}" to setpoint "{value}".'
                 )
 
-    def convert_setpoint(self, channel: str, value: float, invert: bool = False):
+    def convert_setpoint(self, channel: str, value: float, reverse: bool = False):
         """Converts setpoint value in arbitrary value to hardware value"""
 
         # check if convertion is defined, otherwise just returns input value as output
         if self.use_conversion(channel):
-            source_min, source_max = (
-                self.ao_parameters[channel]["conv_bounds"]
-                if not invert
-                else self._hardware_bounds
-            )
-            target_min, target_max = (
-                self._hardware_bounds
-                if not invert
-                else self.ao_parameters[channel]["conv_bounds"]
-            )
-
-            # normalize value
-            normalized_value = (value - source_min) / (source_max - source_min)
-            # Scale the normalized value to the target bounds
-            converted_value = normalized_value * (target_max - target_min) + target_min
-
-            return converted_value
+            if reverse:
+                return self._power_conversion.convert_voltage_to_power(value, channel)
+            else:
+                return self._power_conversion.convert_power_to_voltage(value, channel)
         else:
             return value
 
     def convert_setpoints_dict(
-        self, setpoints_dict: dict[str, float], invert: bool = False
+        self, setpoints_dict: dict[str, float], reverse: bool = False
     ) -> dict[str, float]:
-        """converts setpoints_dict from arbitrary form to hardware values."""
+        """converts setpoints_dict from arbitrary value to hardware values."""
 
         return {
-            channel: self.convert_setpoint(channel, value, invert=invert)
+            channel: self.convert_setpoint(channel, value, reverse)
             for channel, value in setpoints_dict.items()
         }
 

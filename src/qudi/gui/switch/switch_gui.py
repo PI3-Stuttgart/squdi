@@ -263,7 +263,7 @@ class SwitchGui(GuiBase):
         @param str switch: The name of the switch to create the label for
         @return QWidget: QLabel with switch name
         """
-        label = QtWidgets.QLabel(f"{switch}:")
+        label = QtWidgets.QLabel(f"{switch}:".replace("_", " "))
         font = label.font()
         font.setBold(True)
         font.setPointSize(11)

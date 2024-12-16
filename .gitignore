@@ -31,4 +31,6 @@
 # log files
 *.log
 *.log.*
-
+/log
+/src/qudi/log
+/src/qudi/userscripts

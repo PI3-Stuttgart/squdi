@@ -1,11 +1,14 @@
 import importlib
 from typing import Dict, Tuple, Any, Union
 
+import qm.exceptions
 from qualang_tools.control_panel import ManualOutputControl
+import qm
 
 from qudi.core.configoption import ConfigOption
 from qudi.util.mutex import RecursiveMutex
 from qudi.interface.switch_interface import SwitchInterface
+from qudi.core.connector import Connector
 
 
 class DigitalSwitchOPX(SwitchInterface):
@@ -15,18 +18,22 @@ class DigitalSwitchOPX(SwitchInterface):
 
     Example config for copy-paste:
 
-    digital_switch_opx:
-        module.Class: 'switches.digital_switch_OPX.DigitalSwitchOPX'
+        digital_switch_opx:
+        module.Class: 'OPX.digital_switch_OPX.DigitalSwitchOPX'
+        connect:
+            OPX: "OPX"
         options:
+            qm_config_file: 'configuration'
 
     """
 
     _qm_config_file = ConfigOption(
         name="qm_config_file", default="configuration", missing="nothing"
     )
-
+    OPX = Connector(interface='OPX')
     _configuration: Any
     _qm_manual_output_control = None
+    _opx = None
 
     # TODO: Is this init function needed?
     def __init__(self, *args, **kwargs):
@@ -34,7 +41,7 @@ class DigitalSwitchOPX(SwitchInterface):
         super().__init__(*args, **kwargs)
         self.lock = RecursiveMutex()
 
-        self._channels = tuple()
+        self._channels = tuple() # create instance of OPX_holder
 
     def on_activate(self) -> None:
         """Loads QM config and establishs connection to OPX+"""
@@ -42,13 +49,15 @@ class DigitalSwitchOPX(SwitchInterface):
         self._configuration = importlib.import_module(
             f"qudi.hardware.OPX.{self._qm_config_file}"
         )
-        # Establish connection to OPX+
-        self._qm_manual_output_control = ManualOutputControl(
-            self._configuration.config, host=self._configuration.qop_ip
-        )
+        # Check connection to OPX+
+        self._opx = self.OPX()
+        if not self._opx.is_connected:
+            self.log.error('no connection to OPX')
+
+        self._opx.cw_do_states = {do: 'off' for do in self.available_states.keys()}
 
     def on_deactivate(self) -> None:
-        """TODO: disconnect from OPX?"""
+        pass
 
     @property
     def name(self) -> str:
@@ -71,7 +80,10 @@ class DigitalSwitchOPX(SwitchInterface):
         _states = {}
 
         for name, qm_element in self._configuration.config["elements"].items():
-            if "digitalInputs" in qm_element.keys():
+            if (
+                "digitalInputs" in qm_element.keys()
+                and not "outputs" in qm_element.keys()
+            ):
                 _states[name] = ("off", "on")
 
         return _states
@@ -82,12 +94,7 @@ class DigitalSwitchOPX(SwitchInterface):
         @param str switch: name of the switch to query the state for
         @return str: The current switch state
         """
-        do_status: dict[str, str] = self._qm_manual_output_control.digital_status()
-
-        if do_status[switch]:
-            return "on"
-        else:
-            return "off"
+        return self._opx.cw_do_states[switch]
 
     def set_state(self, switch: str, state: str) -> None:
         """Query state of single switch by name
@@ -95,7 +102,4 @@ class DigitalSwitchOPX(SwitchInterface):
         @param str switch: name of the switch to change
         @param str state: name of the state to set
         """
-        if state == "on":
-            self._qm_manual_output_control.digital_on(switch)
-        if state == "off":
-            self._qm_manual_output_control.digital_off(switch)
+        self._opx.update_cw_do(switch, state)
