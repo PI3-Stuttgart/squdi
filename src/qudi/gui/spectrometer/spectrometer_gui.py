@@ -383,7 +383,7 @@ class SpectrometerGui(GuiBase):
         self._mw.control_widget.progress_bar.setRange(0, round(100 * exposure_time))
         self._mw.settings_dialog.delete_fit.setChecked(self._delete_fit)
         cwavelength = float(self._spectrometer_logic().cwavelength)
-        grating = float(self._spectrometer_logic().grating)
+        grating = int(self._spectrometer_logic().grating)
         self._mw.settings_dialog.cwavelength_input.setValue(cwavelength)
         self._mw.settings_dialog.grating_switch.setChecked(grating)
 
