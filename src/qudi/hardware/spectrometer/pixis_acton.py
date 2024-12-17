@@ -5,7 +5,7 @@ from qudi.interface.camera_interface import CameraInterface
 
 from qudi.core.configoption import ConfigOption
 from qudi.core.statusvariable import StatusVar
-from qudi.hardware.camera.pixis_api import *
+from qudi.hardware.spectrometer.pixis_api import *
 import numpy as np
 import time
 
