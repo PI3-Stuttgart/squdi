@@ -114,8 +114,7 @@ class PrincetonPICAM(SpectrometerInterface, CameraInterface):
 
             @return []: spectrum data
         """
-        if self.my_wavelength:
-            self.wavelength = self.my_wavelength
+
         specdata = np.empty((2, len(self.wavelength)), dtype=np.double)
         specdata[0] = self.wavelength
         
