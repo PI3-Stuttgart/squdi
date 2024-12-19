@@ -12,14 +12,14 @@ def qm_scan_program(aoOPX):
 
     nr_amp_steps = aoOPX._scan_parameters["nr_amp_steps"]
     duration = aoOPX._scan_parameters["sweep_duration"]
-    back_scan_duration = aoOPX._scan_parameters["back_scan_duration"]
+    back_scan_duration = aoOPX._scan_parameters["back_scan_duration"] * 2
     nr_of_scanns = aoOPX._scan_parameters["nr_of_scans"]
     min_amp = aoOPX._scan_parameters["voltage_start"]
     max_amp = aoOPX._scan_parameters["voltage_stop"]
     nr_amp_steps_back = nr_of_scanns
 
     power_620 = aoOPX.get_setpoint("AOM_620_2_power")
-
+    power_520 = aoOPX.get_setpoint("AOM_520_power")
     amp_array = np.linspace(min_amp, max_amp, nr_amp_steps)
     repump_len = 1 * u.ms
     i_avg = 1_000  # number of averages per voltage
@@ -63,7 +63,13 @@ def qm_scan_program(aoOPX):
                         "AOM_620_2_power",
                         duration=readout_len / i_avg * u.ns,
                     )
-                    # play("active", "Laser_520", duration=readout_len / i_avg * u.ns)
+                    play("active", "Laser_520", duration=readout_len / i_avg * u.ns)
+                    play("active", "AOM_520", duration=readout_len / i_avg * u.ns)
+                    play(
+                        "power" * amp(power_520),
+                        "AOM_520_power",
+                        duration=readout_len / i_avg * u.ns,
+                    )
                     play(
                         "power" * amp(_amp),
                         "LaserScanner_red",
@@ -83,6 +89,12 @@ def qm_scan_program(aoOPX):
                         duration=back_scan_len / i_avg * u.ns,
                     )
                     play("active", "Laser_520", duration=back_scan_len / i_avg * u.ns)
+                    play("active", "AOM_520", duration=readout_len / i_avg * u.ns)
+                    play(
+                        "power" * amp(power_520),
+                        "AOM_520_power",
+                        duration=readout_len / i_avg * u.ns,
+                    )
             # crc(aoOPX, crc_voltage)
 
         # with program() as crc2:
