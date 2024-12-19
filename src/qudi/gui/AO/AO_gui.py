@@ -358,7 +358,7 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
     def __init__(
         self,
         value_range: tuple[float, float],
-        num_slider_points: int = int(1e3),
+        num_slider_points: int = int(1e5),
         parent: QtWidgets.QWidget | None = None,
         unit: str = "",
     ) -> None:
