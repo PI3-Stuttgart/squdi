@@ -95,6 +95,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
     _scan_units = ConfigOption(name='scan_units', missing='error')
     _backwards_line_resolution = ConfigOption(name='backwards_line_resolution', default=50)
     __max_move_velocity = ConfigOption(name='maximum_move_velocity', default=400e-6)
+    _settling_time = ConfigOption(name='settling_time', default=0)
 
     _threaded = True  # Interfuse is by default not threaded.
 
@@ -121,6 +122,7 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         self.__ni_ao_write_timer = None
         self._min_step_interval = 1e-3
         self._scanner_distance_atol = 1e-9
+        
 
         self._thread_lock_cursor = Mutex()
         self._thread_lock_data = Mutex()
@@ -492,7 +494,8 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
         # self.log.debug("Module unlocked")
 
         self.log.debug(f"Finished scan, move to stored target: {self._stored_target_pos}")
-        self.bare_scanner.move_absolute(self, self._stored_target_pos)
+        time.sleep(self._settling_time)
+        self.bare_scanner.move_absolute(self, self._stored_target_pos, blocking=True)
         self._stored_target_pos = dict()
 
     def get_scan_data(self):

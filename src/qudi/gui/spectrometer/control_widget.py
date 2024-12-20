@@ -43,7 +43,7 @@ class SpectrometerControlWidget(QtWidgets.QWidget):
         # main_layout.setSpacing(5)
 
         # Control buttons
-        self.acquire_button = QtWidgets.QPushButton('Acquire Spectrum')
+        self.acquire_button = QtWidgets.QPushButton('Acquiree Spectrum')
         self.acquire_button.setToolTip('Acquire a new spectrum.')
         main_layout.addWidget(self.acquire_button, 0, 0)
 

@@ -5,43 +5,70 @@ A simple sandbox to showcase different QUA functionalities during the installati
 
 import time
 from qm import SimulationConfig, LoopbackInterface
+from qm.grpc.qua import QuaProgramArrayVarRefExpression, QuaProgramVarRefExpression
 from qm.qua import *
 from qm import QuantumMachinesManager
+from qm.qua._expressions import QuaVariable
 from configuration import *
 import matplotlib.pyplot as plt
+import json
 
+single_integration_time_ns = int(1000 * u.ns)
 ###################
 # The QUA program #
 ###################
+laser_list = ['Laser_520', 'AOM_520']
 with program() as hello_QUA:
-    a = declare(fixed)
+    a: QuaVariable | QuaProgramArrayVarRefExpression | QuaProgramVarRefExpression = (
+        declare(fixed)
+    )
     with infinite_loop_():
-        with for_(a, 0, a < 1.1, a + 0.05):
-            play("x180" * amp(a), "NV")
-        wait(25, "NV")
+        #with for_(a, 0, a < 1.1, a + 0.05):
+        for laser in do_list:
+            play("active", laser)
+        # play("const" * amp(1), "RF")
 
+print(hello_QUA.__dict__)
 #####################################
 #  Open Communication with the QOP  #
 #####################################
-qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name, octave=octave_config)
+qmm = QuantumMachinesManager(
+    host=qop_ip, cluster_name=cluster_name, octave=octave_config
+)
 
 ###########################
 # Run or Simulate Program #
 ###########################
 
-simulate = False
-
+simulate = True
 if simulate:
     # Simulates the QUA program for the specified duration
     simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
     job_sim = qmm.simulate(config, hello_QUA, simulation_config)
     # Simulate blocks python until the simulation is done
+    job_sim.get_simulated_samples().con1
     job_sim.get_simulated_samples().con1.plot()
-    plt.show()
+
+    # get DAC and digital samples (optional).
+    samples = job_sim.get_simulated_samples()
+    # get the waveform report object
+    waveform_report = job_sim.get_simulated_waveform_report()
+    waveform_dict = waveform_report.to_dict()
+    with open('awg_file.json', 'w') as fp:
+        json.dump(waveform_dict, fp)
+
+    waveform_report.create_plot(samples, plot=True, save_path="./")
+    #print(waveform_dict.keys())
+    # prints:
+    #(dict_keys(['analog_waveforms', 'digital_waveforms', 'adc_acquisitions']))
+    #plt.show()
 else:
     qm = qmm.open_qm(config)
     job = qm.execute(hello_QUA)
     # Execute does not block python! As this is an infinite loop, the job would run forever. In this case, we've put a 10
     # seconds sleep and then halted the job.
-    time.sleep(10)
+    time.sleep(1)
     job.halt()
+    # time.sleep(10)
+    # print(job.execution_report())
+print('end')
