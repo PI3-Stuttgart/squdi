@@ -1,6 +1,9 @@
 import importlib
 import time
 import numpy as np
+import xarray as xr
+import os
+from datetime import datetime
 
 from qudi.core.configoption import ConfigOption
 from qudi.core.connector import Connector
@@ -41,14 +44,82 @@ class AomPowerCalibration(LogicBase):
 
     channels_w_conversion = []
 
+    save_path = "./"
+
     def on_activate(self) -> None:
         self.do: _DO = self.DO()
         self.ao: _AO = self.AO()
         self.powermeter: _PM = self.Powermeter()
+
+        # Load in latest calibration data
+        for aom_channel in self.aoms.keys():
+            self.load_latest_calibration_data(aom_channel)
+
         self._generate_convertion_list()
 
     def on_deactivate(self) -> None:
         pass
+
+    def save_calibration_data(self, aom_channel: str) -> None:
+        """
+        Save the calibration data for a specific AOM channel as an HDF5 file.
+
+        Args:
+            aom_channel (str): Name of the AOM channel.
+            save_path (str): Directory where the file will be saved.
+        """
+        if aom_channel not in self.aoms or "data" not in self.aoms[aom_channel]:
+            self.log.warning(f"No data found for AOM channel {aom_channel}.")
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(
+            self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.h5"
+        )
+
+        # Save the xr.Dataset directly as an HDF5 file
+        self.aoms[aom_channel]["data"].to_netcdf(filename)
+        self.log.info(f"Calibration data for {aom_channel} saved to {filename}")
+
+    def load_latest_calibration_data(self, aom_channel: str) -> None:
+        """
+        Load the latest calibration data for a specific AOM channel from an HDF5 file.
+
+        Args:
+            aom_channel (str): Name of the AOM channel.
+        """
+        # Search for the latest HDF5 file for the specific channel
+        files = [
+            file
+            for file in os.listdir(self.save_path)
+            if file.startswith(f"aom_{aom_channel}_calibration_")
+            and file.endswith(".h5")
+        ]
+        if not files:
+            self.log.warning(
+                f"No calibration files found for AOM channel {aom_channel}."
+            )
+            return
+
+        latest_file = max(
+            files, key=lambda f: os.path.getctime(os.path.join(self.save_path, f))
+        )
+        file_path = os.path.join(self.save_path, latest_file)
+
+        # Load the xr.Dataset directly from the HDF5 file
+        xr_data = xr.load_dataset(file_path)
+
+        # Update the aoms dictionary
+        if aom_channel not in self.aoms:
+            self.log.warning(
+                f"Calibration file found of AOM ({aom_channel}) which is not defined in Qinu config!"
+            )
+        else:
+            self.aoms[aom_channel]["data"] = xr_data
+            self.aoms[aom_channel]["fit_res"] = xr_data.attrs["fit_res"]
+
+        self.log.info(f"Loaded calibration data for {aom_channel} from {latest_file}")
+        self._generate_convertion_list()
 
     def _generate_convertion_list(self) -> None:
         channels_w_conversion = []
@@ -90,7 +161,7 @@ class AomPowerCalibration(LogicBase):
                 bracket=[
                     self.ao.constraints.channel_limits[aom_channel][0],
                     self.ao.constraints.channel_limits[aom_channel][1]
-                    + 0.1,  # TODO: This is a dirty workaround to avoid issues with max power
+                    + 0.2,  # TODO: This is a dirty workaround to avoid issues with max power
                 ],
                 method="brentq",
             )
@@ -111,9 +182,11 @@ class AomPowerCalibration(LogicBase):
 
     def fit_powers(self, aom_channel) -> None:
         fit = AOMPowerFit(
-            self.aoms[aom_channel]["voltages"], self.aoms[aom_channel]["powers"]
+            V_data=self.aoms[aom_channel]["data"].voltage.values,
+            P_data=self.aoms[aom_channel]["data"].power.values,
         )
         self.aoms[aom_channel]["fit_res"] = fit.fit_data()
+        self.aoms[aom_channel]["data"]["attrs"] = fit.fit_data()
 
     def calibrate_power(self, aom_channel: str) -> None:
 
@@ -159,12 +232,28 @@ class AomPowerCalibration(LogicBase):
             self.do.states = curr_do_states
             self.log.info("Step 5: Bring the setup back to initial state")
 
-            self.aoms[aom_channel]["powers"] = np.array(powers)
-            self.aoms[aom_channel]["voltages"] = voltages
+            xr_data = xr.Dataset(
+                data_vars=dict(
+                    power=xr.Variable(
+                        "power",
+                        np.array(powers),
+                        dict(units=r"W", long_name="Power"),
+                    ),
+                ),
+                coords=dict(
+                    voltage=xr.Variable(
+                        "voltage",
+                        voltages,
+                        attrs=dict(units=r"V", long_name="Voltage"),
+                    ),
+                ),
+            )
+            self.aoms[aom_channel]["data"] = xr_data
 
+            self.log.info("Step 6: Fit ans save measured data")
             self.fit_powers(aom_channel)
-            self.log.info("Step 6: Fit measured data")
             self._generate_convertion_list()
+            self.save_calibration_data(aom_channel)
         except Exception as e:
             self.log.error(e)
 
