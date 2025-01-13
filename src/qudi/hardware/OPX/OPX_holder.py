@@ -95,12 +95,18 @@ class OPX(Base):  # hardware, awg,
 
             with program() as cw_program:
                 with infinite_loop_():
+
                     for ao, power in curr_ao.items():
+                        # checks if same element also uses digital output
+                        pulse = "pulse" if ao in curr_do else "power"
                         play(
-                            "power" * amp(self._volt2amp(power)), ao, duration=duration
+                            pulse * amp(self._volt2amp(power)),
+                            ao,
+                            duration=duration,
                         )
                     for do in curr_do:
-                        play("active", do, duration=duration)
+                        if not do in curr_ao.keys():
+                            play("active", do, duration=duration)
 
             # self.simulate(cw_program, plot=True)
             print(self._volt2amp(self.cw_ao_values["LaserScanner_red"]))

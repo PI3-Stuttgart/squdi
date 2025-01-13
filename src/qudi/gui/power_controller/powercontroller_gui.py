@@ -41,11 +41,10 @@ from qtpy import uic
 class PowerControllerWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
-        """ Create the laser scanner window.
-        """
+        """Create the laser scanner window."""
         # Get the path to the *.ui file
         this_dir = os.path.dirname(__file__)
-        ui_file = os.path.join(this_dir, 'ui_powercontroller.ui')
+        ui_file = os.path.join(this_dir, "ui_powercontroller.ui")
 
         # Load it
         super().__init__()
@@ -54,35 +53,34 @@ class PowerControllerWindow(QtWidgets.QMainWindow):
 
 
 class PowerControllerGui(GuiBase):
-    """
-    """
-    
+    """ """
+
     # declare connectors
-    powercontrollerlogic = Connector(interface='PowerControllerLogic')
+    powercontrollerlogic = Connector(interface="PowerControllerLogic")
     sigRecordSaturation = QtCore.Signal(bool)
     _use_calibration = False
-    _slider_max = StatusVar('slider_max', 360)
+    _slider_max = StatusVar("slider_max", 360)
+
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
     def on_activate(self):
-        """ Definition and initialisation of the GUI.
-        """
+        """Definition and initialisation of the GUI."""
 
         self._powercontrollerlogic = self.powercontrollerlogic()
 
         # setting up the window
         self._mw = PowerControllerWindow()
         self._restore_window_geometry(self._mw)
-        
+
         self._mw.centralwidget.hide()
         self._mw.setDockNestingEnabled(True)
-        
-        #Vlad updates
 
+        # Vlad updates
 
-        
-        self._mw.channel_comboBox.addItems(np.array(self._powercontrollerlogic.channels).astype(str))
+        self._mw.channel_comboBox.addItems(
+            np.array(self._powercontrollerlogic.channels).astype(str)
+        )
         self._mw.channel_comboBox.currentIndexChanged.connect(self.channel_changed)
         self.sigRecordSaturation.connect(self._powercontrollerlogic.run_saturation)
         # self._powercontrollerlogic.sig_data_updated.connect(self.update_data)
@@ -103,10 +101,8 @@ class PowerControllerGui(GuiBase):
         self._slider_max = slider_maximum
         self._mw.powerHorizontalSlider.setMaximum(slider_maximum)
 
-
     def on_deactivate(self):
-        """ Deinitialisation performed during deactivation of the module.
-        """
+        """Deinitialisation performed during deactivation of the module."""
         # disconnect signals
         self._save_window_geometry(self._mw)
         self._mw.close()
@@ -115,30 +111,33 @@ class PowerControllerGui(GuiBase):
         self._use_calibration = is_toggled
 
     def show(self):
-        """Make window visible and put it above all other windows.
-        """
+        """Make window visible and put it above all other windows."""
         QtWidgets.QMainWindow.show(self._mw)
         self._mw.activateWindow()
         self._mw.raise_()
 
     def channel_changed(self):
         motor = int(self._mw.channel_comboBox.currentText())
-        self._mw.powerHorizontalSlider.setValue(self._powercontrollerlogic._current_positions[motor])
+        self._mw.powerHorizontalSlider.setValue(
+            self._powercontrollerlogic._current_positions[motor]
+        )
 
     def set_power_slider(self):
         slider_val = float(self._mw.powerHorizontalSlider.value())
         motor = int(self._mw.channel_comboBox.currentText())
-        if self._use_calibration and (len(self._powercontrollerlogic.power_calibration[motor]) > 0):
+        if self._use_calibration and (
+            len(self._powercontrollerlogic.power_calibration[motor]) > 0
+        ):
             powers_cal = self._powercontrollerlogic.power_calibration[motor][:, 1]
             vals = np.linspace(0, 360, powers_cal.shape[0])
             power = powers_cal[np.argmin(np.abs(vals - slider_val))]
-          
+
             self._powercontrollerlogic.sig_set_power.emit(power, motor, True)
-            if (power < 1e-6):
+            if power < 1e-6:
                 display_power = np.round(power * 1e9, 2)
                 self._mw.power_doubleSpinBox.setValue(display_power)
                 self._mw.power_doubleSpinBox.setSuffix(" nW")
-            elif (power < 1e-3):
+            elif power < 1e-3:
                 display_power = np.round(power * 1e6, 2)
                 self._mw.power_doubleSpinBox.setValue(display_power)
                 self._mw.power_doubleSpinBox.setSuffix(" muW")
@@ -158,46 +157,46 @@ class PowerControllerGui(GuiBase):
 
         # self._mw.calibrate_Button.setChecked(True)
         self._powercontrollerlogic.stopRequested = False
-        self._powercontrollerlogic.sig_run_calibration.emit(int(self._mw.channel_comboBox.currentText()))
+        self._powercontrollerlogic.sig_run_calibration.emit(
+            int(self._mw.channel_comboBox.currentText())
+        )
 
         # self._powercontrollerlogic.stopRequested = True
-    
+
     def set_new_zero(self):
         slider_val = float(self._mw.powerHorizontalSlider.value())
         motor = int(self._mw.channel_comboBox.currentText())
-        self._powercontrollerlogic._zero_index.update({motor
-            : slider_val
-        })
+        self._powercontrollerlogic._zero_index.update({motor: slider_val})
         self._mw.powerHorizontalSlider.setValue(0)
 
     def record_saturation(self):
-        """ Handle resume of the scanning without resetting the data.
-        """
-        #FIX TIMING
+        """Handle resume of the scanning without resetting the data."""
+        # FIX TIMING
 
         self.sigRecordSaturation.emit(False)
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.updateProgress)
         self.update_time = 500
         self.timer.start(self.update_time)
-    
+
     def updateProgress(self):
         # int_time = self._mw.integration_time_doubleSpinBox.value()
-        int_time = 1 #THIS IS WHAT?? fix
+        int_time = 1  # THIS IS WHAT?? fix
 
-        self.time_passed += self.update_time/1000
+        self.time_passed += self.update_time / 1000
         if self.time_passed >= int_time:
             self.timer.stop()
             self._mw.progressBar.setValue(int_time)
             return
         self._mw.progressBar.setValue(self.time_passed)
 
-   
     # def save_spectrum_data(self):
     #     self._powercontrollerlogic.save_saturation_data()
 
     def correct_background(self):
-        self._powercontrollerlogic.background_correction = self._mw.correct_background_Action.isChecked()
+        self._powercontrollerlogic.background_correction = (
+            self._mw.correct_background_Action.isChecked()
+        )
 
     def acquire_background(self):
         self.sigRecordSaturation.emit(True)
@@ -206,16 +205,11 @@ class PowerControllerGui(GuiBase):
     # def save_background_data(self):
     #     self._powercontrollerlogic.save_saturation_data(background=True)
 
-    
     def restore_default_view(self):
-        """ Restore the arrangement of DockWidgets to the default
-        """
-      
+        """Restore the arrangement of DockWidgets to the default"""
 
         # Set the toolbar to its initial top area
-        self._mw.addToolBar(QtCore.Qt.TopToolBarArea,
-                            self._mw.measure_ToolBar)
-        self._mw.addToolBar(QtCore.Qt.TopToolBarArea,
-                            self._mw.background_ToolBar)
+        self._mw.addToolBar(QtCore.Qt.TopToolBarArea, self._mw.measure_ToolBar)
+        self._mw.addToolBar(QtCore.Qt.TopToolBarArea, self._mw.background_ToolBar)
 
         return 0
