@@ -116,10 +116,12 @@ class AomPowerCalibration(LogicBase):
             )
         else:
             self.aoms[aom_channel]["data"] = xr_data
-            self.aoms[aom_channel]["fit_res"] = xr_data.attrs["fit_res"]
+            self.fit_powers(aom_channel)
 
-        self.log.info(f"Loaded calibration data for {aom_channel} from {latest_file}")
-        self._generate_convertion_list()
+            self.log.info(
+                f"Loaded calibration data for {aom_channel} from {latest_file}"
+            )
+            self._generate_convertion_list()
 
     def _generate_convertion_list(self) -> None:
         channels_w_conversion = []
@@ -186,7 +188,7 @@ class AomPowerCalibration(LogicBase):
             P_data=self.aoms[aom_channel]["data"].power.values,
         )
         self.aoms[aom_channel]["fit_res"] = fit.fit_data()
-        self.aoms[aom_channel]["data"]["attrs"] = fit.fit_data()
+        # self.aoms[aom_channel]["data"].attrs["fit_res"] = fit.fit_data() # TODO: Fix this
 
     def calibrate_power(self, aom_channel: str) -> None:
 
