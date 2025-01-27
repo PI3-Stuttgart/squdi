@@ -115,6 +115,10 @@ config = {
                 2: {"offset": 0.0, "delay": mw_delay},  # NV Q
                 3: {"offset": 0.0, "delay": rf_delay},  # RF
                 4: {"offset": 0.0, "delay": LaserScanner_delay},  # Piezo 620 nm laser
+                6: {
+                    "offset": 0.0,
+                    "delay": AOM_power_delay_620,
+                },  # AOM Laser 620 nm (Orange) free Space
                 7: {
                     "offset": 0.0,
                     "delay": laser_power_delay_450,
@@ -122,11 +126,11 @@ config = {
                 8: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_520,
-                },  # AOM (power) Laser 620 nm 2 (Orange)
+                },  # AOM Laser 520 (Green)
                 9: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_620,
-                },  # AOM Laser 520 (Green)
+                },  # AOM Laser 620 nm (Orange)
                 10: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_620,
@@ -142,7 +146,7 @@ config = {
                 7: {},  # Laser 450 nm (Blue)
                 8: {},  # AOM Laser 520 nm (Green)
                 9: {},  # AOM Laser 620 nm (Orange)
-                10: {},  # AOM Laser 620 nm (Orange) for EOM path
+                10: {"inverted": True},  # AOM Laser 620 nm (Orange) for EOM path
             },
             "analog_inputs": {
                 1: {"offset": 0, "gain_db": -3},  # SPCM1
@@ -189,19 +193,11 @@ config = {
                 "active": "laser_ON",
             },
         },
-        "Laser_450_power": {
-            "singleInput": {
-                "port": ("con1", 7),
-            },
-            "operations": {
-                "power": "AOM_power",
-            },
-        },
         "Gate_Trigger": {
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 3),
-                    "delay": 0,
+                    "delay": laser_delay_520,
                     "buffer": 0,
                 },
             },
@@ -213,7 +209,7 @@ config = {
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 4),
-                    "delay": 0,
+                    "delay": laser_delay_520,
                     "buffer": 0,
                 },
             },
@@ -240,6 +236,23 @@ config = {
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 9),
+                    "delay": AOM_delay_620,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "power": "AOM_power",
+                "active": "AOM_TTL",
+                "pulse": "AOM_pulse",
+            },
+        },
+        "AOM_620_pi": {
+            "singleInput": {
+                "port": ("con1", 7),
+            },
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 10),
                     "delay": AOM_delay_620,
                     "buffer": 0,
                 },

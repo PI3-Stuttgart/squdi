@@ -18,14 +18,14 @@ def qm_scan_program(aoOPX):
     max_amp = aoOPX._scan_parameters["voltage_stop"]
     nr_amp_steps_back = nr_of_scanns
 
-    power_620 = aoOPX.get_setpoint("AOM_620_2_power")
-    power_520 = aoOPX.get_setpoint("AOM_520_power")
+    power_620 = aoOPX.get_setpoint("AOM_620")
+    power_520 = aoOPX.get_setpoint("AOM_520")
     amp_array = np.linspace(min_amp, max_amp, nr_amp_steps)
-    repump_len = 1 * u.ms
-    i_avg = 1_000  # number of averages per voltage
+    repump_len = 200 * u.ns  # 1 * u.ms
+    i_avg = 2  # number of averages per voltage
 
-    readout_len = duration / nr_amp_steps * u.s
-    back_scan_len = back_scan_duration / 2 / nr_amp_steps_back * u.s
+    readout_len = 200 * u.ns  # duration / nr_amp_steps * u.s
+    back_scan_len = 200 * u.ns  # back_scan_duration / 2 / nr_amp_steps_back * u.s
 
     repump_pulse_len = repump_len / i_avg * u.s
     curr_do: list = [
@@ -52,22 +52,19 @@ def qm_scan_program(aoOPX):
             # looping over Laser scanner voltages
             with for_each_(_amp, amp_array):
                 # Time tagger start trigger
-                play("trigit", "Gate_Trigger", duration=10 * u.us)
-                play("power" * amp(_amp), "LaserScanner_red", duration=10 * u.us)
-                align()
+                play("trigit", "Gate_Trigger", duration=16 * u.ns)
+                play("power" * amp(_amp), "LaserScanner_red", duration=16 * u.ns)
                 # Set Laser scanner voltage and send laser pulses
                 with for_(i, 0, i < i_avg, i + 1):
-                    play("active", "AOM_620_2", duration=readout_len / i_avg * u.ns)
                     play(
-                        "power" * amp(power_620),
-                        "AOM_620_2_power",
+                        "pulse" * amp(power_620),
+                        "AOM_620",
                         duration=readout_len / i_avg * u.ns,
                     )
                     play("active", "Laser_520", duration=readout_len / i_avg * u.ns)
-                    play("active", "AOM_520", duration=readout_len / i_avg * u.ns)
                     play(
-                        "power" * amp(power_520),
-                        "AOM_520_power",
+                        "pulse" * amp(power_520),
+                        "AOM_520",
                         duration=readout_len / i_avg * u.ns,
                     )
                     play(
@@ -75,10 +72,9 @@ def qm_scan_program(aoOPX):
                         "LaserScanner_red",
                         duration=readout_len / i_avg * u.ns,
                     )
-                align()
                 # Time tagger stop trigger
-                play("trigit", "Memory_Trigger", duration=1 * u.us)
-                play("power" * amp(_amp), "LaserScanner_red", duration=1 * u.us)
+                play("trigit", "Memory_Trigger", duration=16 * u.ns)
+                play("power" * amp(_amp), "LaserScanner_red", duration=16 * u.ns)
 
             # Repump and laser backscan
             with for_(*qua_linspace(_amp2, max_amp, min_amp, nr_amp_steps_back)):
@@ -89,20 +85,23 @@ def qm_scan_program(aoOPX):
                         duration=back_scan_len / i_avg * u.ns,
                     )
                     play("active", "Laser_520", duration=back_scan_len / i_avg * u.ns)
-                    play("active", "AOM_520", duration=readout_len / i_avg * u.ns)
                     play(
-                        "power" * amp(power_520),
-                        "AOM_520_power",
+                        "pulse" * amp(power_520),
+                        "AOM_520",
                         duration=readout_len / i_avg * u.ns,
                     )
             # crc(aoOPX, crc_voltage)
 
         # with program() as crc2:
         #    crc(aoOPX, crc_voltage)
+    from qm import generate_qua_script
 
-        # aoOPX._opx.simulate(crc2, plot=True, duration=1000)
-        # with stream_processing():
-        #     counts_st.with_timestamps().save("counts")
+    # aoOPX._opx.simulate(ple, plot=True, duration=1000)
+    sourceFile = open("debug.py", "w")
+    print(generate_qua_script(ple, config), file=sourceFile)
+    sourceFile.close()
+    # with stream_processing():
+    #     counts_st.with_timestamps().save("counts")
     return ple
 
 

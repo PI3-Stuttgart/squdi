@@ -173,9 +173,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     def start_scan(self):
         self._ple_job = self._opx.qm.execute(self.get_qm_scan_program())
 
-        res_handles = self._ple_job.result_handles
-        counts_handle = res_handles.get("counts")
-        counts_handle.wait_for_values(1)
+        # res_handles = self._ple_job.result_handles
+        # counts_handle = res_handles.get("counts")
+        # counts_handle.wait_for_values(1)
         # while res_handles.is_processing():
         # print(counts_handle.fetch_all()["value"])
         # self._opx.simulate(self.get_qm_scan_program(), plot=True)

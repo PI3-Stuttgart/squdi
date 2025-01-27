@@ -23,28 +23,33 @@ from scipy.optimize import root_scalar
 class AomPowerCalibration(LogicBase):
     """
     Example config for copy-paste:
-    AO_OPX:
-        module.Class: 'OPX.analog_output_OPX.AnalogOutputOPX'
+    aom_power_calibration:
+        module.Class: 'aom_power_calibration.AomPowerCalibration'
         connect:
-            AO: ""
-            DO: ""
-            powermeter: ""
+            AO: 'process_setpoint_combiner'
+            DO: 'switch_combiner'
+            Powermeter: 'powermeter'
         options:
-            qm_config_file: "configuration"
+            aoms:
+                AOM_520:
+                    aom_do_channel: 'AOM_520'
+                    laser_do_channel: 'Laser_520'
+                AOM_620:
+                    aom_do_channel: 'AOM_620'
+            save_path: "C:/Users/yy3/qudi/Data/Power_calibration/"
     """
 
     AO: _AO = Connector(interface="ProcessSetpointInterface")
     DO: _DO = Connector(interface="SwitchInterface")
     Powermeter: _PM = Connector(interface="ProcessValueInterface")
     aoms: dict = ConfigOption(name="aoms", default=1, missing="nothing")
+    save_path: str = ConfigOption(name="save_path", default="./", missing="nothing")
 
     SEC_POWERMETER_FLIP = 2
     VOLTAGE_STEPS = 50
     SEC_BEFORE_POWER_MEAS = 0.2
 
     channels_w_conversion = []
-
-    save_path = "./"
 
     def on_activate(self) -> None:
         self.do: _DO = self.DO()
@@ -76,9 +81,13 @@ class AomPowerCalibration(LogicBase):
         filename = os.path.join(
             self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.h5"
         )
-
+        filename_plot = os.path.join(
+            self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.png"
+        )
         # Save the xr.Dataset directly as an HDF5 file
         self.aoms[aom_channel]["data"].to_netcdf(filename)
+        self.aoms[aom_channel]["fit"].plot_fit()
+        plt.savefig(filename_plot)
         self.log.info(f"Calibration data for {aom_channel} saved to {filename}")
 
     def load_latest_calibration_data(self, aom_channel: str) -> None:
@@ -121,7 +130,6 @@ class AomPowerCalibration(LogicBase):
             self.log.info(
                 f"Loaded calibration data for {aom_channel} from {latest_file}"
             )
-            self._generate_convertion_list()
 
     def _generate_convertion_list(self) -> None:
         channels_w_conversion = []
@@ -163,7 +171,7 @@ class AomPowerCalibration(LogicBase):
                 bracket=[
                     self.ao.constraints.channel_limits[aom_channel][0],
                     self.ao.constraints.channel_limits[aom_channel][1]
-                    + 0.2,  # TODO: This is a dirty workaround to avoid issues with max power
+                    + 0.1,  # TODO: This is a dirty workaround to avoid issues with max power
                 ],
                 method="brentq",
             )
@@ -188,6 +196,7 @@ class AomPowerCalibration(LogicBase):
             P_data=self.aoms[aom_channel]["data"].power.values,
         )
         self.aoms[aom_channel]["fit_res"] = fit.fit_data()
+        self.aoms[aom_channel]["fit"] = fit
         # self.aoms[aom_channel]["data"].attrs["fit_res"] = fit.fit_data() # TODO: Fix this
 
     def calibrate_power(self, aom_channel: str) -> None:
@@ -339,14 +348,14 @@ class AOMPowerFit:
 
         # Plot
         plt.figure(figsize=(8, 6))
-        plt.scatter(self.V_data, self.P_data, label="Measured Data", color="blue", s=10)
-        plt.plot(V_fit, P_fit, label="Fitted Curve", color="orange", linewidth=2)
+        plt.plot(V_fit, P_fit, label="Fitted Curve", color="orange", linewidth=1)
+        plt.scatter(self.V_data, self.P_data, label="Measured Data", color="blue", s=5)
         plt.xlabel("Voltage [V]")
         plt.ylabel("Power [mW]")
         plt.title("Voltage to Power Calibration")
         plt.legend()
         plt.grid()
-        plt.show()
+        # plt.show()
 
     def print_fit_report(self):
         """
