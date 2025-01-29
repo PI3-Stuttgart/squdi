@@ -76,7 +76,10 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     def _set_constraints(self):
         _channels: list = []
         for name, qm_element in self._configuration.config["elements"].items():
-            if "singleInput" in qm_element.keys():
+            if (
+                "singleInput" in qm_element.keys()
+                or "multipleInputs" in qm_element.keys()
+            ):
                 _channels.append(name)
 
         # add limits from qudi config if defined
@@ -168,8 +171,6 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             self.log.error("For this channel no scan parameters are defined")
 
     def start_scan(self):
-        print("Hello")
-        # if channel == self._scan_parameters['channel']:
         self._ple_job = self._opx.qm.execute(self.get_qm_scan_program())
 
         res_handles = self._ple_job.result_handles
