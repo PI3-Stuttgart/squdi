@@ -1,0 +1,13 @@
+{
+    "-1.337520932793268": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-27\\scanning_data_logic\\resonant-confocal_0_-1.34GHz",
+    "0.5314236786375659": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-27\\scanning_data_logic\\resonant-confocal_1_0.53GHz",
+    "2.8495806927253398": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-27\\scanning_data_logic\\resonant-confocal_2_2.85GHz",
+    "5.25724629699198": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-27\\scanning_data_logic\\resonant-confocal_3_5.26GHz",
+    "7.999948154861158": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-28\\scanning_data_logic\\resonant-confocal_4_8.00GHz",
+    "10.661116157507422": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-28\\scanning_data_logic\\resonant-confocal_5_10.66GHz",
+    "13.581512413736618": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-28\\scanning_data_logic\\resonant-confocal_6_13.58GHz",
+    "16.497395320925534": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-28\\scanning_data_logic\\resonant-confocal_7_16.50GHz",
+    "19.54585469786707": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-28\\scanning_data_logic\\resonant-confocal_8_19.55GHz",
+    "22.39488682027968": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-28\\scanning_data_logic\\resonant-confocal_9_22.39GHz",
+    "25.418765010442712": "Z:\\Vlad\\Daily_data\\attodry\\2025\\01\\2025-01-28\\scanning_data_logic\\resonant-confocal_10_25.42GHz"
+}
