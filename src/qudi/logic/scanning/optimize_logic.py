@@ -131,11 +131,17 @@ class ScanningOptimizeLogic(LogicBase):
     )
     do_get_max_from_spline = True
     _optimize_spline_options = {
-        "to_spline_2d": False,
-        "s_2d": 0,
-        "to_spline_1d": False,
-        "s_1d": 0,
+        "to_spline_2d": True,
+        "s_2d": 1,
+        "to_spline_1d": True,
+        "s_1d": 1,
     }
+    # scanning_optimize_logic._optimize_spline_options = {
+    #     "to_spline_2d": True,
+    #     "s_2d": 1,
+    #     "to_spline_1d": True,
+    #     "s_1d": 1,
+    # }
 
     # signals
     sigOptimizeStateChanged = QtCore.Signal(bool, dict, object)
