@@ -334,22 +334,20 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         cbm stnads for count between markers
         @return int: error code (0:OK, -1:error)
         """
-        channels_tt = [int(ch[2:]) for ch in self.__active_channels['di_channels'] if "tt" in ch]
-        clock_tt = int(self._tt_ni_clock_input[2:])
+        channels_tt = [int(ch.split("_")[-1]) for ch in self.__active_channels['di_channels'] if "tt" == ch.split("_")[0]]
+        clock_tt = int(self._tt_ni_clock_input.split("_")[-1])
         #Workaround for the old time tagger version at the praktikum
         if self._tt_falling_edge_clock_input:
-            clock_fall_tt = int(self._tt_falling_edge_clock_input[2:])
+                clock_fall_tt = int(self._tt_falling_edge_clock_input.split("_")[-1])
         else:
             clock_fall_tt = - clock_tt
-        self._timetagger_cbm_tasks = [self._tt.count_between_markers(click_channel = channel, 
-                                        begin_channel = clock_tt,
-                                        end_channel = clock_fall_tt, 
-                                        n_values=self.frame_size) if channel != 111 else self._tt.count_between_markers(
-                                                        click_channel = self._tt._combined_channels.getChannel(), 
-                                                        begin_channel = clock_tt,
-                                                        end_channel = clock_fall_tt, 
-                                                        n_values=self.frame_size) 
-                                        for channel in channels_tt]
+        for channel in channels_tt:
+                self._timetagger_cbm_tasks.append(
+                        self._tt.count_between_markers(click_channel = channel, 
+                                            begin_channel = clock_tt,
+                                            end_channel = clock_fall_tt, 
+                                            n_values=self.frame_size)
+                )
         return 0
 
     def start_buffered_acquisition(self):

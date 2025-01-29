@@ -114,18 +114,18 @@ config = {
                 1: {"offset": 0.0, "delay": mw_delay},  # NV I
                 2: {"offset": 0.0, "delay": mw_delay},  # NV Q
                 3: {"offset": 0.0, "delay": rf_delay},  # RF
-                4: {"offset": 0.0, "delay": LaserScanner_delay},
+                4: {"offset": 0.0, "delay": LaserScanner_delay},  # Piezo 620 nm laser
                 7: {
                     "offset": 0.0,
                     "delay": laser_power_delay_450,
-                },  # Laser 450 nm (Blue)
+                },  #  Attenuator (power) Laser 450 nm (Blue)
                 8: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_520,
-                },  # AOM Laser 620 nm 2 (Orange)
+                },  # AOM (power) Laser 620 nm 2 (Orange)
                 9: {
                     "offset": 0.0,
-                    "delay": AOM_power_delay_575,
+                    "delay": AOM_power_delay_620,
                 },  # AOM Laser 520 (Green)
                 10: {
                     "offset": 0.0,
@@ -140,9 +140,9 @@ config = {
                 5: {},  # PPG trigger RESERVED
                 6: {},  # Laser 520 nm (Green)
                 7: {},  # Laser 450 nm (Blue)
-                8: {},  # AOM Laser 620 nm 2 (Orange)
-                9: {},  # AOM Laser 520 nm (Green)
-                10: {},  # AOM Laser 620 nm (Orange)
+                8: {},  # AOM Laser 520 nm (Green)
+                9: {},  # AOM Laser 620 nm (Orange)
+                10: {},  # AOM Laser 620 nm (Orange) for EOM path
             },
             "analog_inputs": {
                 1: {"offset": 0, "gain_db": -3},  # SPCM1
@@ -233,64 +233,38 @@ config = {
                 "active": "laser_ON",
             },
         },
-        "AOM_520": {
+        "AOM_620": {
+            "multipleInputs": {
+                "inputs": {"input1": ("con1", 9), "input2": ("con1", 10)}
+            },
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 9),
-                    "delay": AOM_delay_520,
-                    "buffer": 0,
-                },
-            },
-            "operations": {
-                "active": "AOM_ON",
-            },
-        },
-        "AOM_520_power": {
-            "singleInput": {
-                "port": ("con1", 9),
-            },
-            "operations": {
-                "power": "AOM_power",
-            },
-        },
-        "AOM_620": {
-            "digitalInputs": {
-                "marker": {
-                    "port": ("con1", 10),
                     "delay": AOM_delay_620,
                     "buffer": 0,
                 },
             },
             "operations": {
-                "active": "AOM_ON",
-            },
-        },
-        "AOM_620_power": {
-            "singleInput": {
-                "port": ("con1", 10),
-            },
-            "operations": {
                 "power": "AOM_power",
+                "active": "AOM_TTL",
+                "pulse": "AOM_pulse",
             },
         },
-        "AOM_620_2": {
+        "AOM_520": {
+            "singleInput": {
+                "port": ("con1", 8),
+            },
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 8),
-                    "delay": AOM_delay_575,
+                    "delay": AOM_delay_520,
                     "buffer": 0,
                 },
             },
             "operations": {
-                "active": "AOM_ON",
-            },
-        },
-        "AOM_620_2_power": {
-            "singleInput": {
-                "port": ("con1", 8),
-            },
-            "operations": {
                 "power": "AOM_power",
+                "active": "AOM_TTL",
+                "pulse": "AOM_pulse",
             },
         },
         "LaserScanner_red": {
@@ -389,9 +363,13 @@ config = {
             "length": rf_length,  # in ns
             "waveforms": {"single": "rf_const_wf"},
         },
-        "AOM_ON": {
+        # AOM Pulses
+        "AOM_TTL": {
             "operation": "control",
             "length": initialization_len_laser,
+            "waveforms": {
+                "single": "zero_wf",
+            },
             "digital_marker": "ON",
         },
         "AOM_power": {
@@ -400,6 +378,15 @@ config = {
             "waveforms": {
                 "single": "cw_aom",
             },
+            "digital_marker": "OFF",
+        },
+        "AOM_pulse": {
+            "operation": "control",
+            "length": initialization_len_laser,
+            "waveforms": {
+                "single": "cw_aom",
+            },
+            "digital_marker": "ON",
         },
         "laser_ON": {
             "operation": "control",

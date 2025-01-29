@@ -49,6 +49,7 @@ class PrincetonPICAM(SpectrometerInterface, CameraInterface):
     _integration_time = StatusVar(name='integration_time', default=0.1)
     _port = ConfigOption(name='port')
     offset_lam = 0
+    my_wavelength = None
     sigAcquisitionDone = QtCore.Signal(np.ndarray)
 
     def __init__(self, *args, **kwargs):
@@ -113,7 +114,7 @@ class PrincetonPICAM(SpectrometerInterface, CameraInterface):
 
             @return []: spectrum data
         """
-      
+
         specdata = np.empty((2, len(self.wavelength)), dtype=np.double)
         specdata[0] = self.wavelength
         
