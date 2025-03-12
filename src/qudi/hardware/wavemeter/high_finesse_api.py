@@ -10,7 +10,7 @@ class WLM():
     class BufferThread(Thread):
         
         
-        query_interval = 0.001 #msec apparently it is the minimum for sleep
+        query_interval = 0.25 #0.001 #msec apparently it is the minimum for sleep
         def __init__(self, wlm ,*args, **kwargs):
             super(wlm.BufferThread, self).__init__(*args, **kwargs)
             self.wlm = wlm
@@ -80,10 +80,16 @@ class WLM():
     def get_wavelength(self, channel = 1, units='THz') -> float:
         self.dll.GetWavelengthNum.restype = ctypes.c_double
         self.dll.GetWavelengthNum.argtypes = [ctypes.c_long, ctypes.c_double]
-        wavelength = self.dll.GetWavelengthNum(channel, 0)
-        if units != 'vac':
-            wavelength = self.convert_wavelength(wavelength, 'vac', units)
-        return wavelength
+        try:
+            wavelength = self.dll.GetWavelengthNum(channel, 0)
+            if wavelength <= 0:
+                raise ValueError("Invalid wavelength value received.")
+            if units != 'vac':
+                wavelength = self.convert_wavelength(wavelength, 'vac', units)
+            return wavelength
+        except Exception as e:
+            print(f"Error getting wavelength: {e}")
+            return float('nan')
 
     def empty_buffer(self):
         self.buffer_thread.empty_buffer()
