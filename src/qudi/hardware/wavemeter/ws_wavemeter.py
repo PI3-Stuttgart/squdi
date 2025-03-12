@@ -118,19 +118,27 @@ class HighFinesseWavemeter(WavemeterInterface):
 
         self._wavemeter = high_finesse_api.WLM()
 
-        # create an indepentent thread for the hardware communication
-        self.hardware_thread = QtCore.QThread()
+        # # create an indepentent thread for the hardware communication
+        # self.hardware_thread = QtCore.QThread()
 
-        # create an object for the hardware communication and let it live on the new thread
-        self._hardware_pull = HardwarePull(self)
-        self._hardware_pull.moveToThread(self.hardware_thread)
+        # # create an object for the hardware communication and let it live on the new thread
+        # self._hardware_pull = HardwarePull(self)
+        # self._hardware_pull.moveToThread(self.hardware_thread)
 
         # connect the signals in and out of the threaded object
-        self.sig_handle_timer.connect(self._hardware_pull.handle_timer)
-        self._hardware_pull.sig_wavelength.connect(self.handle_wavelength)
+        # self.sig_handle_timer.connect(self._hardware_pull.handle_timer)
+        # self._hardware_pull.sig_wavelength.connect(self.handle_wavelength)
 
         # start the event loop for the hardware
-        self.hardware_thread.start()
+        # self.hardware_thread.start()
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.query_wavelength)
+        self.timer.start(1000)  # Adjust the interval as needed
+
+    def query_wavelength(self):
+        wavelength = self._wavemeter.get_wavelength(channel=4)
+        self._current_wavelengths = wavelength
+        # self.handle_wavelength(wavelength)
 
 
     def on_deactivate(self):
@@ -161,23 +169,23 @@ class HighFinesseWavemeter(WavemeterInterface):
     def handle_wavelength(self, wavelengths):
         """ Function to save the wavelength, when it comes in with a signal.
         """
-        elapsed_time = time.time() - self.start_time
-        row = [wavelengths[ch] for ch in self._selected_channels]
-        row.append(elapsed_time)
-        if len(self._wavelength_buffer) < 1:
+        # elapsed_time = time.time() - self.start_time
+        # row = [wavelengths[ch] for ch in self._selected_channels]
+        # row.append(elapsed_time)
+        # if len(self._wavelength_buffer) < 1:
             
-            self._wavelength_buffer = np.array(
-                row
-                )
-        elif len(self._wavelength_buffer) > 2:
-            if (np.abs(np.round(wavelengths[self._default_channel], 5) - np.round(self._wavelength_buffer[-1][0], 5))) > 0:
-                self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
-            else:
-                pass
-        else:
-            self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
+        #     self._wavelength_buffer = np.array(
+        #         row
+        #         )
+        # elif len(self._wavelength_buffer) > 2:
+        #     if (np.abs(np.round(wavelengths[self._default_channel], 5) - np.round(self._wavelength_buffer[-1][0], 5))) > 0:
+        #         self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
+        #     else:
+        #         pass
+        # else:
+        #     self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
 
-        self._wavelength_buffer = self._wavelength_buffer[-self._buffer_size:]
+        # self._wavelength_buffer = self._wavelength_buffer[-self._buffer_size:]
         self._current_wavelengths = wavelengths
     def empty_buffer(self):
         self._wavelength_buffer = np.array([])
@@ -243,7 +251,7 @@ class HighFinesseWavemeter(WavemeterInterface):
     
     def get_current_wavelength(self):
     
-        return self._current_wavelengths[self._default_channel]
+        return self._current_wavelengths #[self._default_channel]
         
 
     def get_timing(self):
