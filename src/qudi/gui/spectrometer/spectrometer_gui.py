@@ -24,6 +24,8 @@ __all__ = ['SpectrometerGui']
 import importlib
 from time import perf_counter
 from PySide2 import QtCore, QtWidgets
+from qtpy.QtWidgets import QProgressDialog
+from qtpy.QtCore import Qt
 
 from qudi.core.module import GuiBase
 from qudi.core.connector import Connector
@@ -362,6 +364,7 @@ class SpectrometerGui(GuiBase):
         self._spectrometer_logic().axis_type_frequency = self._mw.data_widget.axis_type.isChecked()
 
     def apply_settings(self):
+        # Apply immediate settings first
         exposure_time = self._mw.settings_dialog.exposure_time_spinbox.value()
         self._spectrometer_logic().exposure_time = exposure_time
         max_repetitions = self._mw.settings_dialog.max_repetitions_spinbox.value()
@@ -369,24 +372,48 @@ class SpectrometerGui(GuiBase):
         self._mw.control_widget.progress_bar.setValue(0)
         self._mw.control_widget.progress_bar.setRange(0, round(100 * exposure_time))
         self._delete_fit = self._mw.settings_dialog.delete_fit.isChecked()
-        cwavelength = self._mw.settings_dialog.cwavelength_input.value()
-        self._spectrometer_logic().cwavelength = cwavelength
-        grating = 2 if self._mw.settings_dialog.grating_switch.isChecked() else 1
-        self._spectrometer_logic().grating = grating
 
+        # Create progress dialog for slow operations
+        progress = QProgressDialog("Applying wavelength and grating settings...", None, 0, 0, self._mw)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setCancelButton(None)
+        progress.setWindowTitle("Please wait")
+        progress.show()
 
+        try:
+            # Apply slow-changing settings
+            cwavelength = self._mw.settings_dialog.cwavelength_input.value()
+            self._spectrometer_logic().cwavelength = cwavelength
+            
+            grating = 2 if self._mw.settings_dialog.grating_switch.isChecked() else 1
+            self._spectrometer_logic().grating = grating
+        finally:
+            progress.close()
 
     def keep_settings(self):
-        exposure_time = float(self._spectrometer_logic().exposure_time)
-        self._mw.settings_dialog.exposure_time_spinbox.setValue(round(exposure_time))
-        self._mw.settings_dialog.max_repetitions_spinbox.setValue(self._spectrometer_logic().max_repetitions)
-        self._mw.control_widget.progress_bar.setRange(0, round(100 * exposure_time))
+        # Keep immediate settings first
+        self._mw.settings_dialog.exposure_time_spinbox.setValue(
+            self._spectrometer_logic().exposure_time)
+        self._mw.settings_dialog.max_repetitions_spinbox.setValue(
+            self._spectrometer_logic().max_repetitions)
         self._mw.settings_dialog.delete_fit.setChecked(self._delete_fit)
-        cwavelength = float(self._spectrometer_logic().cwavelength)
-        grating = int(self._spectrometer_logic().grating)
-        self._mw.settings_dialog.cwavelength_input.setValue(cwavelength)
-        self._mw.settings_dialog.grating_switch.setChecked(grating)
 
+        # Create progress dialog for slow operations
+        progress = QProgressDialog("Saving wavelength and grating settings...", None, 0, 0, self._mw)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setCancelButton(None)
+        progress.setWindowTitle("Please wait")
+        progress.show()
+
+        try:
+            # Keep slow-changing settings
+            self._mw.settings_dialog.cwavelength_input.setValue(
+                self._spectrometer_logic().cwavelength)
+            
+            grating = self._spectrometer_logic().grating
+            self._mw.settings_dialog.grating_switch.setChecked(grating == 2)
+        finally:
+            progress.close()
 
     def target_changed(self):
         x_data = self._spectrometer_logic().x_data
