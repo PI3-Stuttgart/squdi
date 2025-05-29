@@ -62,8 +62,12 @@ class SpectrometerController:
             return error_string.value.decode()
 
     def initialize(self):
-        """Initialize the PICam library."""
-        self.check_error(self.dll.Picam_InitializeLibrary())
+        error_code = self.dll.Picam_InitializeLibrary()
+        if error_code == 5:  # Library Already Initialized
+            print("PICam library already initialized, continuing.")
+        else:
+            self.check_error(error_code)
+
 
     def uninitialize(self):
         """Uninitialize the PICam library."""
