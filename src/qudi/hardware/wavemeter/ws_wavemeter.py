@@ -211,7 +211,58 @@ class HighFinesseWavemeter(WavemeterInterface):
         self.sig_handle_timer.emit(True)
 
         return 0
+    def set_recording_file(self, output_directory: str, filename: str):
+        """ Method to start the wavemeter software.
 
+        @return int: error code (0:OK, -1:error)
+
+        Also the actual threaded method for getting the current wavemeter reading is started.
+        """
+
+        # first check its status
+        if self.module_state() == 'running':
+            self.log.error('Wavemeter busy')
+            return -1
+        
+        # self.module_state.run()
+        self._wavemeter.set_recording_file(output_directory, filename)
+
+    def start_recording(self):
+        """ Method to start the wavemeter recording.
+
+        @return int: error code (0:OK, -1:error)
+
+        Also the actual threaded method for getting the current wavemeter reading is started.
+        """
+
+        # first check its status
+        if self.module_state() == 'running':
+            self.log.error('Wavemeter busy')
+            return -1
+
+        # self.module_state.run()
+        self._wavemeter.start_recording()
+
+        return 0
+    def stop_recording(self):
+        """ Method to stop the wavemeter recording.
+
+        @return int: error code (0:OK, -1:error)
+
+        Also the actual threaded method for getting the current wavemeter reading is started.
+        """
+
+        # first check its status
+        if self.module_state() == 'running':
+            self.log.error('Wavemeter busy')
+            return -1
+
+        # self.module_state.run()
+        self._wavemeter.stop_recording()
+
+        return 0
+    
+        
     def stop_acquisition(self):
         """ Stops the Wavemeter from measuring and kills the thread that queries the data.
 
