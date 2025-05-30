@@ -13,7 +13,7 @@ cCtrlStartMeasurement = ctypes.c_uint16(0x0002) # For starting measurement witho
 cCtrlStartRecord = ctypes.c_uint16(0x0004)    # For starting measurement *with* recording [cite: 1628]
 # Additional Operation Flag Constants (page 125 of the manual PDF)
 cCtrlOverwrite = ctypes.c_uint16(0x1000)     # To overwrite an existing file during recording [cite: 1629]
-
+cCtrlFileASCII = ctypes.c_uint16(0x4000) # For saving as ASCII
 
 class WLM():
     
@@ -154,30 +154,42 @@ class WLM():
         return result
         
 
-    def start_recording(self, overwrite: bool = False):
+# Inside your WLM class:
+
+    def start_recording(self, save_as_ascii: bool = True, overwrite: bool = False):
         """
         Starts recording measurements to the file previously set by set_recording_file().
-        Corresponds to Operation(cCtrlStartRecord) in the DLL. [cite: 1037, 1628]
+        Corresponds to Operation(cCtrlStartRecord) in the DLL.
         Args:
-            overwrite: If True, an existing file will be overwritten. [cite: 1629]
-                       Defaults to False.
+            save_as_ascii: If True, saves the recording as an ASCII (.ltx) file.
+                        Otherwise, saves as binary (.ltr).
+            overwrite: If True, an existing file will be overwritten.
         Returns:
             Integer DLL return code (0 for success, ResERR_NoErr).
         """
-        current_command_val = cCtrlStartRecord.value 
-        log_message = "Starting recording..."
+        current_command_val = cCtrlStartRecord.value
+        log_message = "Starting binary (.ltr) recording..."
+
+        if save_as_ascii:
+            current_command_val |= cCtrlFileASCII.value # Combine with ASCII flag
+            log_message = "Starting ASCII (.ltx) recording..."
+            print("Note: Consider using a '.ltx' file extension when setting the filename for ASCII recordings.")
+
         if overwrite:
-            current_command_val |= cCtrlOverwrite.value # Bitwise OR to combine flags [cite: 1629]
-            log_message = "Starting recording (overwrite enabled)..."
-        
+            current_command_val |= cCtrlOverwrite.value
+            log_message += " (overwrite enabled)..."
+        else:
+            log_message += "..."
+
         print(log_message)
+        # The Operation function expects a c_uint16 for the command
         result = self.dll.Operation(ctypes.c_uint16(current_command_val))
-        if result != 0:
+
+        if result != 0: # ResERR_NoErr is 0
             print(f"Warning: start_recording call failed with DLL code {result}.")
         else:
             print("Recording started successfully.")
         return result
-
     def stop_recording(self):
         """
         Stops the current recording (and any other measurement activity).
