@@ -18,6 +18,7 @@ class MagnetLogic(LogicBase):
     sigContinueRamp = QtCore.Signal()
     sigRampToZero = QtCore.Signal()
     sigRamp = QtCore.Signal(np.ndarray, bool)
+    
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

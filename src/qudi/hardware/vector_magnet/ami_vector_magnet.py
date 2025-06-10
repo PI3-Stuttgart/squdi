@@ -7,7 +7,7 @@ from qudi.core.connector import Connector
 from qudi.core.configoption import ConfigOption
 
 
-class magnet_3d(Base):
+class Magnet3D(Base):
     # declare connector
     # Note: you must create the interface file and give it to the class in the hardware file.
     # magnet_x = Connector(interface='Magnet1DInterface')
@@ -16,7 +16,7 @@ class magnet_3d(Base):
     magnet_x = Connector(interface='AMI430')
     magnet_y = Connector(interface='AMI430')
     magnet_z = Connector(interface='AMI430')
-
+    has_persistence = True
     constraints = ConfigOption(name='constraints', missing='warn')
     timerIntervals = ConfigOption(name='timerIntervals', missing='warn')
 
