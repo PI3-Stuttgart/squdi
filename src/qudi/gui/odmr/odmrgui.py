@@ -417,11 +417,23 @@ class OdmrGui(GuiBase):
         signal_data = logic.signal_data
         raw_data = logic.raw_data
         frequency_data = logic.frequency_data
-        self._plot_widget.set_data(
-            frequency_data[range_index],
-            raw_data[channel][range_index][:, :self._max_shown_scans],
-            signal_data[channel][range_index]
-        )
+        if channel in raw_data and range_index < len(raw_data[channel]):
+            image = raw_data[channel][range_index][:, :self._max_shown_scans]
+            image = np.atleast_2d(image)
+            self._plot_widget.set_data(
+                frequency_data[range_index],
+                image,
+                signal_data[channel][range_index]
+            )
+        else:
+            # Optionally, clear the plot or handle the missing data gracefully
+            freq = frequency_data[range_index]
+            zeros_image = np.atleast_2d(np.zeros_like(freq))
+            self._plot_widget.set_data(
+                freq,
+                zeros_image,
+                np.zeros_like(freq)
+            )
 
     def _update_scan_parameters(self, param_dict=None):
         """ Update the scan parameetrs in the GUI
