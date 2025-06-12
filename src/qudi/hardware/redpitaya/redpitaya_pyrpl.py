@@ -1,6 +1,7 @@
+# filepath: c:\Users\yy3\GIT\squdi\src\qudi\hardware\redpitaya\redpitaya_pyrpl.py
 # -*- coding: utf-8 -*-
 """
-Red Pitaya hardware module using PyRPL.
+Red Pitaya hardware driver using PyRPL.
 
 Copyright (c) 2021, the qudi developers. See the AUTHORS.md file at the top-level directory of this
 distribution and on <https://github.com/Ulm-IQO/qudi-iqo-modules/>
@@ -19,260 +20,294 @@ You should have received a copy of the GNU Lesser General Public License along w
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-import time
+from qudi.core.module import Base
 import numpy as np
-from qudi.core.configoption import ConfigOption
-from qudi.interface.redpitaya_interface import RedPitayaInterface
 from pyrpl import Pyrpl
+from qudi.core.configoption import ConfigOption
+from qudi.core.statusvariable import StatusVar
+from qudi.interface.redpitaya_interface import RedPitayaInterface
 
 
-class RedPitayaPyRPL(RedPitayaInterface):
-    """Red Pitaya hardware implementation using PyRPL."""
-    
-    _hostname = ConfigOption('hostname', '192.168.202.72', missing='nothing')
-    _config = ConfigOption('config', missing='warn')
-    _gui = ConfigOption('gui', False, missing='nothing')
-    
+class RedPitayaPyrpl(RedPitayaInterface):
+    """Hardware module for controlling Red Pitaya using PyRPL library."""
+
+    # Config options - simplified to just IP address
+    _ip_address = ConfigOption('ip_address', '192.168.1.100')
+    _sampling_rate = ConfigOption('sampling_rate', 125e6)  # Base sampling rate in Hz
+    _decimation = ConfigOption('decimation', 8)  # Default decimation factor
+
+    # Status variables
+    _asg_states = StatusVar('asg_states', {0: False, 1: False})
+    _pid_states = StatusVar('pid_states', {0: False, 1: False, 2: False})
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pyrpl = None
+        self._rp = None
+        self._is_connected = False
+
     def on_activate(self):
-        """Initialize the Red Pitaya connection."""
+        """Initialize and connect to Red Pitaya device."""
         try:
-            if self._config:
-                self.rpl = Pyrpl(self._config, gui=self._gui)
-            else:
-                self.rpl = Pyrpl(self._hostname, gui=self._gui)
-            self.rp = self.rpl.rp
-            self.log.info(f'Red Pitaya connected at {self._hostname}')
+            # Initialize PyRPL with IP address and custom config
+            config = {
+                'hostname': self._ip_address,
+                'modules': {
+                    'scope': {'decimation': self._decimation},
+                    'asg0': {'output_direct': 'off'},
+                    'asg1': {'output_direct': 'off'},
+                    'pid0': {'input_direct': 'off', 'output_direct': 'off'},
+                    'pid1': {'input_direct': 'off', 'output_direct': 'off'},
+                    'pid2': {'input_direct': 'off', 'output_direct': 'off'}
+                }
+            }
+            
+            self._pyrpl = Pyrpl(hostname=self._ip_address,
+                               config=config,
+                               autostart=True,
+                               load_default_profile=False)
+            self._rp = self._pyrpl.rp
+            self._is_connected = True
+            
+            # Configure default settings
+            self._setup_device()
+            
+            self.log.info(f'Successfully connected to Red Pitaya at {self._ip_address}')
+            return 0  # Qudi expects 0 for success
+            
         except Exception as e:
-            self.log.error(f'Failed to connect to Red Pitaya: {e}')
-            raise
+            self.log.error(f'Failed to connect to Red Pitaya: {str(e)}')
+            return -1  # Qudi expects non-zero for failure
 
     def on_deactivate(self):
-        """Close the Red Pitaya connection."""
-        if hasattr(self, 'rpl'):
-            self.rpl.close()
-            self.log.info('Red Pitaya connection closed')
+        """Clean up and disconnect from device."""
+        try:
+            # Disable all outputs
+            for channel in range(2):
+                self.enable_asg_output(channel, False)
+            
+            # Disable all PIDs
+            for pid_id in range(3):
+                self.enable_pid(pid_id, False)
+            
+            self._rp = None
+            self._pyrpl = None
+            self._is_connected = False
+            
+        except Exception as e:
+            self.log.error(f'Error during deactivation: {str(e)}')
+
+    def _setup_device(self):
+        """Configure initial device settings."""
+        # Set sampling rate and decimation
+        self._rp.scope.decimation = self._decimation
+        
+        # Configure default scope settings
+        self._rp.scope.trigger_source = 'immediately'
+        self._rp.scope.trigger_delay = 0
+        
+        # Initialize ASGs
+        for channel in range(2):
+            self._rp.asgs[channel].output_direct = 'off'
+            self._asg_states[channel] = False
+        
+        # Initialize PIDs
+        for pid_id in range(3):
+            pid = self._rp.pids[pid_id]
+            pid.input_direct = 'off'
+            pid.output_direct = 'off'
+            self._pid_states[pid_id] = False
 
     def acquire_data(self, duration=1.0, trigger_source='immediately'):
-        """
-        Acquire oscilloscope data.
-        
-        Args:
-            duration (float): Acquisition duration in seconds
-            trigger_source (str): Trigger source
-            
-        Returns:
-            tuple: (time_array, ch1_data, ch2_data)
-        """
+        """Acquire oscilloscope data."""
         try:
-            scope = self.rp.scope
-            
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+        
             # Configure scope
-            scope.setup(duration=duration, trigger_source=trigger_source)
+            self._rp.scope.decimation = self._decimation
+            self._rp.scope.trigger_source = trigger_source
+            
+            # Calculate number of samples
+            samples = int(duration * self._sampling_rate / self._decimation)
+            self._rp.scope.data_length = samples
             
             # Acquire data
-            ch1_data, ch2_data = scope.curve()
+            data = self._rp.scope.curve()
+            time_array = np.linspace(0, duration, len(data[0]))
             
-            # Create time array
-            dt = duration / len(ch1_data)
-            time_array = np.arange(len(ch1_data)) * dt
-            
-            return time_array, ch1_data, ch2_data
+            return time_array, data[0], data[1]
             
         except Exception as e:
-            self.log.error(f'Failed to acquire data: {e}')
-            raise
+            self.log.error(f'Error acquiring data: {str(e)}')
+            return np.array([]), np.array([]), np.array([])
 
     def set_oscilloscope_config(self, decimation=1, trigger_delay=0):
-        """
-        Configure oscilloscope settings.
-        
-        Args:
-            decimation (int): Decimation factor
-            trigger_delay (int): Trigger delay in samples
-        """
+        """Configure oscilloscope settings."""
         try:
-            scope = self.rp.scope
-            scope.decimation = decimation
-            scope.trigger_delay = trigger_delay
-            self.log.debug(f'Oscilloscope configured: decimation={decimation}, trigger_delay={trigger_delay}')
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+        
+            self._rp.scope.decimation = decimation
+            self._rp.scope.trigger_delay = trigger_delay
+            self._decimation = decimation
+            return True
+            
         except Exception as e:
-            self.log.error(f'Failed to configure oscilloscope: {e}')
-            raise
+            self.log.error(f'Error configuring oscilloscope: {str(e)}')
+            return False
 
     def set_asg_output(self, channel, waveform='sin', frequency=1000, amplitude=0.1, offset=0):
-        """
-        Configure arbitrary signal generator output.
-        
-        Args:
-            channel (int): ASG channel (0 or 1)
-            waveform (str): Waveform type
-            frequency (float): Frequency in Hz
-            amplitude (float): Amplitude in V
-            offset (float): DC offset in V
-        """
+        """Configure arbitrary signal generator output."""
         try:
-            if channel == 0:
-                asg = self.rp.asg0
-            elif channel == 1:
-                asg = self.rp.asg1
-            else:
-                raise ValueError(f'Invalid ASG channel: {channel}')
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+
+            asg = self._rp.asgs[channel]
             
-            asg.setup(waveform=waveform, frequency=frequency, amplitude=amplitude, offset=offset)
-            self.log.debug(f'ASG{channel} configured: {waveform}, {frequency}Hz, {amplitude}V, {offset}V offset')
+            # Configure waveform
+            if waveform == 'sin':
+                asg.setup(waveform='sin',
+                         frequency=frequency,
+                         amplitude=amplitude,
+                         offset=offset)
+            elif waveform == 'square':
+                asg.setup(waveform='square',
+                         frequency=frequency,
+                         amplitude=amplitude,
+                         offset=offset)
+            elif waveform == 'triangle':
+                asg.setup(waveform='ramp',
+                         frequency=frequency,
+                         amplitude=amplitude,
+                         offset=offset)
+            elif waveform == 'noise':
+                asg.setup(waveform='noise',
+                         amplitude=amplitude,
+                         offset=offset)
+            else:
+                raise ValueError(f"Unsupported waveform type: {waveform}")
+                
+            return True
             
         except Exception as e:
-            self.log.error(f'Failed to configure ASG{channel}: {e}')
-            raise
+            self.log.error(f'Error configuring ASG{channel}: {str(e)}')
+            return False
 
     def enable_asg_output(self, channel, enable=True):
-        """
-        Enable or disable ASG output.
-        
-        Args:
-            channel (int): ASG channel (0 or 1)
-            enable (bool): Enable/disable output
-        """
+        """Enable or disable ASG output."""
         try:
-            if channel == 0:
-                asg = self.rp.asg0
-            elif channel == 1:
-                asg = self.rp.asg1
-            else:
-                raise ValueError(f'Invalid ASG channel: {channel}')
-            
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+
+            asg = self._rp.asgs[channel]
             if enable:
-                asg.output_direct = 'out1' if channel == 0 else 'out2'
+                asg.output_direct = 'out{}'.format(channel + 1)
             else:
                 asg.output_direct = 'off'
                 
-            self.log.debug(f'ASG{channel} output {"enabled" if enable else "disabled"}')
+            self._asg_states[channel] = enable
+            return True
             
         except Exception as e:
-            self.log.error(f'Failed to {"enable" if enable else "disable"} ASG{channel}: {e}')
-            raise
+            self.log.error(f'Error {"enabling" if enable else "disabling"} ASG{channel}: {str(e)}')
+            return False
 
     def configure_pid(self, pid_id, input_signal, setpoint=0, p=0, i=0, d=0):
-        """
-        Configure PID controller.
-        
-        Args:
-            pid_id (int): PID controller ID (0, 1, or 2)
-            input_signal (str): Input signal source
-            setpoint (float): PID setpoint
-            p (float): Proportional gain
-            i (float): Integral gain
-            d (float): Derivative gain
-        """
+        """Configure PID controller."""
         try:
-            if pid_id == 0:
-                pid = self.rp.pid0
-            elif pid_id == 1:
-                pid = self.rp.pid1
-            elif pid_id == 2:
-                pid = self.rp.pid2
-            else:
-                raise ValueError(f'Invalid PID ID: {pid_id}')
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+
+            pid = self._rp.pids[pid_id]
             
-            pid.input = input_signal
+            # Configure input
+            pid.input_direct = input_signal
             pid.setpoint = setpoint
             pid.p = p
             pid.i = i
             pid.d = d
             
-            self.log.debug(f'PID{pid_id} configured: input={input_signal}, setpoint={setpoint}, P={p}, I={i}, D={d}')
+            return True
             
         except Exception as e:
-            self.log.error(f'Failed to configure PID{pid_id}: {e}')
-            raise
+            self.log.error(f'Error configuring PID{pid_id}: {str(e)}')
+            return False
 
     def enable_pid(self, pid_id, enable=True):
-        """
-        Enable or disable PID controller.
-        
-        Args:
-            pid_id (int): PID controller ID
-            enable (bool): Enable/disable PID
-        """
+        """Enable or disable PID controller."""
         try:
-            if pid_id == 0:
-                pid = self.rp.pid0
-            elif pid_id == 1:
-                pid = self.rp.pid1
-            elif pid_id == 2:
-                pid = self.rp.pid2
-            else:
-                raise ValueError(f'Invalid PID ID: {pid_id}')
-            
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+
+            pid = self._rp.pids[pid_id]
             if enable:
-                pid.output_direct = 'out1'  # or 'out2' depending on your setup
+                pid.output_direct = f'out{pid_id + 1}'
             else:
                 pid.output_direct = 'off'
                 
-            self.log.debug(f'PID{pid_id} {"enabled" if enable else "disabled"}')
+            self._pid_states[pid_id] = enable
+            return True
             
         except Exception as e:
-            self.log.error(f'Failed to {"enable" if enable else "disable"} PID{pid_id}: {e}')
-            raise
+            self.log.error(f'Error {"enabling" if enable else "disabling"} PID{pid_id}: {str(e)}')
+            return False
 
     def get_pid_output(self, pid_id):
-        """
-        Get current PID output value.
-        
-        Args:
-            pid_id (int): PID controller ID
-            
-        Returns:
-            float: Current PID output
-        """
+        """Get current PID output value."""
         try:
-            if pid_id == 0:
-                pid = self.rp.pid0
-            elif pid_id == 1:
-                pid = self.rp.pid1
-            elif pid_id == 2:
-                pid = self.rp.pid2
-            else:
-                raise ValueError(f'Invalid PID ID: {pid_id}')
-            
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+
+            pid = self._rp.pids[pid_id]
             return float(pid.output)
             
         except Exception as e:
-            self.log.error(f'Failed to get PID{pid_id} output: {e}')
-            raise
+            self.log.error(f'Error getting PID{pid_id} output: {str(e)}')
+            return 0.0
 
     def get_device_info(self):
-        """
-        Get device information.
-        
-        Returns:
-            dict: Device information
-        """
+        """Get device information."""
         try:
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+
             info = {
-                'hostname': self._hostname,
-                'pyrpl_version': self.rpl.version if hasattr(self.rpl, 'version') else 'unknown',
-                'connected': hasattr(self, 'rp') and self.rp is not None,
-                'config_file': self._config if self._config else 'hostname-based'
+                'ip_address': self._ip_address,
+                'sampling_rate': self._sampling_rate,
+                'decimation': self._decimation,
+                'asg_states': self._asg_states.copy(),
+                'pid_states': self._pid_states.copy(),
+                'connected': self._is_connected
             }
             return info
+            
         except Exception as e:
-            self.log.error(f'Failed to get device info: {e}')
+            self.log.error(f'Error getting device info: {str(e)}')
             return {'error': str(e)}
 
     def reset_device(self):
-        """Reset the Red Pitaya device."""
+        """Reset device to default state."""
         try:
-            # Close current connection
-            if hasattr(self, 'rpl'):
-                self.rpl.close()
+            if not self._is_connected:
+                raise RuntimeError("Device not connected")
+
+            # Disable all outputs
+            for channel in range(2):
+                self.enable_asg_output(channel, False)
             
-            # Reinitialize
-            time.sleep(1)  # Wait a moment
-            self.on_activate()
+            # Disable all PIDs
+            for pid_id in range(3):
+                self.enable_pid(pid_id, False)
             
-            self.log.info('Red Pitaya device reset successfully')
+            # Reset scope settings
+            self.set_oscilloscope_config(self._decimation, 0)
+            
+            # Re-initialize device settings
+            self._setup_device()
+            
+            return True
             
         except Exception as e:
-            self.log.error(f'Failed to reset device: {e}')
-            raise
+            self.log.error(f'Error resetting device: {str(e)}')
+            return False

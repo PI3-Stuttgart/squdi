@@ -593,8 +593,13 @@ class RedPitayaGui(GuiBase):
     def _update_device_info(self, info):
         """Update device information display."""
         info_text = "Device Information:\n\n"
-        for key, value in info.items():
-            info_text += f"{key}: {value}\n"
+        info_text += f"IP Address: {info.get('ip_address', 'N/A')}\n"
+        info_text += f"Sampling Rate: {info.get('sampling_rate', 0)/1e6:.1f} MHz\n"
+        info_text += f"Decimation: {info.get('decimation', 1)}\n"
+        info_text += f"Connected: {info.get('connected', False)}\n"
+        info_text += "\nOutput States:\n"
+        info_text += f"ASG0: {'Enabled' if info.get('asg_states', {}).get(0, False) else 'Disabled'}\n"
+        info_text += f"ASG1: {'Enabled' if info.get('asg_states', {}).get(1, False) else 'Disabled'}\n"
         
         self.device_info_text.setPlainText(info_text)
 
@@ -646,4 +651,28 @@ class RedPitayaMainWindow(QtWidgets.QMainWindow):
     """Main window for Red Pitaya GUI."""
     
     def __init__(self):
-        super().__init
+        # Call parent class constructor properly
+        super().__init__()
+        
+        # Create central widget and layout
+        self.central_widget = QtWidgets.QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.layout = QtWidgets.QVBoxLayout(self.central_widget)
+        
+        # Create tab widget
+        self.tab_widget = QtWidgets.QTabWidget()
+        self.layout.addWidget(self.tab_widget)
+        
+        # Create tabs
+        self.oscilloscope_tab = QtWidgets.QWidget()
+        self.generator_tab = QtWidgets.QWidget()
+        self.pid_tab = QtWidgets.QWidget()
+        
+        # Add tabs to widget
+        self.tab_widget.addTab(self.oscilloscope_tab, "Oscilloscope")
+        self.tab_widget.addTab(self.generator_tab, "Signal Generator")
+        self.tab_widget.addTab(self.pid_tab, "PID Control")
+        
+        # Set window properties
+        self.setWindowTitle("Red Pitaya Control")
+        self.resize(800, 600)
