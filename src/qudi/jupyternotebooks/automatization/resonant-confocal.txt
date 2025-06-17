@@ -1,5 +1,5 @@
 {
-    "11.812230980126515": "Z:\\Vlad\\Daily_data\\attodry\\2025\\03\\2025-03-20\\scanning_data_logic\\resonant-confocal_0_11812MHz",
-    "18.32944483612664": "Z:\\Vlad\\Daily_data\\attodry\\2025\\03\\2025-03-20\\scanning_data_logic\\resonant-confocal_1_18329MHz",
-    "28.04039761167587": "Z:\\Vlad\\Daily_data\\attodry\\2025\\03\\2025-03-20\\scanning_data_logic\\resonant-confocal_2_28040MHz"
+    "-99.58502000728231": "Z:\\Vlad\\Daily_data\\attodry\\2025\\05\\2025-05-22\\scanning_data_logic\\resonant-confocal_0_-99585MHz",
+    "-150.27417961374567": "Z:\\Vlad\\Daily_data\\attodry\\2025\\05\\2025-05-23\\scanning_data_logic\\resonant-confocal_1_-150274MHz",
+    "-170.3065489618325": "Z:\\Vlad\\Daily_data\\attodry\\2025\\05\\2025-05-23\\scanning_data_logic\\resonant-confocal_2_-170307MHz"
 }
