@@ -155,7 +155,7 @@ class DigitalSwitchPS(SwitchInterface):
         assert all(isinstance(state, str) for state in
                    state_dict.values()), f'Invalid switch state(s) encountered: {tuple(state_dict.values())}'
         if self.pulsestreamer()._seq is None:
-            self.pulsestreamer()._seq = self.pulsestreamer().pulse_streamer.createSequence()
+            self.pulsestreamer()._seq = self.pulsestreamer().ps.createSequence()
         if state_dict:
             with self.lock:
                 new_states = self._states.copy()
@@ -169,7 +169,7 @@ class DigitalSwitchPS(SwitchInterface):
                         state_int = 1
                         self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
                                     [(self._cw_on_t, state_int)])
-                        self.pulsestreamer().pulser_on()
+                        self.pulsestreamer().start_streaming()
                         time.sleep(self._switch_time)
                         self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
                                     [(self._cw_on_t, int(not bool(state_int)))])
@@ -177,7 +177,7 @@ class DigitalSwitchPS(SwitchInterface):
                         self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
                                     [(self._cw_on_t, int(state_int))])
 
-                    self.pulsestreamer().pulser_on()
+                    self.pulsestreamer().start_streaming()
                 
                 time.sleep(self._switch_time)
                 self._states = new_states

@@ -1,4 +1,3 @@
-  
 from os.path import join, getsize, isfile
 import numpy as np
 from TimeTagger import createTimeTagger,createTimeTaggerNetwork,AccessMode, Dump, Correlation, Histogram, Counter, CountBetweenMarkers, FileWriter, Countrate, Combiner, TimeDifferences
@@ -10,6 +9,7 @@ class TT(Base):
     _serial = ConfigOption('serial', None, missing='info')
     _hist = ConfigOption('hist', dict(), missing='warn')
     _corr = ConfigOption('corr', dict(), missing='warn')
+    _time_differences = ConfigOption('time_differences', dict(), missing='warn')
     _count_between_markers = ConfigOption('count_between_markers', dict(), missing='warn')
     _counter = ConfigOption('counter', dict(), missing='warn')
     _combiner = ConfigOption('combiner', dict(), missing='warn')
@@ -31,7 +31,7 @@ class TT(Base):
             n_values: 100
 
         hist:
-            channel: 2
+            channels: [1, 2, 3]
             trigger_channel: 5
             bins_width: 1000
             number_of_bins: 500
@@ -41,6 +41,12 @@ class TT(Base):
             channel_stop: 2
             bin_width: 1000
             number_of_bins: 1000
+            
+        time_differences:
+            channels: [1, 2, 3]
+            start_channel: 5
+            next_channel: 8
+            n_histograms: 1
 
         combiner:
             channels: [1,2]
@@ -69,14 +75,14 @@ class TT(Base):
                     self.tagger = createTimeTagger()
                 self.tagger.startServer(access_mode = AccessMode.Control,port=self._port)
                 self.log.info(f"Tagger initialization successful: {self.tagger.getSerial()}")
-                
-                
+
+
         except:
             self.log.error(f"\nCheck if the TimeTagger device is being used by another instance.")
             Exception(f"\nCheck if the TimeTagger device is being used by another instance.")
-             
-        
-        self._constraints = {'hist':self._hist, 'corr':self._corr, 'counter': self._counter}
+
+
+        self._constraints = {'hist':self._hist, 'corr':self._corr, 'counter': self._counter, 'time_differences': self._time_differences}
 
         # set specified in the params.yaml channels params
         for channel, params in self._channels_params.items():
@@ -85,19 +91,19 @@ class TT(Base):
                 self.delay_channel(delay=params['delay'], channel = channel)
             if 'trigger_level' in params.keys():
                 self.tagger.setTriggerLevel(channel, params['trigger_level'])
-            
+
         # if self.set_conditional_filter:
-        #     self.tagger.setConditionalFilter(trigger=self._hist["channels"], 
+        #     self.tagger.setConditionalFilter(trigger=self._hist["channels"],
         #                                     filtered=self._hist["trigger_channel"])
         #if self._combiner["channels"] is not None:
         #    self._combined_channels = self.combiner(self._combiner["channels"])
-        
+
 
     def on_deactivate(self):
         pass
-        
+
     #@remote_tagger
-    def histogram(self, **kwargs):  
+    def histogram(self, **kwargs):
         """
         The histogram takes default values from the params.yaml
 
@@ -114,7 +120,7 @@ class TT(Base):
                             kwargs['bin_width'],
                             kwargs['number_of_bins'])
     #@remote_tagger
-    def correlation(self,  **kwargs):  
+    def correlation(self,  **kwargs):
         """
         The correlation takes default values from the params.yaml
 
@@ -138,7 +144,7 @@ class TT(Base):
         self.tagger.setInputDelay(delay=delay, channel=channel)
 
 
-    def dump(self, dumpPath, filtered_channels=None): 
+    def dump(self, dumpPath, filtered_channels=None):
         if filtered_channels != None:
             self.tagger.setConditionalFilter(filtered=[filtered_channels], trigger=self.apdChans)
         return Dump(self.tagger, dumpPath, self.maxDumps,\
@@ -197,20 +203,19 @@ class TT(Base):
                                                                      n_values=n_values)
 
     #@remote_tagger
-    def time_differences(self, click_channel, start_channel,
-                        next_channel, 
-                        binwidth,n_bins, n_histograms):
-    
-        return TimeDifferences(self.tagger, 
-                            click_channel=click_channel,
-                            start_channel=start_channel,
-                            next_channel=next_channel,
-                            binwidth=binwidth,
-                            n_bins=n_bins,
-                            n_histograms=n_histograms)
+    def time_differences(self, **kwargs):
+        """
+        The time_differences takes default values from the params.yaml
+        get data by time_diff.getData()
+        """
+        return TimeDifferences(self.tagger,
+                            click_channel=kwargs['click_channel'],
+                            start_channel=kwargs['start_channel'],
+                            next_channel=kwargs['next_channel'],
+                            binwidth=kwargs['binwidth'],
+                            n_bins=kwargs['n_bins'],
+                            n_histograms=kwargs.get('n_histograms', 1))
 
     def write_into_file(self, filename, channels):
         return FileWriter(self.tagger,
         filename, channels)
-
-    

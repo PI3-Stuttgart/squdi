@@ -23,6 +23,7 @@ class TimeTaggerLogic(LogicBase):
     sigCounterDataChanged = QtCore.Signal(object)
     sigCorrDataChanged = QtCore.Signal(object)
     sigHistDataChanged = QtCore.Signal(object)
+    sigTimeDiffDataChanged = QtCore.Signal(object)
     sigDumpSizeChanged = QtCore.Signal(object)
 
     sigUpdate = QtCore.Signal()
@@ -64,52 +65,75 @@ class TimeTaggerLogic(LogicBase):
         self._fit_config_model.load_configs(self._default_fit_configs)
         self._fit_container = FitContainer(parent=self, config_model=self._fit_config_model)
 
+        # Timer for Counter data
         self._counter_poll_timer = QtCore.QTimer()
         self._counter_poll_timer.setSingleShot(False)
         self._counter_poll_timer.timeout.connect(self.acquire_data_block, QtCore.Qt.QueuedConnection)
         self._counter_poll_timer.setInterval(50)
 
+        # Timer for Correlation data
         self._corr_poll_timer = QtCore.QTimer()
         self._corr_poll_timer.setSingleShot(False)
         self._corr_poll_timer.timeout.connect(self.acquire_corr_block, QtCore.Qt.QueuedConnection)
         self._corr_poll_timer.setInterval(50)
         
+        # Timer for Histogram data
         self._hist_poll_timer = QtCore.QTimer()
         self._hist_poll_timer.setSingleShot(False)
         self._hist_poll_timer.timeout.connect(self.acquire_hist_block, QtCore.Qt.QueuedConnection)
         self._hist_poll_timer.setInterval(50)
 
+        # Timer for Time Difference data
+        self._time_diff_poll_timer = QtCore.QTimer()
+        self._time_diff_poll_timer.setSingleShot(False)
+        self._time_diff_poll_timer.timeout.connect(self.acquire_time_diff_block, QtCore.Qt.QueuedConnection)
+        self._time_diff_poll_timer.setInterval(50)
+
+        # Timer for data dump size
         self._dump_poll_timer = QtCore.QTimer()
         self._dump_poll_timer.setSingleShot(False)
         self._dump_poll_timer.timeout.connect(self.acquire_dump_size, QtCore.Qt.QueuedConnection)
         self._dump_poll_timer.setInterval(1000)
 
+        # Initialize measurement objects and parameters
         self.counter = None
+        self.corr = None
+        self.hist = None
+        self.time_diff = None
         self.trace_data = {}
         self.counter_params = self._timetagger._counter
         self.hist_params = self._timetagger._hist
         self.corr_params  = self._timetagger._corr
+        self.time_diff_params = self._timetagger._time_differences
+        self.time_diff_sum_start = 0 # ns
+        self.time_diff_sum_stop = 100 # ns
         self.dump_channels = [1,2,3, 5, 8, 6]
         self._recorded_data = None
         self.trace_data = None
         self.corr_data = None
         self.hist_data = None
+        self.time_diff_data = None
+        self.time_diff_data_raw = None
 
-        self.metadata = {'counter':None, 'hist':None, 'corr':None}
+        self.metadata = {'counter':None, 'hist':None, 'corr':None, 'time_diff':None}
     
     def on_deactivate(self):
         self._fit_config = self._fit_config_model.dump_configs()
+        self._counter_poll_timer.stop()
+        self._corr_poll_timer.stop()
+        self._hist_poll_timer.stop()
+        self._time_diff_poll_timer.stop()
+        self._dump_poll_timer.stop()
         self._counter_poll_timer = None
         self._corr_poll_timer = None
         self._hist_poll_timer = None
+        self._time_diff_poll_timer = None
         self._dump_poll_timer = None
     
     def configure_counter(self, data):
         self.counter_freq, self.counter_length, self.counter_channels, self.counter_toggle, self.display_channel = data['counter']
 
         with self.threadlock:
-            bin_width = int(1/self.counter_freq*1e12)
-            n_values = int(self.counter_length*1e12/bin_width)
             self.toggled_channels = []
             self.display_channel_number = 0
             for ch in self.counter_channels:
@@ -119,61 +143,105 @@ class TimeTaggerLogic(LogicBase):
                         self.display_channel_number = ch
 
             if self.toggled_channels and self.counter_toggle:
+                bin_width = int(1/self.counter_freq*1e12)
+                n_values = int(self.counter_length*1e12/bin_width)
                 self.counter = self._timetagger.counter(channels = self.toggled_channels, bin_width = bin_width, n_values = n_values)
-        
                 meta_dict = {'Channels': self.toggled_channels, 'Bin Width': bin_width/1e12, 'Number of Bins': n_values, 'Units': [(ch,'Cps') for ch in self.toggled_channels]}
                 self.metadata.update([['counter', meta_dict]])
                 self._counter_poll_timer.start()
+            else:
+                self._counter_poll_timer.stop()
+                self.counter = None
     
     def configure_corr(self, data):
         self.corr_bin_width, self.corr_record_length, self.corr_toggled = data['corr']
-        self.corr_record_length *= 1e6
+        
         with self.threadlock:
             if self.corr_toggled:
+                self.corr_record_length_ps = self.corr_record_length * 1e6 # convert us to ps
                 self.corr = self._timetagger.correlation(channel_start = self._constraints['corr']['channel_start'], 
                                                         channel_stop = self._constraints['corr']['channel_stop'], 
                                                         bin_width = int(self.corr_bin_width), 
-                                                        number_of_bins = int(self.corr_record_length/self.corr_bin_width))
+                                                        number_of_bins = int(self.corr_record_length_ps/self.corr_bin_width))
         
                 meta_dict = {'Channel start': self._constraints['corr']['channel_start'], 'Channel stop': self._constraints['corr']['channel_stop'], 
-                        'Bin Width': int(self.corr_bin_width)/1e12, 'Number of Bins': int(self.corr_record_length/self.corr_bin_width), 'Units': [('g2','arb.u.')]}
+                        'Bin Width': int(self.corr_bin_width)/1e12, 'Number of Bins': int(self.corr_record_length_ps/self.corr_bin_width), 'Units': [('g2','arb.u.')]}
                 self.metadata.update([['corr', meta_dict]])
                 self._corr_poll_timer.start()
-    
+            else:
+                self._corr_poll_timer.stop()
+                self.corr = None
+
     def configure_hist(self, data):
         self.hist_bin_width, self.hist_record_length, self.hist_channel, self.hist_toggled = data['hist']
-        self.hist_record_length *= 1e6
+        
+        with self.threadlock:
+            if self.hist_toggled:
+                self.hist_record_length_ps = self.hist_record_length * 1e6 # convert us to ps
+                self.hist = self._timetagger.histogram(channel = self.hist_channel, 
+                                                    trigger_channel = self._constraints['hist']['trigger_channel'], 
+                                                    bin_width = int(self.hist_bin_width), 
+                                                    number_of_bins = int(self.hist_record_length_ps/self.hist_bin_width))
 
-        if self.hist_toggled:
-            self.hist = self._timetagger.histogram(channel = self.hist_channel, 
-                                                   trigger_channel = self._constraints['hist']['trigger_channel'], 
-                                                   bin_width = int(self.hist_bin_width), 
-                                                   number_of_bins = int(self.hist_record_length/self.hist_bin_width))
+                meta_dict = {'Histogram Channel': self.hist_channel, 'Trigger Channel': self._constraints['hist']['trigger_channel'], 
+                            'Bin Width': int(self.hist_bin_width)/1e12, 'Number of Bins': int(self.hist_record_length_ps/self.hist_bin_width), 'Units': [(self.hist_channel,'Counts')]}
+                self.metadata.update([['hist', meta_dict]])
+                self._hist_poll_timer.start()
+            else:
+                self._hist_poll_timer.stop()
+                self.hist = None
 
-            meta_dict = {'Histogram Channel': self.hist_channel, 'Trigger Channel': self._constraints['hist']['trigger_channel'], 
-                	    'Bin Width': int(self.hist_bin_width)/1e12, 'Number of Bins': int(self.hist_record_length/self.hist_bin_width), 'Units': [(self.hist_channel,'Counts')]}
-            self.metadata.update([['hist', meta_dict]])
-            self._hist_poll_timer.start()
+    def configure_time_diff(self, data):
+        self.time_diff_bin_width, self.time_diff_record_length, self.time_diff_click_channel, self.time_diff_num_histograms, self.time_diff_toggled = data['time_diff']
+        
+        with self.threadlock:
+            if self.time_diff_toggled:
+                self.time_diff_record_length_ps = self.time_diff_record_length * 1e6 # convert us to ps
+                start_channel = self._constraints['time_differences']['start_channel']
+                next_channel = self._constraints['time_differences']['next_channel']
+                number_of_bins = int(self.time_diff_record_length_ps/self.time_diff_bin_width)
 
+                self.time_diff = self._timetagger.time_differences(
+                                                    click_channel = self.time_diff_click_channel,
+                                                    start_channel = start_channel,
+                                                    next_channel = next_channel,
+                                                    binwidth = int(self.time_diff_bin_width),
+                                                    n_bins = number_of_bins,
+                                                    n_histograms = self.time_diff_num_histograms
+                                                    )
+
+                meta_dict = {'Click Channel': self.time_diff_click_channel, 
+                             'Start Channel': start_channel, 
+                             'Next Channel': next_channel,
+                             'Bin Width': int(self.time_diff_bin_width)/1e12, 
+                             'Number of Bins': number_of_bins, 
+                             'Number of Histograms': self.time_diff_num_histograms,
+                             'Units': [(self.time_diff_click_channel,'Counts')]}
+                self.metadata.update([['time_diff', meta_dict]])
+                self._time_diff_poll_timer.start()
+            else:
+                self._time_diff_poll_timer.stop()
+                self.time_diff = None
+
+    @QtCore.Slot(float, float)
+    def set_time_diff_ranges(self, start_ns, stop_ns):
+        """Set the start and stop time for processing the time_diff data."""
+        with self.threadlock:
+            self.time_diff_sum_start = start_ns
+            self.time_diff_sum_stop = stop_ns
 
     def acquire_data_block(self):
         """
-        This method gets the available data from the hardware.
-
-        It runs repeatedly by being connected to a QTimer timeout signal.
+        This method gets the available counter data from the hardware.
         """
         with self.threadlock:
-            if not self.counter_toggle or not self.counter:
-                self._counter_poll_timer.stop()
+            if self.counter is None:
                 return
             self.trace_data = {}
             self.trace_data_avg = {}
-            counter_sum = None
             raw = self.counter.getDataNormalized()
             index = self.counter.getIndex()/1e12
-            w = int(round(len(index)/50))
-            # raw = np.random.random(100)
-            # index = np.arange(100)
+            w = int(round(len(index)/50)) if len(index) > 50 else 1
             counter_sum = np.zeros_like(raw[0])
             for i, ch in enumerate(self.toggled_channels):
                 self.trace_data[ch] = (index, raw[i])
@@ -189,42 +257,89 @@ class TimeTaggerLogic(LogicBase):
         return
     
     def acquire_corr_block(self):
+        """
+        This method gets the available correlation data from the hardware.
+        """
         with self.threadlock:
-            if not self.corr_toggled:
-                self._corr_poll_timer.stop()
+            if self.corr is None:
                 return
             raw = self.corr.getDataNormalized()
             index = self.corr.getIndex()/1e12
-            # raw = np.random.random(100)
-            # index = np.arange(100)
             self.corr_data = (index, np.nan_to_num(raw))
             self.sigCorrDataChanged.emit({'corr_data':self.corr_data})
         return   
     
     def acquire_hist_block(self):
+        """
+        This method gets the available histogram data from the hardware.
+        """
         with self.threadlock:
-            if not self.hist_toggled:
-                self._hist_poll_timer.stop()
+            if self.hist is None:
                 return
             raw = self.hist.getData()
             index = self.hist.getIndex()/1e12
-            # raw = np.random.random(100)
-            # index = np.arange(100)
             self.hist_data = (index, np.nan_to_num(raw))
             self.sigHistDataChanged.emit({'hist_data':self.hist_data})
         return
     
+    def acquire_time_diff_block(self):
+        """
+        This method gets and processes the time difference data.
+        """
+        with self.threadlock:
+            if self.time_diff is None:
+                return
+            
+            raw_data_2d = self.time_diff.getData()
+            time_index_ps = self.time_diff.getIndex()  # in picoseconds
+
+            # --- Raw Data Plot (Sum over all histograms) ---
+            summed_raw_data = np.sum(raw_data_2d, axis=0) if raw_data_2d.ndim > 1 else raw_data_2d
+            index_s = time_index_ps / 1e12 # Convert to seconds for plotting
+            self.time_diff_data_raw = (index_s, np.nan_to_num(summed_raw_data))
+
+            # --- Processed Data Plot (Sum over time window for each histogram) ---
+            if raw_data_2d.ndim < 2:
+                self.time_diff_data = (np.array([]), np.array([]))
+            else:
+                start_ps = self.time_diff_sum_start * 1000
+                stop_ps = self.time_diff_sum_stop * 1000
+
+                idx_start = np.searchsorted(time_index_ps, start_ps, side='left')
+                idx_stop = np.searchsorted(time_index_ps, stop_ps, side='right')
+                
+                if idx_start >= raw_data_2d.shape[1]:
+                    summed_counts = np.zeros(raw_data_2d.shape[0])
+                else:
+                    idx_stop = min(idx_stop, raw_data_2d.shape[1])
+                    summed_counts = np.sum(raw_data_2d[:, idx_start:idx_stop], axis=1)
+
+                processed_x_axis = np.arange(summed_counts.shape[0])
+                self.time_diff_data = (processed_x_axis, np.nan_to_num(summed_counts))
+
+            self.sigTimeDiffDataChanged.emit({
+                'time_diff_data': self.time_diff_data, 
+                'time_diff_data_raw': self.time_diff_data_raw
+            })
+        return
+
     @QtCore.Slot(bool, str, str)
     def dump_data(self, do_dump, name_tag, save_path):
         if do_dump:
-            self._dump_poll_timer.start()
+            if not os.path.isdir(save_path):
+                self.log.error(f"Dump path does not exist: {save_path}")
+                self._dump_poll_timer.stop()
+                return
 
-            self.file_write = self.timetagger().write_into_file(os.path.join(save_path, 
+            self._dump_poll_timer.start()
+            self.file_write = self._timetagger.write_into_file(os.path.join(save_path, 
                                                             f'{name_tag}.ttbin'),
                                                             channels=self.dump_channels)
         else:
             self._dump_poll_timer.stop()
-            self.file_write = None
+            if self.file_write is not None:
+                self.file_write.stop()
+                self.file_write = None
             
 
     def acquire_dump_size(self):
@@ -235,93 +350,72 @@ class TimeTaggerLogic(LogicBase):
     @QtCore.Slot()
     def _save_recorded_data(self, to_file=True, name_tag='', save_figure=True, save_type='counter', save_path='Default'):
         """ Save the data and writes it to a file.
-
-        @param bool to_file: indicate, whether data have to be saved to file
-        @param str name_tag: an additional tag, which will be added to the filename upon save
-        @param bool save_figure: select whether png and pdf should be saved
-
-        @return dict parameters: Dictionary which contains the saving parameters
         """
         if save_type is None:
             save_type='counter'
-        self._recorded_data = {'counter': self.trace_data, 'corr': self.corr_data, 'hist': self.hist_data}[save_type]
+            
+        data_to_save = {'counter': self.trace_data, 'corr': self.corr_data, 'hist': self.hist_data, 'time_diff': self.time_diff_data}.get(save_type)
         
-        if not self._recorded_data:
-            self.log.error('No data has been recorded. Save to file failed.')
-            return np.empty(0), dict()
-        #FIX
+        if data_to_save is None:
+            self.log.error(f'No data for type "{save_type}" has been recorded. Save to file failed.')
+            return
         
         if save_type == 'counter':
-            data_arr = []
-            for ch in self.toggled_channels:
-                data_arr.append(np.nan_to_num(self._recorded_data[ch][1]))
-            data_arr = np.array(data_arr)
+            if not data_to_save: 
+                self.log.error('No counter data recorded. Save to file failed.')
+                return
+            data_arr = np.array([np.nan_to_num(data_to_save[ch][1]) for ch in self.toggled_channels])
         else:
-            data_arr = np.array([self._recorded_data[1]])
+            data_arr = np.array([data_to_save[1]])
+
         if data_arr.size == 0:
             self.log.error('No data has been recorded. Save to file failed.')
-            return np.empty(0), dict()
+            return
         
-        # write the parameters:
         parameters = self.metadata[save_type]
-        
+        if parameters is None:
+            self.log.error(f"Metadata for '{save_type}' not found. Cannot save.")
+            return
+
         if to_file:
-            # If there is a postfix then add separating underscore
-            filelabel = '{1}_data_trace_{0}'.format(name_tag, save_type) if name_tag else f'{save_type}_data_trace'
-        
-            # prepare the data in a dict:
-            header = ['{0} ({1})'.format(ch, unit) for ch, unit in self.metadata[save_type]['Units']]
-
+            filelabel = f'{save_type}_data_trace_{name_tag}' if name_tag else f'{save_type}_data_trace'
+            header = [f'{ch} ({unit})' for ch, unit in parameters['Units']]
             data = data_arr.transpose()
-            filepath = self.module_default_data_dir 
-            y_unit = self.metadata[save_type]['Units'][0][1]
+            filepath = save_path if save_path != 'Default' else self.module_default_data_dir 
+            y_unit = parameters['Units'][0][1]
+            data_rate = 1 / parameters['Bin Width']
 
-            self.data_rate = 1/self.metadata[save_type]['Bin Width']
-
-            fig = self._draw_figure(data_arr, self.data_rate, y_unit) if save_figure else None
-            if not save_path == 'Default':
-                filepath = save_path
-
+            fig = self._draw_figure(data_arr, data_rate, y_unit) if save_figure else None
+            
             data_storage = TextDataStorage(root_dir=filepath,
                                comments='# ', 
                                delimiter='\t',
                                file_extension='.dat',
-                               column_formats=['.8f' for i in self.metadata[save_type]['Units']],
+                               column_formats=['.8f'] * len(parameters['Units']),
                                include_global_metadata=True,
                                image_format=ImageFormat.PNG)
 
-            file_path, timestamp, (rows, columns) = data_storage.save_data(data, 
-                                                               timestamp=dt.datetime.now(), 
-                                                               metadata=parameters, 
-                                                               notes='',
-                                                               nametag=filelabel,
-                                                               column_headers=header,
-                                                               column_dtypes=[float for i in self.metadata[save_type]['Units']])
+            file_path, _, _ = data_storage.save_data(data, 
+                                                     timestamp=dt.datetime.now(), 
+                                                     metadata=parameters, 
+                                                     notes='',
+                                                     nametag=filelabel,
+                                                     column_headers=header,
+                                                     column_dtypes=[float] * len(parameters['Units']))
             if fig:
-                data_storage.save_thumbnail(fig, file_path.rsplit('.')[0])
-            self.log.info('Time series saved to: {0}'.format(file_path))
-        return data_arr, parameters
+                data_storage.save_thumbnail(fig, file_path.rsplit('.', 1)[0])
+            self.log.info(f'Time series saved to: {file_path}')
 
     def _draw_figure(self, data, timebase, y_unit):
         """ Draw figure to save with data file.
-
-        @param: nparray data: a numpy array containing counts vs time for all detectors
-
-        @return: fig fig: a matplotlib figure object to be saved to file.
         """
-        # Create figure and scale data
         max_abs_value = ScaledFloat(max(data.max(), np.abs(data.min())))
         time_data = np.arange(data.shape[1]) / timebase
         fig, ax = plt.subplots()
-        if max_abs_value.scale:
-            ax.plot(time_data,
-                    data.transpose() / max_abs_value.scale_val,
-                    linestyle='-',
-                    linewidth=1)
-        else:
-            ax.plot(time_data, data.transpose(), linestyle='-', linewidth=1)
+        scaled_data = data.transpose() / max_abs_value.scale_val if max_abs_value.scale else data.transpose()
+        ax.plot(time_data, scaled_data, linestyle='-', linewidth=1)
         ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Signal ({0}{1})'.format(max_abs_value.scale, y_unit))
+        ax.set_ylabel(f'Signal ({max_abs_value.scale}{y_unit})')
         return fig
     
     ################
@@ -336,22 +430,16 @@ class TimeTaggerLogic(LogicBase):
         return self._fit_container
 
     def do_fit(self, fit_method):
-        print("hey", fit_method)
         if fit_method == 'No Fit':
-            print("NOFIT")
             self.sig_fit_updated.emit('No Fit', None)
             return 'No Fit', None
 
-        # self.fit_region = self._fit_region
         if self.corr_data is None:
-            print("NO data")
             self.log.error('No data to fit.')
             self.sig_fit_updated.emit('No Fit', None)
             return 'No Fit', None
 
-    
-        x_data = self.corr_data[0]#[start:end]
-        y_data = self.corr_data[1]#[start:end]
+        x_data, y_data = self.corr_data
         
         try:
             self._fit_method, self._fit_results = self._fit_container.fit_data(fit_method, x_data, y_data)
