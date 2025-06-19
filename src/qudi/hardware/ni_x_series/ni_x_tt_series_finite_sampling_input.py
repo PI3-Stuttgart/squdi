@@ -94,6 +94,7 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
 
     _rw_timeout = ConfigOption('read_write_timeout', default=10, missing='nothing')
 
+    pulsed = True
     # Hardcoded data type
     __data_type = np.float64
 
@@ -105,7 +106,7 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         # Task handles for NIDAQmx tasks
         self._di_task_handles = list()
         
-        self._timetagger_cbm_tasks = list()
+        self._timetagger_tasks = list()
         self._ai_task_handle = None
         self._clk_task_handle = None
         # nidaqmx stream reader instances to help with data acquisition
@@ -232,7 +233,9 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         # initialize default settings
         self._sample_rate = self._constraints.max_sample_rate
         self._frame_size = 0
+        
 
+        
         self.set_active_channels(digital_sources.union(analog_sources))
 
     def on_deactivate(self):
@@ -328,13 +331,13 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
             self.log.debug(f'set frame_size to {self._frame_size}')
             
 
-    def _init_tt_cbm_task(self):
+    def _init_tt_task(self):
         """
         Set up tasks for digital event counting with the TIMETAGGER
         cbm stnads for count between markers
         @return int: error code (0:OK, -1:error)
         """
-        self._timetagger_cbm_tasks = list()
+        self._timetagger_tasks = list()
         channels_tt = [int(ch.split("_")[-1]) for ch in self.__active_channels['di_channels'] if "tt" == ch.split("_")[0]]
         clock_tt = int(self._tt_ni_clock_input.split("_")[-1])
         #Workaround for the old time tagger version at the praktikum
@@ -343,13 +346,30 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                 clock_fall_tt = int(self._tt_falling_edge_clock_input.split("_")[-1])
         else:
             clock_fall_tt = - clock_tt
-        
-        for channel in channels_tt:
-                self._timetagger_cbm_tasks.append(
-                        self._tt.count_between_markers(click_channel = channel, 
-                                            begin_channel = clock_tt,
-                                            end_channel = clock_fall_tt, 
-                                            n_values=self.frame_size))
+            
+        if not self.pulsed:
+            for channel in channels_tt:
+                    self._timetagger_tasks.append(
+                            self._tt.count_between_markers(click_channel = channel, 
+                                                begin_channel = clock_tt,
+                                                end_channel = clock_fall_tt, 
+                                                n_values=self.frame_size))
+        else:
+            
+            if self._tt.gated_vch is not None:
+                self._timetagger_tasks.append(
+                                self._tt.count_between_markers(click_channel = self._tt.gated_vch.getChannel(), 
+                                                    begin_channel = clock_tt,
+                                                    end_channel = clock_fall_tt, 
+                                                    n_values=self.frame_size))
+            else:
+                raise ValueError("No gated channel set in the time tagger")
+            # for channel in channels_tt[1:]:
+            #         self._timetagger_tasks.append(
+            #                 self._tt.count_between_markers(click_channel = channel, 
+            #                                     begin_channel = clock_tt,
+            #                                     end_channel = clock_fall_tt, 
+            #                                     n_values=self.frame_size))
                 
         return 0
 
@@ -368,7 +388,7 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
             self.terminate_all_tasks()
             self.module_state.unlock()
             raise NiInitError('Sample clock initialization failed; all tasks terminated')
-        if self._init_tt_cbm_task() < 0:
+        if self._init_tt_task() < 0:
                 self.terminate_all_tasks() # add the treatment of the TT task termination
                 self.module_state.unlock()
         # if self._init_digital_tasks() < 0:
@@ -475,16 +495,16 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
             #     if read_samples != number_of_samples:
             #         return data
             #     data[reader._task.name.split('_')[-1]] = data_buffer
-            if self._timetagger_cbm_tasks:
+            if self._timetagger_tasks:
                 di_data = np.zeros(len(self.__active_channels['di_channels']) * number_of_samples)
 
                 di_data = di_data.reshape(len(self.__active_channels['di_channels']), number_of_samples)
                 for num, di_channel in enumerate(self.__active_channels['di_channels']):
-                    data_cbm = self._timetagger_cbm_tasks[num].getData()
+                    data_cbm = self._timetagger_tasks[num].getData()
                     di_data[num] = data_cbm
                    
                     data[di_channel] = di_data[num] * self.sample_rate  # To go to c/s # TODO What if unit not c/s
-                self._scanner_ready = self._timetagger_cbm_tasks[0].ready()
+                self._scanner_ready = self._timetagger_tasks[0].ready()
 
                 
                     

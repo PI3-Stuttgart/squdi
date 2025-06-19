@@ -105,8 +105,8 @@ class TimeTaggerLogic(LogicBase):
         self.hist_params = self._timetagger._hist
         self.corr_params  = self._timetagger._corr
         self.time_diff_params = self._timetagger._time_differences
-        self.time_diff_sum_start = 0 # ns
-        self.time_diff_sum_stop = 100 # ns
+        self.time_diff_sum_start = self._timetagger.time_diff_sum_start  # ns
+        self.time_diff_sum_stop = self._timetagger.time_diff_sum_stop # ns
         self.dump_channels = [1,2,3, 5, 8, 6]
         self._recorded_data = None
         self.trace_data = None
@@ -227,8 +227,8 @@ class TimeTaggerLogic(LogicBase):
     def set_time_diff_ranges(self, start_ns, stop_ns):
         """Set the start and stop time for processing the time_diff data."""
         with self.threadlock:
-            self.time_diff_sum_start = start_ns
-            self.time_diff_sum_stop = stop_ns
+            self.time_diff_sum_start = self._timetagger.time_diff_sum_start = start_ns
+            self.time_diff_sum_stop = self._timetagger.time_diff_sum_stop = stop_ns
 
     def acquire_data_block(self):
         """

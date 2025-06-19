@@ -1,6 +1,6 @@
 from os.path import join, getsize, isfile
 import numpy as np
-from TimeTagger import createTimeTagger,createTimeTaggerNetwork,AccessMode, Dump, Correlation, Histogram, Counter, CountBetweenMarkers, FileWriter, Countrate, Combiner, TimeDifferences
+from TimeTagger import createTimeTagger,createTimeTaggerNetwork,AccessMode, Dump, GatedChannelInitial, Correlation, Histogram, Counter, CountBetweenMarkers, FileWriter, Countrate, Combiner, TimeDifferences, GatedChannel, DelayedChannel, freeTimeTagger
 from qudi.core.configoption import ConfigOption
 from qudi.core.module import Base
 
@@ -19,7 +19,7 @@ class TT(Base):
     _port = ConfigOption('port', 12233, missing='info')
     _remote_channel = ConfigOption('remote_tagger_port', None, missing='info')
     set_conditional_filter = True
-
+    gated_vch = None
     """
     Example config.
 
@@ -62,7 +62,60 @@ class TT(Base):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.sample_rate = 50
+        self._time_diff_sum_start = 0  # ns
+        self._time_diff_sum_stop = 100000  # ns
+        self._delay_diff_start = 0  # ns
+        self._delay_diff_stop = 100000  # ns
+        
         self.gated_counter_countbetweenmarkers = None
+
+    @property
+    def time_diff_sum_start(self):
+        return self._time_diff_sum_start
+
+    @time_diff_sum_start.setter
+    def time_diff_sum_start(self, value):
+        # Calculate the difference between new and old value
+        self._delay_diff_start = value - self._time_diff_sum_start
+        # Update the value
+        self._time_diff_sum_start = value
+
+        self.gate_start_vch = self.delayed_channel(self._hist['trigger_channel'], int(value * 1e3))
+       
+
+    @property
+    def time_diff_sum_stop(self):
+
+        
+        return self._time_diff_sum_stop
+
+    @time_diff_sum_stop.setter
+    def time_diff_sum_stop(self, value):
+        # Calculate the difference between new and old value
+        self._delay_diff_stop = value - self._time_diff_sum_stop
+        # Update the value
+        self._time_diff_sum_stop = value
+
+        self.gate_stop_vch = self.delayed_channel(self._hist['trigger_channel'], int(value * 1e3))
+
+        self.gated_vch = self.gated_channel(signal_channel = 1, 
+                                            gate_start_channel = self.gate_start_vch.getChannel(),
+                                            gate_stop_channel = self.gate_stop_vch.getChannel(),
+                                            )
+        
+        
+
+    @property
+    def delay_diff_start(self):
+        return self._delay_diff_start
+
+    @property
+    def delay_diff_stop(self):
+        return self._delay_diff_stop
+
+    def release_resources(self):
+        freeTimeTagger(self.tagger)
+
 
     def on_activate(self):
         try:
@@ -92,6 +145,13 @@ class TT(Base):
             if 'trigger_level' in params.keys():
                 self.tagger.setTriggerLevel(channel, params['trigger_level'])
 
+        if self._hist != {}:
+            self.gate_start_vch = self.delayed_channel(self._hist['trigger_channel'], 0)
+            self.gate_stop_vch = self.delayed_channel(self._hist['trigger_channel'], 0)
+            self.gated_vch = self.gated_channel(signal_channel = 1, 
+                                            gate_start_channel = self.gate_start_vch.getChannel(),
+                                                gate_stop_channel = self.gate_stop_vch.getChannel())
+        
         # if self.set_conditional_filter:
         #     self.tagger.setConditionalFilter(trigger=self._hist["channels"],
         #                                     filtered=self._hist["trigger_channel"])
@@ -100,7 +160,7 @@ class TT(Base):
 
 
     def on_deactivate(self):
-        pass
+        self.release_resources()
 
     #@remote_tagger
     def histogram(self, **kwargs):
@@ -142,7 +202,36 @@ class TT(Base):
     #@remote_tagger
     def delay_channel(self, channel, delay):
         self.tagger.setInputDelay(delay=delay, channel=channel)
+    
+    def delayed_channel(self, signal_channel, delay):
+       
+        return DelayedChannel(
+            tagger=self.tagger,
+            input_channel=signal_channel,
+            delay=delay
+        )
+    
+    def gated_channel(self, signal_channel, gate_start_channel, gate_stop_channel):
+        """
+        Creates a gated channel.
 
+        Args:
+            signal_channel (int): The channel to be gated.
+            gate1_start_channel (int): The channel that starts the gate.
+            gate1_stop_channel (int): The channel that stops the gate.
+
+        Returns:
+            TimeTagger.GatedChannel: A GatedChannel object.
+        """
+        return GatedChannel(
+            tagger=self.tagger,
+            input_channel=signal_channel,
+            gate_start_channel=gate_start_channel,
+            gate_stop_channel=gate_stop_channel,
+            initial = GatedChannelInitial.Closed
+        )
+
+    
 
     def dump(self, dumpPath, filtered_channels=None):
         if filtered_channels != None:
