@@ -169,7 +169,7 @@ class DigitalSwitchPS(SwitchInterface):
                         state_int = 1
                         self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
                                     [(self._cw_on_t, state_int)])
-                        self.pulsestreamer().start_streaming()
+                        self.pulsestreamer().start_streaming(use_seq=True)
                         time.sleep(self._switch_time)
                         self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
                                     [(self._cw_on_t, int(not bool(state_int)))])
@@ -177,7 +177,7 @@ class DigitalSwitchPS(SwitchInterface):
                         self.pulsestreamer()._seq.setDigital(self._channels[channel_index],
                                     [(self._cw_on_t, int(state_int))])
 
-                    self.pulsestreamer().start_streaming()
+                    self.pulsestreamer().start_streaming(use_seq=True)
                 
                 time.sleep(self._switch_time)
                 self._states = new_states
