@@ -95,6 +95,8 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
     _rw_timeout = ConfigOption('read_write_timeout', default=10, missing='nothing')
 
     pulsed = True
+    _reference_cbm = None  # reference cbm for the gated time tagger
+    use_ref = True
     # Hardcoded data type
     __data_type = np.float64
 
@@ -362,6 +364,11 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                                                     begin_channel = clock_tt,
                                                     end_channel = clock_fall_tt, 
                                                     n_values=self.frame_size))
+                if self._tt.gated_ref_vch is not None:
+                    self._reference_cbm = self._tt.count_between_markers(click_channel = self._tt.gated_ref_vch.getChannel(), 
+                                                    begin_channel = clock_tt,
+                                                    end_channel = clock_fall_tt, 
+                                                    n_values=self.frame_size)
             else:
                 raise ValueError("No gated channel set in the time tagger")
             # for channel in channels_tt[1:]:
@@ -501,6 +508,10 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                 di_data = di_data.reshape(len(self.__active_channels['di_channels']), number_of_samples)
                 for num, di_channel in enumerate(self.__active_channels['di_channels']):
                     data_cbm = self._timetagger_tasks[num].getData()
+                    if self.use_ref:
+                        ref_mean = self._reference_cbm.getData()
+                        data_cbm = data_cbm - ref_mean
+                        
                     di_data[num] = data_cbm
                    
                     data[di_channel] = di_data[num] * self.sample_rate  # To go to c/s # TODO What if unit not c/s
