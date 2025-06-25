@@ -149,7 +149,7 @@ class PulseStreamer(Base):
         except Exception as e:
             self.log.error(f"Failed to plot sequence: {e}")
 
-    def start_streaming(self, n_runs=-1, use_seq = False):
+    def start_streaming(self, n_runs=-1):
         """
         Streams the currently stored pulse sequence.
         NOTE: Based on previous errors, this version only supports software triggering.
@@ -170,11 +170,7 @@ class PulseStreamer(Base):
             # which defaults to an immediate (software) start. 
             if self._trigger_mode == 'hardware':
                 self.log.warn("Your environment does not support the 'trigger' keyword. Defaulting to software trigger.")
-            if use_seq and self._seq is not None:
-                # If a Sequence object is already created, use it directly
-                self.ps.stream(self._seq, n_runs=n_runs)
-                self.log.info(f"Pulse streaming started with software trigger for {n_runs} runs.")
-            else:
+           
                 self.ps.stream(self.sequence_data, n_runs=n_runs)
                 self.log.info(f"Pulse streaming started with software trigger for {n_runs} runs.")
 
