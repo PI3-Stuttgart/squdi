@@ -179,6 +179,9 @@
          <property name="text">
           <string>Counter</string>
          </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
          <property name="autoExclusive">
           <bool>true</bool>
          </property>
@@ -187,7 +190,7 @@
        <item>
         <widget class="QCheckBox" name="corr_checkBox">
          <property name="text">
-          <string>Autcorrelation</string>
+          <string>Correlation</string>
          </property>
          <property name="autoExclusive">
           <bool>true</bool>
@@ -198,6 +201,26 @@
         <widget class="QCheckBox" name="hist_checkBox">
          <property name="text">
           <string>Histogram</string>
+         </property>
+         <property name="autoExclusive">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="time_diff_checkBox">
+         <property name="text">
+          <string>Time Diff</string>
+         </property>
+         <property name="autoExclusive">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="time_diff_raw_checkBox">
+         <property name="text">
+          <string>Time Diff Raw</string>
          </property>
          <property name="autoExclusive">
           <bool>true</bool>
@@ -560,7 +583,7 @@
         <item row="0" column="0">
          <widget class="QLabel" name="label_td_start">
           <property name="text">
-           <string>Start Time</string>
+           <string>Signal Start</string>
           </property>
          </widget>
         </item>
@@ -580,12 +603,52 @@
         <item row="1" column="0">
          <widget class="QLabel" name="label_td_stop">
           <property name="text">
-           <string>Stop Time</string>
+           <string>Signal Stop</string>
           </property>
          </widget>
         </item>
         <item row="1" column="1">
          <widget class="QDoubleSpinBox" name="timeDiffStopDoubleSpinBox">
+          <property name="suffix">
+           <string> ns</string>
+          </property>
+          <property name="decimals">
+           <number>3</number>
+          </property>
+          <property name="maximum">
+           <double>100000000.0</double>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="label_td_ref_start">
+          <property name="text">
+           <string>Ref Start</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QDoubleSpinBox" name="timeDiffRefStartDoubleSpinBox">
+          <property name="suffix">
+           <string> ns</string>
+          </property>
+          <property name="decimals">
+           <number>3</number>
+          </property>
+          <property name="maximum">
+           <double>100000.0</double>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="label_td_ref_stop">
+          <property name="text">
+           <string>Ref Stop</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QDoubleSpinBox" name="timeDiffRefStopDoubleSpinBox">
           <property name="suffix">
            <string> ns</string>
           </property>
@@ -719,7 +782,14 @@
            </property>
          </widget>
         </item>
-        <item row="4" column="0" colspan="2">
+        <item row="4" column="0">
+         <widget class="QCheckBox" name="timeDiffUseRefCheckBox">
+          <property name="text">
+           <string>Use Reference</string>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="0" colspan="2">
          <widget class="QPushButton" name="toggleTimeDiffPushButton">
           <property name="text">
            <string>Toggle</string>

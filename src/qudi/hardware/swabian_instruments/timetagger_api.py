@@ -20,6 +20,7 @@ class TT(Base):
     _remote_channel = ConfigOption('remote_tagger_port', None, missing='info')
     set_conditional_filter = True
     gated_vch = None
+    gated_ref_vch = None
     """
     Example config.
 
@@ -64,6 +65,10 @@ class TT(Base):
         self.sample_rate = 50
         self._time_diff_sum_start = 0  # ns
         self._time_diff_sum_stop = 100000  # ns
+
+        self._time_diff_ref_start = 5000  # ns
+        self._time_diff_ref_stop = 60000  # ns
+
         self._delay_diff_start = 0  # ns
         self._delay_diff_stop = 100000  # ns
         
@@ -85,8 +90,6 @@ class TT(Base):
 
     @property
     def time_diff_sum_stop(self):
-
-        
         return self._time_diff_sum_stop
 
     @time_diff_sum_stop.setter
@@ -102,8 +105,27 @@ class TT(Base):
                                             gate_start_channel = self.gate_start_vch.getChannel(),
                                             gate_stop_channel = self.gate_stop_vch.getChannel(),
                                             )
-        
-        
+                                            
+    @property
+    def time_diff_ref_start(self):
+        return self._time_diff_ref_start
+
+    @time_diff_ref_start.setter
+    def time_diff_ref_start(self, value):
+        self._time_diff_ref_start = value
+        self.gate_ref_start_vch = self.delayed_channel(self._hist['trigger_channel'], int(value * 1e3))
+
+    @property
+    def time_diff_ref_stop(self):
+        return self._time_diff_ref_stop
+
+    @time_diff_ref_stop.setter
+    def time_diff_ref_stop(self, value):
+        self._time_diff_ref_stop = value
+        self.gate_ref_stop_vch = self.delayed_channel(self._hist['trigger_channel'], int(value * 1e3))
+        self.gated_ref_vch = self.gated_channel(signal_channel=1,
+                                                gate_start_channel=self.gate_ref_start_vch.getChannel(),
+                                                gate_stop_channel=self.gate_ref_stop_vch.getChannel())
 
     @property
     def delay_diff_start(self):
@@ -135,7 +157,10 @@ class TT(Base):
             Exception(f"\nCheck if the TimeTagger device is being used by another instance.")
 
 
-        self._constraints = {'hist':self._hist, 'corr':self._corr, 'counter': self._counter, 'time_differences': self._time_differences}
+        self._constraints = {'hist':self._hist, 
+                             'corr':self._corr, 
+                             'counter': self._counter, 
+                             'time_differences': self._time_differences}
 
         # set specified in the params.yaml channels params
         for channel, params in self._channels_params.items():
@@ -146,11 +171,19 @@ class TT(Base):
                 self.tagger.setTriggerLevel(channel, params['trigger_level'])
 
         if self._hist != {}:
-            self.gate_start_vch = self.delayed_channel(self._hist['trigger_channel'], 0)
-            self.gate_stop_vch = self.delayed_channel(self._hist['trigger_channel'], 0)
+            # Virtual channels for signal gating
+            self.gate_start_vch = self.delayed_channel(self._hist['trigger_channel'], int(self.time_diff_sum_start * 1e3))
+            self.gate_stop_vch = self.delayed_channel(self._hist['trigger_channel'], int(self.time_diff_sum_stop * 1e3))
             self.gated_vch = self.gated_channel(signal_channel = 1, 
                                             gate_start_channel = self.gate_start_vch.getChannel(),
-                                                gate_stop_channel = self.gate_stop_vch.getChannel())
+                                            gate_stop_channel = self.gate_stop_vch.getChannel())
+            
+            # Virtual channels for reference gating
+            self.gate_ref_start_vch = self.delayed_channel(self._hist['trigger_channel'], int(self.time_diff_ref_start * 1e3))
+            self.gate_ref_stop_vch = self.delayed_channel(self._hist['trigger_channel'], int(self.time_diff_ref_stop * 1e3))
+            self.gated_ref_vch = self.gated_channel(signal_channel=1,
+                                                   gate_start_channel=self.gate_ref_start_vch.getChannel(),
+                                                   gate_stop_channel=self.gate_ref_stop_vch.getChannel())
         
         # if self.set_conditional_filter:
         #     self.tagger.setConditionalFilter(trigger=self._hist["channels"],

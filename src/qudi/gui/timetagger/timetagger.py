@@ -36,7 +36,6 @@ class TTWindow(QtWidgets.QMainWindow):
 class TTGui(GuiBase):
     """
     Main GUI for the Timetagger module implementing Counting, Autocorrelation, and histogram functions.
-
     """
     
     # declare connectors
@@ -48,6 +47,7 @@ class TTGui(GuiBase):
     sigToggleHist = QtCore.Signal(object)
     sigToggleTimeDiff = QtCore.Signal(object)
     sigSetTimeDiffRanges = QtCore.Signal(float, float)
+    sigSetTimeDiffRefRanges = QtCore.Signal(float, float)
     sigToggleDump = QtCore.Signal(bool, str, str)
 
     # --- Status Variables ---
@@ -65,6 +65,10 @@ class TTGui(GuiBase):
     _time_diff_num_histograms = StatusVar('time_diff_num_histograms', default=100)
     _time_diff_start_ns = StatusVar('time_diff_start_ns', default=0)
     _time_diff_stop_ns = StatusVar('time_diff_stop_ns', default=100)
+    _time_diff_ref_start_ns = StatusVar('time_diff_ref_start_ns', default=120)
+    _time_diff_ref_stop_ns = StatusVar('time_diff_ref_stop_ns', default=220)
+    _time_diff_use_ref = StatusVar('time_diff_use_ref', default=False)
+
 
     _save_folderpath = StatusVar('save_folder_path', default='Default')
     save_folderpath = StatusVar('save_folderpath', default='')
@@ -135,7 +139,7 @@ class TTGui(GuiBase):
 
         self._time_diff_pw = self._mw.timeDiffGraphicsView
         self._time_diff_pw.setLabel('bottom', 'Histogram Number', units='#')
-        self._time_diff_pw.setLabel('left', 'Counts', units='arb.')
+        self._time_diff_pw.setLabel('left', 'Counts (Signal/Ref. Mean)', units='arb.')
         
         # Define colors for plots
         color = [pg.mkColor(c) for c in ['#115f9a', '#991f17', '#76c68f', '#ffb400', '#e27c7c', '#9080ff']]
@@ -189,8 +193,14 @@ class TTGui(GuiBase):
         # --- Time Difference Range Selectors ---
         self.time_diff_start_line = pg.InfiniteLine(pos=self._time_diff_start_ns / 1e9, angle=90, movable=True, pen='g')
         self.time_diff_stop_line = pg.InfiniteLine(pos=self._time_diff_stop_ns / 1e9, angle=90, movable=True, pen='r')
+        self.time_diff_ref_start_line = pg.InfiniteLine(pos=self._time_diff_ref_start_ns / 1e9, angle=90, movable=True, pen=pg.mkPen('b', style=QtCore.Qt.DashLine))
+        self.time_diff_ref_stop_line = pg.InfiniteLine(pos=self._time_diff_ref_stop_ns / 1e9, angle=90, movable=True, pen=pg.mkPen('b', style=QtCore.Qt.DashLine))
+
         self._time_diff_raw_pw.addItem(self.time_diff_start_line)
         self._time_diff_raw_pw.addItem(self.time_diff_stop_line)
+        self._time_diff_raw_pw.addItem(self.time_diff_ref_start_line)
+        self._time_diff_raw_pw.addItem(self.time_diff_ref_stop_line)
+
 
         # --- Connecting signals and slots ---
         # Counter
@@ -223,18 +233,30 @@ class TTGui(GuiBase):
 
         # Time Difference
         self._mw.toggleTimeDiffPushButton.toggled.connect(self.update_time_diff)
+        self._mw.timeDiffUseRefCheckBox.toggled.connect(self.update_time_diff)
         self._mw.timeDiffBinWidthDoubleSpinBox.setValue(self._time_diff_bin_width)
         self._mw.timeDiffRecordLengthDoubleSpinBox.setValue(self._time_diff_record_length)
         self._mw.timeDiffNumHistSpinBox.setValue(self._time_diff_num_histograms)
         self._mw.timeDiffStartDoubleSpinBox.setValue(self._time_diff_start_ns)
         self._mw.timeDiffStopDoubleSpinBox.setValue(self._time_diff_stop_ns)
+        self._mw.timeDiffRefStartDoubleSpinBox.setValue(self._time_diff_ref_start_ns)
+        self._mw.timeDiffRefStopDoubleSpinBox.setValue(self._time_diff_ref_stop_ns)
+        self._mw.timeDiffUseRefCheckBox.setChecked(self._time_diff_use_ref)
+
         self.sigToggleTimeDiff.connect(self._timetaggerlogic.configure_time_diff, QtCore.Qt.QueuedConnection)
         self.sigSetTimeDiffRanges.connect(self._timetaggerlogic.set_time_diff_ranges, QtCore.Qt.QueuedConnection)
+        self.sigSetTimeDiffRefRanges.connect(self._timetaggerlogic.set_time_diff_ref_ranges, QtCore.Qt.QueuedConnection)
         self._timetaggerlogic.sigTimeDiffDataChanged.connect(self.update_time_diff_data, QtCore.Qt.QueuedConnection)
+        
         self.time_diff_start_line.sigPositionChanged.connect(self.time_diff_range_line_moved)
         self.time_diff_stop_line.sigPositionChanged.connect(self.time_diff_range_line_moved)
+        self.time_diff_ref_start_line.sigPositionChanged.connect(self.time_diff_ref_range_line_moved)
+        self.time_diff_ref_stop_line.sigPositionChanged.connect(self.time_diff_ref_range_line_moved)
+        
         self._mw.timeDiffStartDoubleSpinBox.valueChanged.connect(self.time_diff_range_spinbox_changed)
         self._mw.timeDiffStopDoubleSpinBox.valueChanged.connect(self.time_diff_range_spinbox_changed)
+        self._mw.timeDiffRefStartDoubleSpinBox.valueChanged.connect(self.time_diff_ref_range_spinbox_changed)
+        self._mw.timeDiffRefStopDoubleSpinBox.valueChanged.connect(self.time_diff_ref_range_spinbox_changed)
 
         # Data Dumping
         self.sigToggleDump.connect(self._timetaggerlogic.dump_data, QtCore.Qt.QueuedConnection)
@@ -248,7 +270,6 @@ class TTGui(GuiBase):
         self._mw.currPathLabel.setText(self._save_folderpath)
         self._mw.DailyPathPushButton.clicked.connect(self._daily_path_clicked)
         self._mw.newPathPushButton.clicked.connect(self._new_path_clicked)
-        self._mw.counter_checkBox.setChecked(True)
     
     def show(self):
         """Make window visible and put it above all other windows."""
@@ -317,11 +338,13 @@ class TTGui(GuiBase):
         self._time_diff_bin_width = self._mw.timeDiffBinWidthDoubleSpinBox.value()
         self._time_diff_record_length = self._mw.timeDiffRecordLengthDoubleSpinBox.value()
         self._time_diff_num_histograms = self._mw.timeDiffNumHistSpinBox.value()
+        self._time_diff_use_ref = self._mw.timeDiffUseRefCheckBox.isChecked()
+        
         click_ch_text = self._mw.timeDiffChannelComboBox.currentText()
         if not click_ch_text: return
             
         toggle = self._mw.toggleTimeDiffPushButton.isChecked()
-        signal_data = {'time_diff': (self._time_diff_bin_width, self._time_diff_record_length, int(click_ch_text), self._time_diff_num_histograms, toggle)}
+        signal_data = {'time_diff': (self._time_diff_bin_width, self._time_diff_record_length, int(click_ch_text), self._time_diff_num_histograms, toggle, self._time_diff_use_ref)}
         self.sigToggleTimeDiff.emit(signal_data)
 
     def update_time_diff_data(self, data):
@@ -361,6 +384,35 @@ class TTGui(GuiBase):
 
         self.sigSetTimeDiffRanges.emit(self._time_diff_start_ns, self._time_diff_stop_ns)
 
+    def time_diff_ref_range_line_moved(self):
+        start_val_s = self.time_diff_ref_start_line.value()
+        stop_val_s = self.time_diff_ref_stop_line.value()
+        
+        self._time_diff_ref_start_ns = start_val_s * 1e9
+        self._time_diff_ref_stop_ns = stop_val_s * 1e9
+
+        self._mw.timeDiffRefStartDoubleSpinBox.blockSignals(True)
+        self._mw.timeDiffRefStopDoubleSpinBox.blockSignals(True)
+        self._mw.timeDiffRefStartDoubleSpinBox.setValue(self._time_diff_ref_start_ns)
+        self._mw.timeDiffRefStopDoubleSpinBox.setValue(self._time_diff_ref_stop_ns)
+        self._mw.timeDiffRefStartDoubleSpinBox.blockSignals(False)
+        self._mw.timeDiffRefStopDoubleSpinBox.blockSignals(False)
+
+        self.sigSetTimeDiffRefRanges.emit(self._time_diff_ref_start_ns, self._time_diff_ref_stop_ns)
+        
+    def time_diff_ref_range_spinbox_changed(self):
+        self._time_diff_ref_start_ns = self._mw.timeDiffRefStartDoubleSpinBox.value()
+        self._time_diff_ref_stop_ns = self._mw.timeDiffRefStopDoubleSpinBox.value()
+        
+        self.time_diff_ref_start_line.blockSignals(True)
+        self.time_diff_ref_stop_line.blockSignals(True)
+        self.time_diff_ref_start_line.setValue(self._time_diff_ref_start_ns / 1e9)
+        self.time_diff_ref_stop_line.setValue(self._time_diff_ref_stop_ns / 1e9)
+        self.time_diff_ref_start_line.blockSignals(False)
+        self.time_diff_ref_stop_line.blockSignals(False)
+
+        self.sigSetTimeDiffRefRanges.emit(self._time_diff_ref_start_ns, self._time_diff_ref_stop_ns)
+
     def _new_path_clicked(self):
         new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, 'Select Folder')
         if new_path:
@@ -393,11 +445,21 @@ class TTGui(GuiBase):
                 self.log.warning("Set the dump path.")
 
     def _save_data_clicked(self):
-        save_type = next((st for st, cb in {
-            'counter': self._mw.counter_checkBox, 
-            'corr': self._mw.corr_checkBox, 
-            'hist': self._mw.hist_checkBox
-        }.items() if cb.isChecked()), None)
+        save_type = None
+        if self._mw.counter_checkBox.isChecked():
+            save_type = 'counter'
+        elif self._mw.corr_checkBox.isChecked():
+            save_type = 'corr'
+        elif self._mw.hist_checkBox.isChecked():
+            save_type = 'hist'
+        elif self._mw.time_diff_checkBox.isChecked():
+            save_type = 'time_diff'
+        elif self._mw.time_diff_raw_checkBox.isChecked():
+            save_type = 'time_diff_raw'
+
+        if save_type is None:
+            self.log.warning("No data type selected for saving.")
+            return
 
         if self._mw.newPathPushButton.isChecked() and self._mw.newPathPushButton.isEnabled():
             self._mw.currPathLabel.setText(self._save_folderpath)

@@ -107,6 +107,11 @@ class TimeTaggerLogic(LogicBase):
         self.time_diff_params = self._timetagger._time_differences
         self.time_diff_sum_start = self._timetagger.time_diff_sum_start  # ns
         self.time_diff_sum_stop = self._timetagger.time_diff_sum_stop # ns
+        
+        self.time_diff_ref_start = self._timetagger.time_diff_ref_start # ns
+        self.time_diff_ref_stop = self._timetagger.time_diff_ref_stop # ns
+        self.time_diff_use_ref = False
+
         self.dump_channels = [1,2,3, 5, 8, 6]
         self._recorded_data = None
         self.trace_data = None
@@ -115,7 +120,7 @@ class TimeTaggerLogic(LogicBase):
         self.time_diff_data = None
         self.time_diff_data_raw = None
 
-        self.metadata = {'counter':None, 'hist':None, 'corr':None, 'time_diff':None}
+        self.metadata = {'counter':None, 'hist':None, 'corr':None, 'time_diff':None, 'time_diff_raw':None}
     
     def on_deactivate(self):
         self._fit_config = self._fit_config_model.dump_configs()
@@ -192,7 +197,7 @@ class TimeTaggerLogic(LogicBase):
                 self.hist = None
 
     def configure_time_diff(self, data):
-        self.time_diff_bin_width, self.time_diff_record_length, self.time_diff_click_channel, self.time_diff_num_histograms, self.time_diff_toggled = data['time_diff']
+        self.time_diff_bin_width, self.time_diff_record_length, self.time_diff_click_channel, self.time_diff_num_histograms, self.time_diff_toggled, self.time_diff_use_ref = data['time_diff']
         
         with self.threadlock:
             if self.time_diff_toggled:
@@ -216,8 +221,19 @@ class TimeTaggerLogic(LogicBase):
                              'Bin Width': int(self.time_diff_bin_width)/1e12, 
                              'Number of Bins': number_of_bins, 
                              'Number of Histograms': self.time_diff_num_histograms,
-                             'Units': [(self.time_diff_click_channel,'Counts')]}
+                             'Use Reference': self.time_diff_use_ref,
+                             'Units': [('Counts','arb.')]}
                 self.metadata.update([['time_diff', meta_dict]])
+                
+                meta_dict_raw = {'Click Channel': self.time_diff_click_channel, 
+                                 'Start Channel': start_channel, 
+                                 'Next Channel': next_channel,
+                                 'Bin Width': int(self.time_diff_bin_width)/1e12, 
+                                 'Number of Bins': number_of_bins, 
+                                 'Number of Histograms': self.time_diff_num_histograms,
+                                 'Units': [('Events','arb.')]}
+                self.metadata.update([['time_diff_raw', meta_dict_raw]])
+
                 self._time_diff_poll_timer.start()
             else:
                 self._time_diff_poll_timer.stop()
@@ -229,6 +245,13 @@ class TimeTaggerLogic(LogicBase):
         with self.threadlock:
             self.time_diff_sum_start = self._timetagger.time_diff_sum_start = start_ns
             self.time_diff_sum_stop = self._timetagger.time_diff_sum_stop = stop_ns
+            
+    @QtCore.Slot(float, float)
+    def set_time_diff_ref_ranges(self, start_ns, stop_ns):
+        """Set the start and stop time for the time_diff reference data."""
+        with self.threadlock:
+            self.time_diff_ref_start = self._timetagger.time_diff_ref_start = start_ns
+            self.time_diff_ref_stop = self._timetagger.time_diff_ref_stop = stop_ns
 
     def acquire_data_block(self):
         """
@@ -302,20 +325,42 @@ class TimeTaggerLogic(LogicBase):
             if raw_data_2d.ndim < 2:
                 self.time_diff_data = (np.array([]), np.array([]))
             else:
+                # Signal window
                 start_ps = self.time_diff_sum_start * 1000
                 stop_ps = self.time_diff_sum_stop * 1000
-
                 idx_start = np.searchsorted(time_index_ps, start_ps, side='left')
                 idx_stop = np.searchsorted(time_index_ps, stop_ps, side='right')
                 
                 if idx_start >= raw_data_2d.shape[1]:
-                    summed_counts = np.zeros(raw_data_2d.shape[0])
+                    processed_counts = np.zeros(raw_data_2d.shape[0])
                 else:
                     idx_stop = min(idx_stop, raw_data_2d.shape[1])
-                    summed_counts = np.sum(raw_data_2d[:, idx_start:idx_stop], axis=1)
+                    signal_counts = np.sum(raw_data_2d[:, idx_start:idx_stop], axis=1)
 
-                processed_x_axis = np.arange(summed_counts.shape[0])
-                self.time_diff_data = (processed_x_axis, np.nan_to_num(summed_counts))
+                    if self.time_diff_use_ref:
+                        # Reference window
+                        ref_start_ps = self.time_diff_ref_start * 1000
+                        ref_stop_ps = self.time_diff_ref_stop * 1000
+                        idx_ref_start = np.searchsorted(time_index_ps, ref_start_ps, side='left')
+                        idx_ref_stop = np.searchsorted(time_index_ps, ref_stop_ps, side='right')
+                        
+                        idx_ref_stop = min(idx_ref_stop, raw_data_2d.shape[1])
+                        ref_counts_in_window = np.sum(raw_data_2d[:, idx_ref_start:idx_ref_stop], axis=1)
+                        
+                        # Calculate the mean of the reference counts over all histograms
+                        mean_ref_counts = np.mean(ref_counts_in_window)
+                        
+                        # Divide signal by mean reference, handle division by zero
+                        if mean_ref_counts > 0:
+                            processed_counts = signal_counts / mean_ref_counts
+                        else:
+                            processed_counts = np.zeros_like(signal_counts, dtype=float)
+                    else:
+                        # If not using reference, just use the raw signal counts
+                        processed_counts = signal_counts
+
+                processed_x_axis = np.arange(processed_counts.shape[0])
+                self.time_diff_data = (processed_x_axis, np.nan_to_num(processed_counts))
 
             self.sigTimeDiffDataChanged.emit({
                 'time_diff_data': self.time_diff_data, 
@@ -352,70 +397,97 @@ class TimeTaggerLogic(LogicBase):
         """ Save the data and writes it to a file.
         """
         if save_type is None:
-            save_type='counter'
+            self.log.error('No save type selected.')
+            return
             
-        data_to_save = {'counter': self.trace_data, 'corr': self.corr_data, 'hist': self.hist_data, 'time_diff': self.time_diff_data}.get(save_type)
+        data_to_save = {'counter': self.trace_data, 'corr': self.corr_data, 'hist': self.hist_data, 'time_diff': self.time_diff_data, 'time_diff_raw': self.time_diff_data_raw}.get(save_type)
         
         if data_to_save is None:
             self.log.error(f'No data for type "{save_type}" has been recorded. Save to file failed.')
             return
         
-        if save_type == 'counter':
-            if not data_to_save: 
-                self.log.error('No counter data recorded. Save to file failed.')
-                return
-            data_arr = np.array([np.nan_to_num(data_to_save[ch][1]) for ch in self.toggled_channels])
-        else:
-            data_arr = np.array([data_to_save[1]])
-
-        if data_arr.size == 0:
-            self.log.error('No data has been recorded. Save to file failed.')
-            return
-        
-        parameters = self.metadata[save_type]
-        if parameters is None:
-            self.log.error(f"Metadata for '{save_type}' not found. Cannot save.")
-            return
-
         if to_file:
+            parameters = self.metadata[save_type]
+            if parameters is None:
+                self.log.error(f"Metadata for '{save_type}' not found. Cannot save.")
+                return
+
+            if save_type == 'counter':
+                if not self.toggled_channels:
+                    self.log.error("No counter channels are active. Cannot save.")
+                    return
+                # Get x_data from the first toggled channel (it's the same for all)
+                x_data = data_to_save[self.toggled_channels[0]][0]
+                # Get all y_data series
+                y_data_list = [np.nan_to_num(data_to_save[ch][1]) for ch in self.toggled_channels]
+                # Combine for saving: x column followed by all y columns
+                data_to_store_in_file = np.vstack([x_data] + y_data_list).transpose()
+                
+                header = ['Time (s)'] + [f'{ch} ({unit})' for ch, unit in parameters['Units']]
+                column_formats = ['.8f'] * (len(self.toggled_channels) + 1)
+                y_data_for_plot = y_data_list[0] # Just plot the first channel for the figure
+                x_label = 'Time (s)'
+            else: # For all other data types (corr, hist, time_diff, time_diff_raw)
+                x_data = data_to_save[0]
+                y_data = np.nan_to_num(data_to_save[1])
+                # Combine for saving: x column and y column
+                data_to_store_in_file = np.vstack((x_data, y_data)).transpose()
+
+                header = ['Time (s)'] + [f'{ch} ({unit})' for ch, unit in parameters['Units']]
+                if save_type == 'time_diff':
+                    header[0] = 'Histogram Number' # Special case for time_diff x-axis label
+                
+                column_formats = ['.8f'] * 2
+                y_data_for_plot = y_data
+                x_label = header[0]
+
+            if data_to_store_in_file.size == 0:
+                self.log.error('No data has been recorded. Save to file failed.')
+                return
+
             filelabel = f'{save_type}_data_trace_{name_tag}' if name_tag else f'{save_type}_data_trace'
-            header = [f'{ch} ({unit})' for ch, unit in parameters['Units']]
-            data = data_arr.transpose()
             filepath = save_path if save_path != 'Default' else self.module_default_data_dir 
             y_unit = parameters['Units'][0][1]
-            data_rate = 1 / parameters['Bin Width']
 
-            fig = self._draw_figure(data_arr, data_rate, y_unit) if save_figure else None
+            fig = self._draw_figure(x_data, y_data_for_plot, y_unit, x_label) if save_figure else None
             
             data_storage = TextDataStorage(root_dir=filepath,
                                comments='# ', 
                                delimiter='\t',
                                file_extension='.dat',
-                               column_formats=['.8f'] * len(parameters['Units']),
+                               column_formats=column_formats,
                                include_global_metadata=True,
                                image_format=ImageFormat.PNG)
 
-            file_path, _, _ = data_storage.save_data(data, 
+            file_path, _, _ = data_storage.save_data(data_to_store_in_file, 
                                                      timestamp=dt.datetime.now(), 
                                                      metadata=parameters, 
                                                      notes='',
                                                      nametag=filelabel,
                                                      column_headers=header,
-                                                     column_dtypes=[float] * len(parameters['Units']))
+                                                     column_dtypes=[float] * len(header))
             if fig:
                 data_storage.save_thumbnail(fig, file_path.rsplit('.', 1)[0])
             self.log.info(f'Time series saved to: {file_path}')
 
-    def _draw_figure(self, data, timebase, y_unit):
+    def _draw_figure(self, x_data, y_data, y_unit, x_label):
         """ Draw figure to save with data file.
         """
-        max_abs_value = ScaledFloat(max(data.max(), np.abs(data.min())))
-        time_data = np.arange(data.shape[1]) / timebase
+        if y_data.ndim > 1 and y_data.shape[0] > 1:
+            y_data_to_plot = y_data[0,:] # Just plot the first trace if multiple exist
+        else:
+            y_data_to_plot = y_data.flatten()
+
+        if y_data_to_plot.size == 0:
+            return None
+            
+        max_abs_value = ScaledFloat(max(y_data_to_plot.max(), np.abs(y_data_to_plot.min())))
         fig, ax = plt.subplots()
-        scaled_data = data.transpose() / max_abs_value.scale_val if max_abs_value.scale else data.transpose()
-        ax.plot(time_data, scaled_data, linestyle='-', linewidth=1)
-        ax.set_xlabel('Time (s)')
+        scaled_data = y_data_to_plot / max_abs_value.scale_val if max_abs_value.scale else y_data_to_plot
+        ax.plot(x_data, scaled_data, linestyle='-', linewidth=1)
+        ax.set_xlabel(x_label)
         ax.set_ylabel(f'Signal ({max_abs_value.scale}{y_unit})')
+        plt.tight_layout()
         return fig
     
     ################
