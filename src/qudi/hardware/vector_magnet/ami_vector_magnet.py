@@ -216,8 +216,8 @@ class Magnet3D(Base):
         if self._abortRampLoop:
             self.pause_ramp()
             return 
-        ramping_state = self.get_ramping_state()
-        if ramping_state == [2,2,2]: # might be a problem with pause?
+        self.ramping_state = self.get_ramping_state()
+        if self.ramping_state == [2,2,2]: # might be a problem with pause?
             self._abortRampLoop = True
             if self.enter_persistent:
                 if self.debug:
