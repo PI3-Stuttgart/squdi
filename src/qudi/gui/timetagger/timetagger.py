@@ -231,21 +231,26 @@ class TTGui(GuiBase):
         self.sigToggleHist.connect(self._timetaggerlogic.configure_hist, QtCore.Qt.QueuedConnection)
         self._timetaggerlogic.sigHistDataChanged.connect(self.update_hist_data, QtCore.Qt.QueuedConnection)
 
-        # Time Difference
-        self._mw.toggleTimeDiffPushButton.toggled.connect(self.update_time_diff)
-        self._mw.timeDiffUseRefCheckBox.toggled.connect(self.update_time_diff)
-        self._mw.timeDiffBinWidthDoubleSpinBox.setValue(self._time_diff_bin_width)
-        self._mw.timeDiffRecordLengthDoubleSpinBox.setValue(self._time_diff_record_length)
-        self._mw.timeDiffNumHistSpinBox.setValue(self._time_diff_num_histograms)
+        # Connect widget signals directly to the property setters
+        self._mw.timeDiffBinWidthDoubleSpinBox.valueChanged.connect(lambda value: setattr(self, 'time_diff_bin_width', value))
+        self._mw.timeDiffRecordLengthDoubleSpinBox.valueChanged.connect(lambda value: setattr(self, 'time_diff_record_length', value))
+        self._mw.timeDiffNumHistSpinBox.valueChanged.connect(lambda value: setattr(self, 'time_diff_num_histograms', value))
+        self._mw.timeDiffUseRefCheckBox.toggled.connect(lambda checked: setattr(self, 'time_diff_use_ref', checked))
+        
+        # Initialize widget values from StatusVar using the new properties/setters
+        self.time_diff_bin_width = self._time_diff_bin_width
+        self.time_diff_record_length = self._time_diff_record_length
+        self.time_diff_num_histograms = self._time_diff_num_histograms
+        self.time_diff_use_ref = self._time_diff_use_ref
+
+        # The rest of the original connections remain
         self._mw.timeDiffStartDoubleSpinBox.setValue(self._time_diff_start_ns)
         self._mw.timeDiffStopDoubleSpinBox.setValue(self._time_diff_stop_ns)
         self._mw.timeDiffRefStartDoubleSpinBox.setValue(self._time_diff_ref_start_ns)
         self._mw.timeDiffRefStopDoubleSpinBox.setValue(self._time_diff_ref_stop_ns)
-        self._mw.timeDiffUseRefCheckBox.setChecked(self._time_diff_use_ref)
 
         self.sigToggleTimeDiff.connect(self._timetaggerlogic.configure_time_diff, QtCore.Qt.QueuedConnection)
         self.sigSetTimeDiffRanges.connect(self._timetaggerlogic.set_time_diff_ranges, QtCore.Qt.QueuedConnection)
-        self.sigSetTimeDiffRefRanges.connect(self._timetaggerlogic.set_time_diff_ref_ranges, QtCore.Qt.QueuedConnection)
         self._timetaggerlogic.sigTimeDiffDataChanged.connect(self.update_time_diff_data, QtCore.Qt.QueuedConnection)
         
         self.time_diff_start_line.sigPositionChanged.connect(self.time_diff_range_line_moved)
@@ -271,6 +276,9 @@ class TTGui(GuiBase):
         self._mw.DailyPathPushButton.clicked.connect(self._daily_path_clicked)
         self._mw.newPathPushButton.clicked.connect(self._new_path_clicked)
     
+    
+
+
     def show(self):
         """Make window visible and put it above all other windows."""
         QtWidgets.QMainWindow.show(self._mw)
@@ -335,10 +343,6 @@ class TTGui(GuiBase):
         self.curves['hist'].setData(y=y_arr, x=x_arr)
 
     def update_time_diff(self):
-        self._time_diff_bin_width = self._mw.timeDiffBinWidthDoubleSpinBox.value()
-        self._time_diff_record_length = self._mw.timeDiffRecordLengthDoubleSpinBox.value()
-        self._time_diff_num_histograms = self._mw.timeDiffNumHistSpinBox.value()
-        self._time_diff_use_ref = self._mw.timeDiffUseRefCheckBox.isChecked()
         
         click_ch_text = self._mw.timeDiffChannelComboBox.currentText()
         if not click_ch_text: return
@@ -487,3 +491,47 @@ class TTGui(GuiBase):
 
     def __disconnect_fit_control_signals(self):
         self.fit_widget.sigDoFit.disconnect()
+
+    @property
+    def time_diff_bin_width(self):
+        return self._time_diff_bin_width
+
+    @time_diff_bin_width.setter
+    def time_diff_bin_width(self, value):
+        self._time_diff_bin_width = value
+        self._mw.timeDiffBinWidthDoubleSpinBox.blockSignals(True)
+        self._mw.timeDiffBinWidthDoubleSpinBox.setValue(value)
+        self._mw.timeDiffBinWidthDoubleSpinBox.blockSignals(False)
+
+    @property
+    def time_diff_record_length(self):
+        return self._time_diff_record_length
+
+    @time_diff_record_length.setter
+    def time_diff_record_length(self, value):
+        self._time_diff_record_length = value
+        self._mw.timeDiffRecordLengthDoubleSpinBox.blockSignals(True)
+        self._mw.timeDiffRecordLengthDoubleSpinBox.setValue(value)
+        self._mw.timeDiffRecordLengthDoubleSpinBox.blockSignals(False)
+
+    @property
+    def time_diff_num_histograms(self):
+        return self._time_diff_num_histograms
+
+    @time_diff_num_histograms.setter
+    def time_diff_num_histograms(self, value):
+        self._time_diff_num_histograms = value
+        self._mw.timeDiffNumHistSpinBox.blockSignals(True)
+        self._mw.timeDiffNumHistSpinBox.setValue(value)
+        self._mw.timeDiffNumHistSpinBox.blockSignals(False)
+
+    @property
+    def time_diff_use_ref(self):
+        return self._time_diff_use_ref
+
+    @time_diff_use_ref.setter
+    def time_diff_use_ref(self, checked):
+        self._time_diff_use_ref = checked
+        self._mw.timeDiffUseRefCheckBox.blockSignals(True)
+        self._mw.timeDiffUseRefCheckBox.setChecked(checked)
+        self._mw.timeDiffUseRefCheckBox.blockSignals(False)
