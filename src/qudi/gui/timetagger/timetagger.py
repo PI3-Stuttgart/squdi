@@ -230,7 +230,9 @@ class TTGui(GuiBase):
         self._mw.histRecordLengthDoubleSpinBox.setValue(self._hist_record_length)
         self.sigToggleHist.connect(self._timetaggerlogic.configure_hist, QtCore.Qt.QueuedConnection)
         self._timetaggerlogic.sigHistDataChanged.connect(self.update_hist_data, QtCore.Qt.QueuedConnection)
-
+        self._mw.toggleTimeDiffPushButton.toggled.connect(self.update_time_diff)
+        self._mw.timeDiffUseRefCheckBox.toggled.connect(self.update_time_diff)
+        
         # Connect widget signals directly to the property setters
         self._mw.timeDiffBinWidthDoubleSpinBox.valueChanged.connect(lambda value: setattr(self, 'time_diff_bin_width', value))
         self._mw.timeDiffRecordLengthDoubleSpinBox.valueChanged.connect(lambda value: setattr(self, 'time_diff_record_length', value))
