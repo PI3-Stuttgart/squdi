@@ -97,6 +97,7 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
     pulsed = True
     _reference_cbm = None  # reference cbm for the gated time tagger
     use_ref = True
+    do_SSR = False
     # Hardcoded data type
     __data_type = np.float64
 
@@ -511,7 +512,10 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                     if self.use_ref:
                         ref_mean = self._reference_cbm.getData()
                         data_cbm = data_cbm - ref_mean
-                        
+                    if self.do_SSR:
+                        # SSR is the sum of the counts in the time tagger
+                        data_cbm = np.sum(data_cbm, axis=0)
+
                     di_data[num] = data_cbm
                    
                     data[di_channel] = di_data[num] * self.sample_rate  # To go to c/s # TODO What if unit not c/s
