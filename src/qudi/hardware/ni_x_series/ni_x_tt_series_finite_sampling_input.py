@@ -510,7 +510,7 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                 for num, di_channel in enumerate(self.__active_channels['di_channels']):
                     data_cbm = self._timetagger_tasks[num].getData()
                     if self.use_ref:
-                        ref_mean = self._reference_cbm.getData()
+                        ref_mean = self._reference_cbm.getData().mean()
                         data_cbm = data_cbm - ref_mean
                     if self.do_SSR:
                         # SSR is the sum of the counts in the time tagger

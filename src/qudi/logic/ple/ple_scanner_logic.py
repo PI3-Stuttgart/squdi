@@ -421,9 +421,9 @@ class PLEScannerLogic(ScanningProbeLogic):
                 return 0
 
             scan_axes = tuple(scan_axes)
-
+            
             self.module_state.lock()
-            print("test_1")
+            
             settings = {
                 "axes": scan_axes,
                 "range": tuple(self._scan_ranges[ax] for ax in scan_axes),
@@ -432,7 +432,7 @@ class PLEScannerLogic(ScanningProbeLogic):
                 "lines_to_scan": self._number_of_repeats,
             }
             fail, new_settings = self._scanner().configure_scan(settings)
-            print(fail)
+            
             if fail:
                 self.module_state.unlock()
                 self.stop_scan()
@@ -450,7 +450,7 @@ class PLEScannerLogic(ScanningProbeLogic):
             self.__scan_poll_timer.setInterval(
                 int(round(self._scan_poll_interval))
             )  # * 1000)))
-            print("test_2")
+            
             if (
                 self._scanner().start_scan() < 0
             ):  # TODO Current interface states that bool is returned from start_scan
@@ -458,9 +458,9 @@ class PLEScannerLogic(ScanningProbeLogic):
                 self.module_state.unlock()
                 self.sigScanStateChanged.emit(False, None, self._curr_caller_id)
                 return -1
-            print("test_3")
+            
             self.sigScanStateChanged.emit(True, self.scan_data, self._curr_caller_id)
-            print("test_3")
+            
             self.__start_timer()
             return 0
 
