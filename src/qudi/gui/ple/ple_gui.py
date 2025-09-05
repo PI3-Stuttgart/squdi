@@ -966,26 +966,50 @@ class PLEScanGui(GuiBase):
         """
         @param ScanData scan_data:
         """
-
         self._mw.ple_widget.set_scan_data(scan_data.data, scan_data)
 
         if scan_data.accumulated is not None:
             self._mw.matrix_widget.set_scan_data(scan_data.accumulated, scan_data)
             averaged_data = {}
+
             for channel, data in scan_data.accumulated.items():
+                # Drop rows that are entirely zero
                 data_new = data[~np.all(data == 0, axis=1)]
-                if data_new.size > 1:
-                    last_row = data_new[-1, :]
-                    mask = np.ones_like(
-                        data_new, dtype=bool
-                    )  # Initialize a full True mask
-                    mask[-1, :] = last_row != 0
-                    averaged_data[channel] = np.sum(mask * data_new, axis=0) / np.sum(
-                        mask, axis=0
-                    )
+
+                n_rows = data_new.shape[0]
+                n_cols = data.shape[1] if data.ndim == 2 else 1
+
+                if n_rows == 0:
+                    # Nothing left after filtering -> no average possible
+                    averaged = np.full(n_cols, np.nan, dtype=float)
+
+                elif n_rows == 1:
+                    # With one row, keep its values except treat zeros as missing (NaN),
+                    # matching the original "ignore zeros in the last row" behavior.
+                    last_row = data_new[0].astype(float)
+                    keep = last_row != 0
+                    averaged = np.where(keep, last_row, np.nan)
+
                 else:
-                    averaged_data[channel] = data.mean(axis=0)
+                    # Build mask: include all rows, but ignore zeros in the last row only
+                    last_row = data_new[-1, :]
+                    mask = np.ones_like(data_new, dtype=bool)
+                    mask[-1, :] = last_row != 0
+
+                    counts = mask.sum(axis=0)                        # per-column counts
+                    sums = (mask * data_new).sum(axis=0).astype(float)
+
+                    # Safe division: fill NaN where counts == 0 (prevents RuntimeWarning)
+                    averaged = np.divide(
+                        sums, counts,
+                        out=np.full_like(sums, np.nan, dtype=float),
+                        where=counts > 0
+                    )
+
+                averaged_data[channel] = averaged
+
             self._mw.ple_averaged_widget.set_scan_data(averaged_data, scan_data)
+
 
     @QtCore.Slot(object)
     def _update_accumulated_scan(self, accumulated_data, scan_data):

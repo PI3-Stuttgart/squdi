@@ -58,6 +58,9 @@ class PLEScannerLogic(ScanningProbeLogic):
     _wavemeter = Connector(
         name="wavemeter", interface="HighFinesseWavemeter", optional=True
     )  # FIX it to make more generatal and talk to the Wavemeter interfafce
+    _switch = Connector(
+        name="switch", interface="SwitchLogic", optional=True
+    )  # FIX it to make more generatal and talk to the Wavemeter interfafce
     _calibration_factor = 1  # calibrate the wavelength
     _wavelength_range = [0, 0]
 
@@ -411,7 +414,7 @@ class PLEScannerLogic(ScanningProbeLogic):
     def start_scan(self, scan_axes, caller_id=None):
         self._curr_caller_id = self.module_uuid if caller_id is None else caller_id
         self.display_repeated = self._repeated
-
+        
         with self._thread_lock:
 
             if self.module_state() != "idle":
