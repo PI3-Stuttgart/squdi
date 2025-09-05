@@ -65,9 +65,9 @@ def go_to_ple_target(target):
 ple_gui._fit_averaged = False
 
 
-BASE_FOLDER = r'Z:\Vlad\heavyIV\202-2-ARed\CPW-V\B_large4'
-B_AMPLITUDE = 0.8  # Tesla
-NUM_STEPS = 10     # Number of points
+BASE_FOLDER = r'Z:\Vlad\heavyIV\202-2-ARed\CPW-V\B_large5'
+B_AMPLITUDE = 0.2  # Tesla
+NUM_STEPS = 50     # Number of points
 Bx_offset = 0
 
 # Parameters for the small-angle arc sweep
@@ -265,6 +265,9 @@ def run_planar_sweep(plane_name: str, field_targets: list, output_folder: str):
                         
                         dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
                         check_charge_state(min_counts=1000)
+                        time.sleep(0.5)
+                        dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
+                        
                         
                        
 
@@ -273,6 +276,8 @@ def run_planar_sweep(plane_name: str, field_targets: list, output_folder: str):
                     if i % 3 == 0:
                         dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
                         check_charge_state(min_counts=1000)
+                        time.sleep(0.2)
+                        
                         # dlc.laser1.scan.enabled.set(True)
                         # dlc.laser1.amp.cc.current_set.set(2600)
                         # go_to_ple_target(current_center_1)
@@ -283,6 +288,9 @@ def run_planar_sweep(plane_name: str, field_targets: list, output_folder: str):
                             time.sleep(1) # wait for a long time to 
 
                         time.sleep(0.5)
+                        check_charge_state(min_counts=1000)
+                        time.sleep(0.5)
+                        dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
                         # dlc.laser1.scan.enabled.set(False)
                         # dlc.laser1.amp.cc.current_set.set(2000)
 
@@ -300,7 +308,7 @@ def run_planar_sweep(plane_name: str, field_targets: list, output_folder: str):
 
 #%%
 all_results = {}
-sweep_definitions_ = {i:j for i, j in sweep_definitions.items() if i == 'XY_arc' } #
+sweep_definitions_ = {i:j for i, j in sweep_definitions.items() if i in ['XY', "YZ", "XZ"] } #
 #%%
 try:
     print("Waiting for initial vector magnet state...")
