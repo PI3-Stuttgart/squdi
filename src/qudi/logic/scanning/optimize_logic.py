@@ -246,12 +246,17 @@ class ScanningOptimizeLogic(LogicBase):
         list(axs_flat.extend(item) for item in sequence)
         avail_axes = [ax.name for ax in self._avail_axes]
         if not all(elem in avail_axes for elem in axs_flat):
-            raise ValueError(
+            # raise ValueError(
+            #     f"Optimizer sequence {sequence} must contain only"
+            #     f" available axes ({avail_axes})"
+            # )
+            self.log.warning(
                 f"Optimizer sequence {sequence} must contain only"
                 f" available axes ({avail_axes})"
             )
-
-        self._scan_sequence = sequence
+            self._scan_sequence = [("x", "y")]
+        else:
+            self._scan_sequence = sequence
 
     @property
     def optimizer_running(self):
