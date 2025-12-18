@@ -1,0 +1,22 @@
+{
+    "-27.085020073798205": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_0_-27.09GHz",
+    "-26.864467212817544": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_1_-26.86GHz",
+    "-24.969916257589375": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_2_-24.97GHz",
+    "-22.997382637413466": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_3_-23.00GHz",
+    "-20.89434043040228": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_4_-20.89GHz",
+    "-18.742405443902044": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_5_-18.74GHz",
+    "-16.489033981599732": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_6_-16.49GHz",
+    "-14.33488061229582": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_7_-14.33GHz",
+    "-11.938410094046503": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_8_-11.94GHz",
+    "-9.578359961494698": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_9_-9.58GHz",
+    "-7.168474198294916": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_10_-7.17GHz",
+    "-4.6751775557254405": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_11_-4.68GHz",
+    "-2.252151243624212": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_12_-2.25GHz",
+    "0.25289544373663375": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_13_0.25GHz",
+    "2.818588296293001": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_14_2.82GHz",
+    "5.294793482903515": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_15_5.29GHz",
+    "7.83488585352643": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_16_7.83GHz",
+    "10.426912390869347": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_17_10.43GHz",
+    "13.11822423895137": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_18_13.12GHz",
+    "15.693687117391164": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-17\\galvo_scanning_probe_logic\\scan_40_40_250_100kev-number5_deepest_trench_etched-total_19_15.69GHz"
+}

@@ -1,0 +1,22 @@
+{
+    "-26.50043380816669": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_0_-26.50GHz",
+    "-25.0434369442587": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_1_-25.04GHz",
+    "NaN": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_2_nanGHz",
+    "-21.198555538148867": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_3_-21.20GHz",
+    "-19.169843084057447": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_4_-19.17GHz",
+    "-16.902921070425236": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_5_-16.90GHz",
+    "-14.762206820194024": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_6_-14.76GHz",
+    "NaN": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_7_nanGHz",
+    "-10.189201107550616": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_8_-10.19GHz",
+    "-7.794519299579861": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_9_-7.79GHz",
+    "-5.39298767961327": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_10_-5.39GHz",
+    "-2.944643317164264": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_11_-2.94GHz",
+    "-0.4059248918792946": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_12_-0.41GHz",
+    "2.1320746114383837": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_13_2.13GHz",
+    "NaN": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_14_nanGHz",
+    "7.110354621090664": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_15_7.11GHz",
+    "9.805243116659312": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_16_9.81GHz",
+    "12.415592036234102": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_17_12.42GHz",
+    "14.931475664127447": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_18_14.93GHz",
+    "NaN": "Z:\\Vlad\\Daily_data\\attodry\\2025\\12\\2025-12-16\\galvo_scanning_probe_logic\\scan_40_40_253_40kev_19_nanGHz"
+}
