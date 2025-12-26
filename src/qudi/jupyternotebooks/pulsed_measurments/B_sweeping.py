@@ -65,9 +65,9 @@ def go_to_ple_target(target):
 ple_gui._fit_averaged = False
 
 
-BASE_FOLDER = r'Z:\Vlad\heavyIV\202-2-ARed\CPW-V\B_large5'
-B_AMPLITUDE = 0.2  # Tesla
-NUM_STEPS = 50     # Number of points
+BASE_FOLDER = r'Z:\Vlad\heavyIV\250\electrodes2\B'
+B_AMPLITUDE = 0.3  # Tesla
+NUM_STEPS = 100     # Number of points
 Bx_offset = 0
 
 # Parameters for the small-angle arc sweep
@@ -180,15 +180,15 @@ def repump_with_green(duration=1):
 
 def check_charge_state(min_counts=1000):
     def check_counts():
-        arr = timetaggerlogic.trace_data[1][1][-5:]
+        arr = timetaggerlogic.trace_data[1][1][-20:]
         arr.sort()
-        crc_cts = arr[::-1][:5].mean()
+        crc_cts = arr[::-1][:20].mean()
         return crc_cts
     attempts = 0
     crc_cts = check_counts()
     while crc_cts < min_counts and attempts < 20:
         repump_with_green(0.25)
-        time.sleep(0.25)
+        time.sleep(1)
         crc_cts = check_counts()
         attempts += 1
     if crc_cts < min_counts:
@@ -224,85 +224,95 @@ def run_planar_sweep(plane_name: str, field_targets: list, output_folder: str):
     ple_gui._mw.actionToggle_scan.setChecked(True)
     ple_gui.toggle_scan()
     time.sleep(0.5)
-
-    with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
-        rngs = tt_laser_scanner._current_scan_ranges[0]
-        pos_s = np.linspace(rngs[0], rngs[1], 100)
-        v_start, v_end = dlc.laser1.wide_scan.scan_begin.get(), dlc.laser1.wide_scan.scan_end.get()
-        vs = np.linspace(v_start, v_end, 100)
-        voltage_center = lambda cur_center: vs[np.argmin(np.abs(pos_s - float(cur_center)))]
-
-        dlc.laser1.wide_scan.continuous_mode.set(False)
-        centers = []
-        c_voltages = []
-        while laser_scanner_logic.module_state()=='locked':
-            i = 0
-            for field_target in tqdm(field_targets, desc=f"{plane_name} Sweep Progress"):
-                
-                # 1. Ramp the field
-                vector_magnet.ramp(field_target=field_target)
-                while list(vector_magnet.get_ramping_state()) != [2, 2, 2]:
+    i = 0
+    print(f"Ramping to {field_targets} target fields...")
+    for field_target in field_targets:
+     # 1. Ramp the field
+        vector_magnet.ramp(field_target=field_target)
+        while list(vector_magnet.get_ramping_state()) != [2, 2, 2]:
+            time.sleep(1)
+            print("✅ Field reached:", field_target)
+        with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
+            rngs = tt_laser_scanner._current_scan_ranges[0]
+            pos_s = np.linspace(rngs[0], rngs[1], 100)
+            v_start, v_end = dlc.laser1.wide_scan.scan_begin.get(), dlc.laser1.wide_scan.scan_end.get()
+            vs = np.linspace(v_start, v_end, 100)
+            voltage_center = lambda cur_center: vs[np.argmin(np.abs(pos_s - float(cur_center)))]
+            time.sleep(1)
+            dlc.laser1.wide_scan.continuous_mode.set(False)
+            
+            centers = []
+            c_voltages = []
+            while laser_scanner_logic.module_state()=='locked':
+                time.sleep(1)
+                laser_state = dlc._laser1.wide_scan.state.get()
+                time.sleep(1)
+                if laser_state == 0:
+                    dlc._laser1.wide_scan.start()
                     time.sleep(1)
-                dlc._laser1.wide_scan.start()
-                time.sleep(0.5)
                 laser_state = dlc._laser1.wide_scan.state.get()
                 while laser_state != 0:
-                    time.sleep(0.5)
+                    time.sleep(1)
                     laser_state = dlc._laser1.wide_scan.state.get()
-
-
-                ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("TwoLorentz")
-                time.sleep(0.2)
-                fit = ple_gui.fit_result[1]
-                current_center = fit.params["center_1"].value
-                if fit.rsquared < 0.2:
-                    ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
-                    time.sleep(0.2)
+                time.sleep(1)
+                if laser_state == 0:
+                    ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("TwoLorentz")
+                    time.sleep(1)
                     fit = ple_gui.fit_result[1]
-                    current_center = fit.params["center"].value
-
+                    current_center = fit.params["center_1"].value
                     if fit.rsquared < 0.2:
-                        
-                        dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
-                        check_charge_state(min_counts=1000)
-                        time.sleep(0.5)
-                        dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
-                        
-                        
-                       
+                        ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
+                        time.sleep(1)
+                        fit = ple_gui.fit_result[1]
+                        current_center = fit.params["center"].value
 
-                else:
+                        if fit.rsquared < 0.2:
+                            # print("⚠️ Fit quality too low")
+                            time.sleep(1)
+                            dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
+                            check_charge_state(min_counts=1000)
+                            time.sleep(1)
+                            dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
+                            time.sleep(1)
+                            
+                        
+
+                    else:
+                        
+                        if i % 3 == 0:
+                            # print("⚠️ Optimizing")
+                            # time.sleep(1)
+                            # dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
+                            # check_charge_state(min_counts=1000)
+                            # time.sleep(1)
+                            
+                            # # dlc.laser1.scan.enabled.set(True)
+                            # # dlc.laser1.amp.cc.current_set.set(2600)
+                            # # go_to_ple_target(current_center_1)
+                            
+                            # # poi_manager_logic._optimizelogic().start_optimize()
+                            # # time.sleep(1)
+                            # # while poi_manager_logic._optimizelogic().module_state()=='locked':
+                            # #     time.sleep(1) # wait for a long time to 
+
+                            # time.sleep(1)
+                            # check_charge_state(min_counts=1000)
+                            # time.sleep(1)
+                            # dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
+                            time.sleep(1)
+                            # dlc.laser1.scan.enabled.set(False)
+                            # dlc.laser1.amp.cc.current_set.set(2000)
+
                     
-                    if i % 3 == 0:
-                        dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
-                        check_charge_state(min_counts=1000)
-                        time.sleep(0.2)
-                        
-                        # dlc.laser1.scan.enabled.set(True)
-                        # dlc.laser1.amp.cc.current_set.set(2600)
-                        # go_to_ple_target(current_center_1)
-                        
-                        poi_manager_logic._optimizelogic().start_optimize()
-                        time.sleep(0.5)
-                        while poi_manager_logic._optimizelogic().module_state()=='locked':
-                            time.sleep(1) # wait for a long time to 
-
-                        time.sleep(0.5)
-                        check_charge_state(min_counts=1000)
-                        time.sleep(0.5)
-                        dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
-                        # dlc.laser1.scan.enabled.set(False)
-                        # dlc.laser1.amp.cc.current_set.set(2000)
-
                     
 
-                i+=1
-                # 5. Save Data
-            tag = f"plane-{plane_name}"
-            save_ple(tag=tag, poi_name=None, folder_name=output_folder)
-            # Save the array of target fields in the output folder
-            np.savetxt(os.path.join(output_folder, "field_targets.csv"), field_targets, delimiter=",", header="Bx,By,Bz", comments="")
-        
+                    i+=1
+                    # 5. Save Data
+        tag = f"plane-{plane_name}"
+        save_ple(tag=tag, poi_name=None, folder_name=output_folder)
+                # Save the array of target fields in the output folder
+        np.savetxt(os.path.join(output_folder, "field_targets.csv"), field_targets, delimiter=",", header="Bx,By,Bz", comments="")
+            
     print(f"\n✅ --- {plane_name} Measurement Complete! ---")
     return 1
 
@@ -342,5 +352,112 @@ finally:
             # print(f"  - Data saved in: {sweep_definitions[plane]['folder']}")
 
     print("\n--- Script finished. ---")
+# %%
 
 # %%
+
+
+
+
+
+SAMPLE
+
+# %%
+all_results = {}
+
+sweep_definitions_ = {i:j for i, j in sweep_definitions.items() if i in ['XY', "YZ", "XZ"] } #
+config = sweep_definitions_['XY']
+field_targets=np.array(config['points'])
+# %%
+
+centers = []
+ple_gui._fit_averaged = False
+ple_gui._mw.number_of_repeats_SpinBox.setValue(
+            field_targets.shape[0] + 1
+        )
+time.sleep(0.25)
+ple_gui._mw.number_of_repeats_SpinBox.editingFinished.emit()
+time.sleep(0.25)
+ple_gui._mw.actionToggle_scan.setChecked(True)
+time.sleep(0.25)
+ple_gui.toggle_scan()
+time.sleep(0.5)
+ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("TwoLorentz")
+time.sleep(0.5)
+fit = ple_gui.fit_result[1]
+current_center = fit.params["center_1"].value
+centers.append(current_center)
+
+for i, field_target in enumerate(field_targets):
+    vector_magnet.ramp(field_target=field_target)
+    while list(vector_magnet.get_ramping_state()) != [2, 2, 2]:
+        time.sleep(1)
+    print("✅ Field reached:", field_target)
+    with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
+        rngs = tt_laser_scanner._current_scan_ranges[0]
+        pos_s = np.linspace(rngs[0], rngs[1], 100)
+        v_start, v_end = dlc.laser1.wide_scan.scan_begin.get(), dlc.laser1.wide_scan.scan_end.get()
+        vs = np.linspace(v_start, v_end, 100)
+        voltage_center = lambda cur_center: vs[np.argmin(np.abs(pos_s - float(cur_center)))]
+        time.sleep(1)
+        dlc.laser1.wide_scan.continuous_mode.set(False)
+        dlc.laser1.wide_scan.trigger.output_enabled.set(True)
+
+        laser_state = dlc._laser1.wide_scan.state.get()
+        if laser_state == 0:
+            dlc._laser1.wide_scan.start()
+        time.sleep(0.5)
+        laser_state = dlc._laser1.wide_scan.state.get()
+        time.sleep(0.5)
+        while laser_state != 0:
+            time.sleep(1)
+            laser_state = dlc._laser1.wide_scan.state.get()
+        time.sleep(1)
+        dlc.laser1.wide_scan.trigger.output_enabled.set(False)
+        
+        ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("TwoLorentz")
+        time.sleep(0.25)
+        fit = ple_gui.fit_result[1]
+        current_center = fit.params["center_1"].value
+        if fit.rsquared < 0.2:
+            ple_gui._fit_dockwidget.fit_widget.sigDoFit.emit("Lorentzian")
+            time.sleep(1)
+            fit = ple_gui.fit_result[1]
+            current_center = fit.params["center"].value
+
+            if fit.rsquared < 0.2:
+                # print("⚠️ Fit quality too low")
+                time.sleep(1)
+                
+                dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
+                check_charge_state(min_counts=1000)
+                
+                dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
+                time.sleep(1)
+        if i % 5 == 0:
+            print("⚠️ Optimizing")
+            time.sleep(1)
+            dlc.laser1.wide_scan.value_set.set(voltage_center(current_center))
+            dlc.laser1.amp.cc.current_set.set(2600)
+            time.sleep(0.5)
+            check_charge_state(min_counts=1000)
+            
+            poi_manager_logic._optimizelogic().start_optimize()
+
+            while poi_manager_logic._optimizelogic().module_state()=='locked':
+                time.sleep(1) # wait for a long time to 
+
+            
+            check_charge_state(min_counts=1000)
+            
+            dlc.laser1.wide_scan.value_set.set(voltage_center(rngs[0]))
+            dlc.laser1.amp.cc.current_set.set(2000)
+            time.sleep(0.5)
+            
+tag = f"plane-TEST"
+save_ple(tag=tag, poi_name=None, folder_name=output_folder)
+        # Save the array of target fields in the output folder
+np.savetxt(os.path.join(output_folder, "field_targets.csv"), field_targets, delimiter=",", header="Bx,By,Bz", comments="")
+
+
+    # %%
