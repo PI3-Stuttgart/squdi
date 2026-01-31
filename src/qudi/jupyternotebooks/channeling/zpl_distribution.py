@@ -5,10 +5,10 @@ import numpy as np
 import json
 import os
 from toptica.lasersdk.dlcpro.v2_0_3 import DLCpro,LaserHead,  NetworkConnection, DeviceNotFoundError
-scanning_probe_logic_ = galvo_scanning_probe_logic
-ple_gui_ = ple_gui_qinu
+scanning_probe_logic_ = scanning_probe_logic #galvo_scanning_probe_logic
+ple_gui_ = ple_gui #_qinu
 scanner_gui_ = galvo_scanner_gui
-dl_pro_ = dl_pro_qinu
+dl_pro_ = dl_pro #_qinu
 def go_to_ple_target(target):
     ple_gui_._mw.ple_widget.target_point.setValue(target)
     ple_gui_._mw.ple_widget.target_point.sigPositionChangeFinished.emit(target)
@@ -35,9 +35,9 @@ dl_pro_
 # %%
 # %%
 # Parameters
-offset_min_v = 10  # GHz to Hz
-offset_max_v = 80  # GHz to Hz
-steps = 20
+offset_min_v = 20  # GHz to Hz
+offset_max_v = 120  # GHz to Hz
+steps = 30
 # num_steps = int((offset_max_v - offset_min_v) / step) + 1  # +1 for inclusive range
 
 w0 = 484.130 #THz
