@@ -271,15 +271,15 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
 
     @connect_laser
     def set_pc_voltage(self, voltage):
-        return self.dlc.laser1.pc.voltage_set.set(voltage)
+        return self.dlc.laser1.dl.pc.voltage_set.set(voltage)
 
     @connect_laser
     def get_pc_voltage_set(self):
-        return self.dlc.laser1.pc.voltage_set.get()
+        return self.dlc.laser1.dl.pc.voltage_set.get()
 
     @connect_laser
     def get_pc_voltage_act(self):
-        return self.dlc.laser1.pc.voltage_act.get()
+        return self.dlc.laser1.dl.pc.voltage_act.get()
 
     @connect_laser
     def set_scan_parameters(
