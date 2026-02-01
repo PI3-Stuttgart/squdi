@@ -376,6 +376,9 @@ class ScanningDataLogic(LogicBase):
         # If no colorbar range was given, take full range of data
         if cbar_range is None:
             cbar_range = (np.nanmin(image_arr), np.nanmax(image_arr))
+            
+        if np.isnan(cbar_range[0]) or np.isnan(cbar_range[1]):
+            cbar_range = (0.0, 1.0)
 
         # Create figure
         fig, ax = plt.subplots()

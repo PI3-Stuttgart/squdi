@@ -145,6 +145,29 @@ class ZPLDistributionGui(GuiBase):
         self.save_all_btn.clicked.connect(self.save_all_results)
         side_panel.addWidget(self.save_all_btn)
         
+        # --- Analysis Controls ---
+        side_panel.addSpacing(10)
+        side_panel.addWidget(QtWidgets.QLabel("<b>Detection Settings:</b>"))
+        
+        # Method Selection
+        side_panel.addWidget(QtWidgets.QLabel("Method:"))
+        self.method_combo = QtWidgets.QComboBox()
+        self.method_combo.addItems(['Simple', 'Gaussian', 'DoG'])
+        side_panel.addWidget(self.method_combo)
+        
+        # Threshold
+        side_panel.addWidget(QtWidgets.QLabel("Threshold:"))
+        self.threshold_spin = QtWidgets.QDoubleSpinBox()
+        self.threshold_spin.setRange(0, 1e9)
+        self.threshold_spin.setValue(5000) # Default
+        side_panel.addWidget(self.threshold_spin)
+        
+        # Re-Analyze Button
+        self.reanalyze_btn = QtWidgets.QPushButton("Re-Analyze Current")
+        self.reanalyze_btn.clicked.connect(self.run_reanalysis)
+        side_panel.addWidget(self.reanalyze_btn)
+        
+        
         # Add a note about manual adding
         side_panel.addWidget(QtWidgets.QLabel("Tip:\nLeft Click: Add Spot\nRight Click: Remove Spot"))
         
@@ -167,6 +190,13 @@ class ZPLDistributionGui(GuiBase):
         stop = self.stop_spin.value()
         step = self.step_spin.value()
         
+        # Update logic config from GUI before starting
+        # Ideally logic uses config options, but we can set defaults or just rely on GUI defaults
+        # To be cleaner, let's update logic's threshold config if possible or just rely on loop reading it (which it does)
+        # But we need to set the Logic's config value from our spinbox
+        self._logic()._spot_threshold = self.threshold_spin.value()
+        self._logic()._detection_method = self.method_combo.currentText()
+        
         # Reset plots
         self.ax_hist.clear()
         self.ax_hist.set_xlabel("Voltage (V)")
@@ -187,6 +217,21 @@ class ZPLDistributionGui(GuiBase):
         self.status_label.setText("Status: Running...")
         self.progress_bar.setValue(0)
 
+    def run_reanalysis(self):
+        if self._current_view_voltage is not None:
+             method = self.method_combo.currentText()
+             threshold = self.threshold_spin.value()
+             
+             self.status_label.setText(f"Status: Re-analyzing {self._current_view_voltage:.2f} V with {method}...")
+             QtWidgets.QApplication.processEvents()
+             
+             success = self._logic().reanalyze_scan(self._current_view_voltage, method, threshold)
+             
+             if success:
+                 self.status_label.setText(f"Status: Re-analysis complete.")
+             else:
+                 self.status_label.setText(f"Status: Re-analysis failed.")
+                 
     # ... (stop, pause methods same as before, skipping for brevity in this replace block if possible, but replace needs continuity) ...
     def stop_measurement(self):
         self._logic().stop_measurement()
@@ -202,6 +247,7 @@ class ZPLDistributionGui(GuiBase):
             self.pause_btn.setText("Pause")
             self.status_label.setText("Status: Running...")
 
+
     def on_finished(self):
         self.start_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
@@ -210,13 +256,15 @@ class ZPLDistributionGui(GuiBase):
         self.progress_bar.setValue(100)
 
     def update_plot(self, data):
+        self._last_hist_data = data # Store for picking
         self.ax_hist.clear()
         self.ax_hist.set_xlabel("Voltage (V)")
         self.ax_hist.set_ylabel("Number of Spots")
         self.ax_hist.set_title("ZPL Distribution (Click bar to see scan)")
         
         if len(data['voltage']) > 0:
-            bars = self.ax_hist.bar(data['voltage'], data['counts'], width=self.step_spin.value()*0.8, picker=True)
+            # picker=5 sets 5 points tolerance
+            bars = self.ax_hist.bar(data['voltage'], data['counts'], width=self.step_spin.value()*0.8, picker=5)
             
         self.canvas_hist.draw()
         
@@ -235,53 +283,39 @@ class ZPLDistributionGui(GuiBase):
              self.display_scan(voltage, image, spots)
 
     def on_hist_pick(self, event):
-        if event.artist and len(event.ind) > 0:
-            ind = event.ind[0]
-            # Get data locally from existing plot data
-            # Assuming 'voltage' list order matches bars
-            # Ideally we query logic for the list of voltages
-            # For specific index:
-            try:
-                # We need to access the data we just plotted. 
-                # Better to get "histogram_data" status variable or just store it.
-                # Let's cheat and grab from logic via private access if possible, or assume linear mapping
-                # But we don't have the data dict here easily without storing it.
-                # Let's store last data in self.
-                # Wait, update_plot receives data.
-                pass
-            except:
-                pass
+        # Handle picking for BarContainer elements (Rectangle)
+        if hasattr(event, 'artist') and self.ax_hist.containers:
+            container = self.ax_hist.containers[0]
+            if event.artist in container:
+                ind = container.index(event.artist)
+            elif hasattr(event, 'ind') and len(event.ind) > 0:
+                 # Fallback for some backends if needed
+                 ind = event.ind[0]
+            else:
+                return
 
-    def on_hist_pick(self, event):
-        # We need the data. Let's make sure update_plot saves it.
-        pass # Placeholder for real implementation below in replace block
-
-    def update_plot(self, data):
-        self._last_hist_data = data # Store for picking
-        self.ax_hist.clear()
-        self.ax_hist.set_xlabel("Voltage (V)")
-        self.ax_hist.set_ylabel("Number of Spots")
-        self.ax_hist.set_title("ZPL Distribution (Click bar to see scan)")
-        
-        if len(data['voltage']) > 0:
-            bars = self.ax_hist.bar(data['voltage'], data['counts'], width=self.step_spin.value()*0.8, picker=True)
-            
-        self.canvas_hist.draw()
-        
-        # Refresh current view
-        if hasattr(self, '_current_view_voltage') and self._current_view_voltage is not None:
-             res = self._logic().get_scan_result(self._current_view_voltage)
-             if res:
-                 self.display_scan(self._current_view_voltage, res['image'], res['spots'])
-
-    def on_hist_pick(self, event):
-        if event.artist and len(event.ind) > 0 and hasattr(self, '_last_hist_data'):
-            ind = event.ind[0]
-            if ind < len(self._last_hist_data['voltage']):
+            # Debug logging
+            print(f"DEBUG: Pick Event! Ind: {ind}")
+            if hasattr(self, '_last_hist_data') and ind < len(self._last_hist_data['voltage']):
                 voltage = self._last_hist_data['voltage'][ind]
+                print(f"DEBUG: Selected Voltage: {voltage}")
                 
                 # Fetch detailed result
                 res = self._logic().get_scan_result(voltage)
+                if not res:
+                     # Try finding closest key handles float precision issues
+                     min_dist = 1e-6
+                     best_v = None
+                     if hasattr(self._logic(), '_scan_results') and self._logic()._scan_results:
+                         for k in self._logic()._scan_results.keys():
+                             dist = abs(k - voltage)
+                             if dist < min_dist:
+                                 min_dist = dist
+                                 best_v = k
+                     if best_v is not None:
+                         res = self._logic().get_scan_result(best_v)
+                         voltage = best_v
+                
                 if res:
                     self.display_scan(voltage, res['image'], res['spots'])
                     self.tabs.setCurrentIndex(1) # Switch to Analysis tab
