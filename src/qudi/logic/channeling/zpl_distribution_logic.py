@@ -392,7 +392,8 @@ class ZPLDistributionLogic(LogicBase):
         """Save results to folder."""
         import os
         import csv
-        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
         
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -400,14 +401,18 @@ class ZPLDistributionLogic(LogicBase):
         # 1. Save Histogram (SVG + CSV)
         try:
             # SVG
-            fig, ax = plt.subplots()
+            fig = Figure()
+            FigureCanvasAgg(fig) # Attach backend
+            ax = fig.add_subplot(111)
+            
             ax.set_xlabel("Voltage (V)")
             ax.set_ylabel("Number of Spots")
             ax.set_title("ZPL Distribution")
             if len(self._histogram_data['voltage']) > 0:
                 ax.bar(self._histogram_data['voltage'], self._histogram_data['counts'], width=self._step_voltage * 0.8)
+            
             fig.savefig(os.path.join(save_dir, "distribution_histogram.svg"))
-            plt.close(fig)
+            # No need to close explicitly with Figure object, it's just an object
             
             # CSV
             with open(os.path.join(save_dir, "distribution_histogram.csv"), 'w', newline='') as f:
@@ -449,7 +454,10 @@ class ZPLDistributionLogic(LogicBase):
         
             # Save Figure
             try:
-                fig, ax = plt.subplots()
+                fig = Figure()
+                FigureCanvasAgg(fig)
+                ax = fig.add_subplot(111)
+                
                 ax.set_title(f"Scan at {v:.4f} V ({freq:.2f} GHz)")
                 ax.imshow(res['image'], origin='lower', cmap='viridis')
                 
@@ -461,7 +469,6 @@ class ZPLDistributionLogic(LogicBase):
                 
                 fname = f"scan_{v:.4f}V.svg"
                 fig.savefig(os.path.join(save_dir, fname))
-                plt.close(fig)
             except Exception as e:
                 self.log.error(f"Failed to save scan at {v}: {e}")
                 
