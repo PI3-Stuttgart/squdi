@@ -481,3 +481,51 @@ class ZPLDistributionLogic(LogicBase):
                 writer.writerows(all_spots)
         except Exception as e:
             self.log.error(f"Failed to save spots CSV: {e}")
+            
+        # 4. Save JSON Database Export
+        try:
+            import json
+            
+            class NumpyEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, np.integer):
+                        return int(obj)
+                    elif isinstance(obj, np.floating):
+                        return float(obj)
+                    elif isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    return super(NumpyEncoder, self).default(obj)
+
+            export_data = {
+                "metadata": {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "scan_channels": self._scan_channels(),
+                    "count_channel": self._count_channel(),
+                    "detection_method": self._detection_method,
+                    "spot_threshold": self._spot_threshold
+                },
+                "histogram": {
+                    "voltage": self._histogram_data['voltage'],
+                    "counts": self._histogram_data['counts'],
+                    "frequency": self._histogram_data.get('frequency', [])
+                },
+                "scans": []
+            }
+            
+            for v, res in self._scan_results.items():
+                scan_entry = {
+                    "voltage": v,
+                    "frequency": res.get('frequency', None),
+                    "timestamp": res.get('timestamp', ""),
+                    "channel": res.get('channel', ""),
+                    "spots": res['spots'], # List of dicts, already JSON/Encoder friendly
+                    "image": res['image']  # Numpy array, handled by Encoder
+                }
+                export_data["scans"].append(scan_entry)
+                
+            with open(os.path.join(save_dir, "results.json"), 'w') as f:
+                json.dump(export_data, f, cls=NumpyEncoder, indent=2)
+                
+        except Exception as e:
+            import traceback
+            self.log.error(f"Failed to save JSON export: {e}\n{traceback.format_exc()}")

@@ -131,7 +131,7 @@ class ScanningOptimizeLogic(LogicBase):
     )
     do_get_max_from_spline = True
     _optimize_spline_options = {
-        "to_spline_2d": False,
+        "to_spline_2d": True,
         "s_2d": 0,
         "to_spline_1d": False,
         "s_1d": 0,
