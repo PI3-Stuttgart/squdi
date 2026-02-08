@@ -130,8 +130,14 @@ class ZPLDistributionGui(GuiBase):
         # Right: Spot List & Controls
         side_panel = QtWidgets.QVBoxLayout()
         
-        self.info_label = QtWidgets.QLabel("Select a voltage from Distribution tab")
+        self.info_label = QtWidgets.QLabel("Select a voltage from Distribution tab or dropdown")
         side_panel.addWidget(self.info_label)
+        
+        # Scan Selector
+        side_panel.addWidget(QtWidgets.QLabel("Select Scan:"))
+        self.scan_selector = QtWidgets.QComboBox()
+        self.scan_selector.currentIndexChanged.connect(self.on_scan_selected_from_combo)
+        side_panel.addWidget(self.scan_selector)
         
         self.spots_list_widget = QtWidgets.QListWidget()
         side_panel.addWidget(QtWidgets.QLabel("Detected Spots:"))
@@ -145,7 +151,7 @@ class ZPLDistributionGui(GuiBase):
         self.save_all_btn.clicked.connect(self.save_all_results)
         side_panel.addWidget(self.save_all_btn)
         
-        # --- Analysis Controls ---
+        # --- Analysis Controls --- (unchanged)
         side_panel.addSpacing(10)
         side_panel.addWidget(QtWidgets.QLabel("<b>Detection Settings:</b>"))
         
@@ -190,12 +196,9 @@ class ZPLDistributionGui(GuiBase):
         stop = self.stop_spin.value()
         step = self.step_spin.value()
         
-        # Update logic config from GUI before starting
-        # Ideally logic uses config options, but we can set defaults or just rely on GUI defaults
-        # To be cleaner, let's update logic's threshold config if possible or just rely on loop reading it (which it does)
-        # But we need to set the Logic's config value from our spinbox
-        self._logic()._spot_threshold = self.threshold_spin.value()
-        self._logic()._detection_method = self.method_combo.currentText()
+        # Get values from GUI
+        threshold = self.threshold_spin.value()
+        method = self.method_combo.currentText()
         
         # Reset plots
         self.ax_hist.clear()
@@ -204,11 +207,13 @@ class ZPLDistributionGui(GuiBase):
         self.canvas_hist.draw()
         
         self.spots_list_widget.clear()
+        self.scan_selector.clear() # Clear selector
         self.ax_scan.clear()
         self.canvas_scan.draw()
         self._current_view_voltage = None
         
-        self._logic().start_measurement(start, stop, step)
+        # Pass detection parameters directly to start_measurement
+        self._logic().start_measurement(start, stop, step, method, threshold)
         self.start_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
         self.pause_btn.setChecked(False)
@@ -231,8 +236,7 @@ class ZPLDistributionGui(GuiBase):
                  self.status_label.setText(f"Status: Re-analysis complete.")
              else:
                  self.status_label.setText(f"Status: Re-analysis failed.")
-                 
-    # ... (stop, pause methods same as before, skipping for brevity in this replace block if possible, but replace needs continuity) ...
+
     def stop_measurement(self):
         self._logic().stop_measurement()
         self.status_label.setText("Status: Stopping...")
@@ -246,7 +250,6 @@ class ZPLDistributionGui(GuiBase):
             self._logic().resume_measurement()
             self.pause_btn.setText("Pause")
             self.status_label.setText("Status: Running...")
-
 
     def on_finished(self):
         self.start_btn.setEnabled(True)
@@ -265,6 +268,8 @@ class ZPLDistributionGui(GuiBase):
         if len(data['voltage']) > 0:
             # picker=5 sets 5 points tolerance
             bars = self.ax_hist.bar(data['voltage'], data['counts'], width=self.step_spin.value()*0.8, picker=5)
+            # Also plot invisible/small markers at y=0 to ensure 0-height bars are clickable/visible as locations
+            self.ax_hist.scatter(data['voltage'], [0]*len(data['voltage']), color='red', marker='|', s=50, picker=5, label='Scan Points')
             
         self.canvas_hist.draw()
         
@@ -275,12 +280,31 @@ class ZPLDistributionGui(GuiBase):
              if res:
                  self.display_scan(self._current_view_voltage, res['image'], res['spots'])
 
-
     def on_scan_completed(self, voltage, image, spots):
         self.status_label.setText(f"Status: Scan at {voltage:.2f} V completed. Found {len(spots)} spots.")
+        
+        # Add to combo box. Block signals to avoid triggering on_scan_selected_from_combo
+        self.scan_selector.blockSignals(True)
+        self.scan_selector.addItem(f"{voltage:.4f} V", voltage)
+        self.scan_selector.blockSignals(False)
+        
         # Auto-update if it's the first one or user hasn't selected another one
         if not hasattr(self, '_current_view_voltage') or self._current_view_voltage is None:
              self.display_scan(voltage, image, spots)
+             # Update combo selection without triggering again (conceptually)
+             self.scan_selector.blockSignals(True)
+             idx = self.scan_selector.findData(voltage)
+             if idx >= 0:
+                 self.scan_selector.setCurrentIndex(idx)
+             self.scan_selector.blockSignals(False)
+
+    def on_scan_selected_from_combo(self, index):
+        if index < 0: return
+        voltage = self.scan_selector.itemData(index)
+        if voltage is not None:
+             res = self._logic().get_scan_result(voltage)
+             if res:
+                 self.display_scan(voltage, res['image'], res['spots'])
 
     def on_hist_pick(self, event):
         # Handle picking for BarContainer elements (Rectangle)
@@ -294,30 +318,31 @@ class ZPLDistributionGui(GuiBase):
             else:
                 return
 
-            # Debug logging
-            print(f"DEBUG: Pick Event! Ind: {ind}")
             if hasattr(self, '_last_hist_data') and ind < len(self._last_hist_data['voltage']):
                 voltage = self._last_hist_data['voltage'][ind]
-                print(f"DEBUG: Selected Voltage: {voltage}")
                 
-                # Fetch detailed result
-                res = self._logic().get_scan_result(voltage)
-                if not res:
-                     # Try finding closest key handles float precision issues
-                     min_dist = 1e-6
-                     best_v = None
-                     if hasattr(self._logic(), '_scan_results') and self._logic()._scan_results:
-                         for k in self._logic()._scan_results.keys():
-                             dist = abs(k - voltage)
-                             if dist < min_dist:
-                                 min_dist = dist
-                                 best_v = k
-                     if best_v is not None:
-                         res = self._logic().get_scan_result(best_v)
-                         voltage = best_v
-                
-                if res:
-                    self.display_scan(voltage, res['image'], res['spots'])
+                # Update combo box selection which will trigger display update
+                idx = self.scan_selector.findData(voltage)
+                if idx >= 0:
+                    self.scan_selector.setCurrentIndex(idx)
+                    # This triggers on_scan_selected_from_combo -> display_scan
+                else:
+                    # Fallback if for some reason check fails (float diff?)
+                    # Try finding closest
+                    count = self.scan_selector.count()
+                    best_idx = -1
+                    min_dist = 1e-6
+                    for i in range(count):
+                        v_item = self.scan_selector.itemData(i)
+                        if v_item is not None:
+                            dist = abs(v_item - voltage)
+                            if dist < min_dist:
+                                min_dist = dist
+                                best_idx = i
+                    
+                    if best_idx >= 0:
+                        self.scan_selector.setCurrentIndex(best_idx)
+
                     self.tabs.setCurrentIndex(1) # Switch to Analysis tab
 
     def display_scan(self, voltage, image, spots):

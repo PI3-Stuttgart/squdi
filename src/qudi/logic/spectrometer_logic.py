@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import traceback
 import time
+import threading
 from qudi.core.connector import Connector
 from qudi.core.statusvariable import StatusVar
 from qudi.util.mutex import Mutex
@@ -74,6 +75,10 @@ class SpectrometerLogic(LogicBase):
     sig_state_updated = QtCore.Signal()
     sig_fit_updated = QtCore.Signal(str, object)
     sigSpectrumDone = QtCore.Signal()
+
+    _sig_acquisition_step_done = QtCore.Signal(object, object)
+    _sig_background_step_done = QtCore.Signal(object)
+
 
     _default_fit_configs = (
         {'name'             : 'Lorentzian',
@@ -129,6 +134,8 @@ class SpectrometerLogic(LogicBase):
 
         self._sig_get_spectrum.connect(self.get_spectrum, QtCore.Qt.QueuedConnection)
         self._sig_get_background.connect(self.get_background, QtCore.Qt.QueuedConnection)
+        self._sig_acquisition_step_done.connect(self._on_acquisition_step_done, QtCore.Qt.QueuedConnection)
+        self._sig_background_step_done.connect(self._on_background_step_done, QtCore.Qt.QueuedConnection)
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -148,14 +155,6 @@ class SpectrometerLogic(LogicBase):
         self._sig_get_spectrum.emit(self._constant_acquisition, self._differential_spectrum, reset)
 
     def get_spectrum(self, constant_acquisition=None, differential_spectrum=None, reset=True):
-        #with self._threadlock:
-        #    if self.module_state() != 'idle':
-        #        self.log.error('Can not start spectrometer aquisition. Measurement is already running.')
-        #        self.sig_data_updated.emit()
-        #        return
-        #    
-        #    self.module_state.lock()
-
         if constant_acquisition is not None:
             self.constant_acquisition = bool(constant_acquisition)
         if differential_spectrum is not None:
@@ -169,45 +168,97 @@ class SpectrometerLogic(LogicBase):
 
         self._acquisition_running = True
         self.sig_state_updated.emit()
+        
+        # Start worker thread
+        # Capture necessary state for the worker
+        do_diff = self.differential_spectrum_available and self._differential_spectrum
+        do_flip = self.flip_mirror() and self.do_flip
+        
+        thread = threading.Thread(target=self._acquire_spectrum_worker, args=(do_diff, do_flip))
+        thread.start()
 
-        if self.differential_spectrum_available and self._differential_spectrum:
-            self.modulation_device().modulation_on()
+    def _acquire_spectrum_worker(self, do_diff, do_flip):
+        try:
+            if do_diff:
+                self.modulation_device().modulation_on()
 
-        if self.flip_mirror() and self.do_flip:
-            #key = self.flip_mirror().available_states.keys()[0]
-            #state = self.flip_mirror().get_state(key)
-            self.spectrometer().clearBuffer()
-            self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'On')
-            time.sleep(1)
-        # get data from the spectrometer
-        data = np.array(self.spectrometer().record_spectrum())
+            if do_flip:
+                # self.spectrometer().clearBuffer() # Is this needed inside the flip logic? Original code did it.
+                # Assuming clearBuffer is safe or needed. Original code:
+                # self.spectrometer().clearBuffer()
+                # self.flip_mirror().set_state(...)
+                # time.sleep(1)
+                
+                # Careful: calling hardware from thread. 
+                self.spectrometer().clearBuffer()
+                self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'On')
+                time.sleep(1)
+            
+            # get data from the spectrometer
+            # Using netobtain if needed? Original code used netobtain only for second part of diff?
+            # Original code: data = np.array(self.spectrometer().record_spectrum()) -- NO netobtain
+            # But line 196: data = np.array(netobtain(self.spectrometer().record_spectrum())) -- WITH netobtain
+            # I should probably use netobtain if the return value is a proxy?
+            # If self.spectrometer() is a local object behaving synchronously, netobtain is identity.
+            # If it's a remote proxy, netobtain waits for result.
+            # Safe to use netobtain always if we want blocking result.
+            
+            raw_data = netobtain(self.spectrometer().record_spectrum())
+            data_signal = np.array(raw_data)
+            
+            data_reference = None
+            
+            if do_diff:
+                self.modulation_device().modulation_off()
+                raw_data_ref = netobtain(self.spectrometer().record_spectrum())
+                data_reference = np.array(raw_data_ref)
+                
+            if do_flip:
+                self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'Off')
+                time.sleep(1)
+                
+            # Emit result
+            self._sig_acquisition_step_done.emit(data_signal, data_reference)
+            
+        except Exception as e:
+            self.log.exception(f"Error in acquisition worker: {e}")
+            # Ensure we don't hang in running state
+            self._sig_acquisition_step_done.emit(None, None)
+
+    def _on_acquisition_step_done(self, data_signal, data_reference):
+        if data_signal is None:
+             # Error occurred
+             self._acquisition_running = False
+             self.sig_state_updated.emit()
+             self.sigSpectrumDone.emit()
+             return
+
+        # Process signal
         with self._lock:
             if self._spectrum[0] is None:
-                self._spectrum[0] = data[1, :]
+                self._spectrum[0] = data_signal[1, :]
             else:
-                self._spectrum[0] += data[1, :]
+                self._spectrum[0] += data_signal[1, :]
 
-            self._wavelength = data[0, :]
+            self._wavelength = data_signal[0, :]
             self._repetitions_spectrum += 1
-            
 
-        if self.differential_spectrum_available and self._differential_spectrum:
-            self.modulation_device().modulation_off()
-            data = np.array(netobtain(self.spectrometer().record_spectrum()))
-            
-            with self._lock:
+        # Process reference
+        if data_reference is not None:
+             with self._lock:
                 if self._spectrum[1] is None:
-                    self._spectrum[1] = data[1, :]
+                    self._spectrum[1] = data_reference[1, :]
                 else:
-                    self._spectrum[1] += data[1, :]
+                    self._spectrum[1] += data_reference[1, :]
         else:
-            with self._lock:
-                self._spectrum[1] = None
+             with self._lock:
+                 self._spectrum[1] = None
+                 
         self.sig_data_updated.emit()
 
         if self._constant_acquisition and not self._stop_acquisition \
                 and (not self.max_repetitions or self._repetitions_spectrum < self.max_repetitions):
-            return self.run_get_spectrum(reset=True)
+            return self.run_get_spectrum(reset=False)
         
         if self._repetitions_spectrum < self.max_repetitions and not self._stop_acquisition:
             return self.run_get_spectrum(reset=False)
@@ -215,13 +266,7 @@ class SpectrometerLogic(LogicBase):
         self._acquisition_running = False
         self.fit_region = self._fit_region
         self.sig_state_updated.emit()
-        
-        if self.flip_mirror() and self.do_flip:
-            
-            self.flip_mirror().set_state(self.flip_mirror().switch_names[0], 'Off')
-            time.sleep(1)
         self.sigSpectrumDone.emit()
-        #self.module_state.unlock()
         return self.spectrum
 
     def run_get_background(self, constant_acquisition=None, reset=True):
@@ -242,8 +287,27 @@ class SpectrometerLogic(LogicBase):
         self._acquisition_running = True
         self.sig_state_updated.emit()
 
-        # get data from the spectrometer
-        data = np.array(netobtain(self.spectrometer().record_spectrum()))
+        # Start background worker
+        thread = threading.Thread(target=self._acquire_background_worker)
+        thread.start()
+
+    def _acquire_background_worker(self):
+        try:
+            # get data from the spectrometer
+            # Using netobtain
+            raw_data = netobtain(self.spectrometer().record_spectrum())
+            data = np.array(raw_data)
+            self._sig_background_step_done.emit(data)
+        except Exception as e:
+            self.log.exception(f"Error in background worker: {e}")
+            self._sig_background_step_done.emit(None)
+
+    def _on_background_step_done(self, data):
+        if data is None:
+            self._acquisition_running = False
+            self.sig_state_updated.emit()
+            return
+
         with self._lock:
             if self._background is None:
                 self._background = data[1, :]

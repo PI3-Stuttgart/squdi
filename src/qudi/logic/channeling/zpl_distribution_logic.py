@@ -53,15 +53,16 @@ class ZPLDistributionLogic(LogicBase):
         super().__init__(config=config, **kwargs)
         self._stop_requested = False
         self._is_paused = False
+        self._is_running = False
 
     def on_activate(self):
-        pass
+        self._is_running = False
 
     def on_deactivate(self):
         self.stop_measurement()
 
-    @QtCore.Slot(float, float, float)
-    def start_measurement(self, start, stop, step):
+    @QtCore.Slot(float, float, float, str, float)
+    def start_measurement(self, start, stop, step, method='Simple', threshold=5000.0):
         if self._is_running:
             self.log.warning("Measurement already running.")
             return
@@ -69,6 +70,9 @@ class ZPLDistributionLogic(LogicBase):
         self._start_voltage = start
         self._stop_voltage = stop
         self._step_voltage = step
+        self._current_method = method
+        self._current_threshold = threshold
+        
         self._is_running = True
         self._stop_requested = False
         self._is_paused = False
@@ -82,7 +86,18 @@ class ZPLDistributionLogic(LogicBase):
         except Exception as e:
             self.log.error(f"Error starting measurement thread: {e}")
             self._is_running = False
-# ... (stop, pause same) ...
+    @QtCore.Slot()
+    def pause_measurement(self):
+        self._is_paused = True
+
+    @QtCore.Slot()
+    def resume_measurement(self):
+        self._is_paused = False
+
+    @QtCore.Slot()
+    def stop_measurement(self):
+        self._stop_requested = True
+        self._is_paused = False # Resume to allow loop to exit if paused
 
     def _run_measurement_loop(self):
         try:
@@ -176,9 +191,9 @@ class ZPLDistributionLogic(LogicBase):
                              self.log.warning(f"Channel '{target_channel}' not found. Using '{channel_name}' instead.")
                              image_data = scan_data.data[channel_name]
                         
-                        # Use configured method and threshold
-                        method = self._detection_method
-                        threshold = self._spot_threshold
+                        # Use configured method and threshold from start_measurement
+                        method = getattr(self, '_current_method', self._detection_method)
+                        threshold = getattr(self, '_current_threshold', self._spot_threshold)
                         spots_list = self._detect_spots(image_data, method=method, threshold=threshold)
                         spot_count = len(spots_list)
                         
