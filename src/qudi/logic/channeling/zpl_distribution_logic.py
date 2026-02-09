@@ -42,8 +42,15 @@ class ZPLDistributionLogic(LogicBase):
     _spot_threshold = ConfigOption(name='spot_threshold', default=5000) # Counts/s threshold
     _scan_channels = ConfigOption(name='scan_channels', default=['x', 'y'])
     _count_channel = ConfigOption(name='count_channel', default='APD1')
-    _zero_frequency = ConfigOption(name='zero_frequency', default=484.130) # THz
+    _zero_frequency = ConfigOption(name='zero_frequency', default=484.135) # THz
     _detection_method = ConfigOption(name='detection_method', default='Simple') # 'Simple', 'Gaussian', 'DoG'
+    
+    # Focused Mode Config
+    _step_mode = ConfigOption(name='step_mode', default='Linear') # 'Linear', 'Focused'
+    _focus_center = ConfigOption(name='focus_center', default=50.0)
+    _focus_width = ConfigOption(name='focus_width', default=20.0)
+    _fine_step = ConfigOption(name='fine_step', default=1.0)
+    _coarse_step = ConfigOption(name='coarse_step', default=5.0)
     
     sigUpdatePlot = QtCore.Signal(object)
     sigMeasurementFinished = QtCore.Signal()
@@ -62,7 +69,8 @@ class ZPLDistributionLogic(LogicBase):
         self.stop_measurement()
 
     @QtCore.Slot(float, float, float, str, float)
-    def start_measurement(self, start, stop, step, method='Simple', threshold=5000.0):
+    def start_measurement(self, start, stop, step, method='Simple', threshold=5000.0, 
+                          mode='Linear', center=50.0, width=20.0, fine=1.0, coarse=5.0):
         if self._is_running:
             self.log.warning("Measurement already running.")
             return
@@ -72,6 +80,13 @@ class ZPLDistributionLogic(LogicBase):
         self._step_voltage = step
         self._current_method = method
         self._current_threshold = threshold
+        
+        # Store Focused params
+        self._current_mode = mode
+        self._current_center = center
+        self._current_width = width
+        self._current_fine = fine
+        self._current_coarse = coarse
         
         self._is_running = True
         self._stop_requested = False
@@ -86,6 +101,7 @@ class ZPLDistributionLogic(LogicBase):
         except Exception as e:
             self.log.error(f"Error starting measurement thread: {e}")
             self._is_running = False
+
     @QtCore.Slot()
     def pause_measurement(self):
         self._is_paused = True
@@ -99,9 +115,73 @@ class ZPLDistributionLogic(LogicBase):
         self._stop_requested = True
         self._is_paused = False # Resume to allow loop to exit if paused
 
+    def get_voltage_schedule(self, start, stop, step, mode='Linear', center=50.0, width=20.0, fine=1.0, coarse=5.0):
+        """Generate the list of voltages to scan based on parameters."""
+        if mode == 'Focused':
+            # Focused Mode
+            fine_start = max(start, center - width/2)
+            fine_end = min(stop, center + width/2)
+            
+            voltages = []
+            # Left Coarse
+            curr = start
+            while curr < fine_start:
+                voltages.append(curr)
+                curr += coarse
+                
+            # Fine
+            # Align to fine_start
+            curr = fine_start
+            while curr <= fine_end:
+                voltages.append(curr)
+                curr += fine
+                
+            # Right Coarse
+            # Start from last point + coarse
+            if voltages:
+                curr = voltages[-1] + coarse
+            else:
+                curr = fine_end + coarse 
+                
+            while curr <= stop:
+                voltages.append(curr)
+                curr += coarse
+                
+            voltages = sorted(list(set(voltages))) # Unique and sort
+            voltages = [v for v in voltages if start <= v <= stop]
+            return voltages
+            
+        else:
+             # Linear
+             if step <= 0: step = 1.0
+             voltages = np.arange(start, stop + step/100.0, step)
+             return list(voltages)
+
     def _run_measurement_loop(self):
         try:
-            voltages = np.arange(self._start_voltage, self._stop_voltage + self._step_voltage, self._step_voltage)
+             # Generate Voltage Schedule
+            if hasattr(self, '_current_mode'):
+                voltages = self.get_voltage_schedule(
+                    self._start_voltage, 
+                    self._stop_voltage, 
+                    self._step_voltage,
+                    self._current_mode,
+                    self._current_center,
+                    self._current_width,
+                    self._current_fine,
+                    self._current_coarse
+                )
+                if self._current_mode == 'Focused':
+                    self.log.info(f"Focused Schedule: {len(voltages)} points around {self._current_center} V")
+            else:
+                 # Fallback for linear if mode not set (legacy call?)
+                 voltages = self.get_voltage_schedule(self._start_voltage, self._stop_voltage, self._step_voltage)
+                 
+            if len(voltages) == 0:
+                 self.log.warning("No voltages to scan.")
+                 return
+                 return
+
             total_steps = len(voltages)
             
             for i, v in enumerate(voltages):
@@ -208,9 +288,11 @@ class ZPLDistributionLogic(LogicBase):
                             'image': image_data,
                             'spots': spots_list,
                             'timestamp': timestamp,
-                            'scan_name': scan_name,
-                            'channel': channel_name,
-                            'frequency': frequency_ghz
+                            'scan_name': scan_name.replace(':', '-').replace('/', '-').replace('\\', '-'),
+                            'channel': channel_name, # The channel used for initial detection
+                            'count_channel': self._count_channel, # Detailed info
+                            'frequency': frequency_ghz,
+                            'all_channels': scan_data.data if hasattr(scan_data, 'data') else {}
                         }
                         
                         # Emit updates
@@ -319,16 +401,28 @@ class ZPLDistributionLogic(LogicBase):
                 
         return spots
 
-    def reanalyze_scan(self, voltage, method, threshold):
+    def reanalyze_scan(self, voltage, method, threshold, channel=None):
         """Re-analyze a specific scan with new parameters."""
         if voltage in self._scan_results:
             res = self._scan_results[voltage]
-            image = res['image']
             
+            # Select channel
+            image = res['image']
+            current_channel = res['channel']
+            
+            if channel:
+                if 'all_channels' in res and channel in res['all_channels']:
+                    image = res['all_channels'][channel]
+                    current_channel = channel
+                elif channel != current_channel:
+                     self.log.warning(f"Channel {channel} not found for {voltage} V")
+
             spots = self._detect_spots(image, method, threshold)
             
             # Update results
             res['spots'] = spots
+            res['image'] = image
+            res['channel'] = current_channel
             spot_count = len(spots)
             
             # Update histogram source
@@ -482,7 +576,22 @@ class ZPLDistributionLogic(LogicBase):
                     ys = [s['y'] for s in spots]
                     ax.scatter(xs, ys, c='r', marker='x', s=50)
                 
-                fname = f"scan_{v:.4f}V.svg"
+                # Sanitize filename
+                v_str = f"{v:.4f}".replace('.', ',') # European style or just safe? 
+                # Actually '.' is fine. Colon is not.
+                # But just to be safe, maybe user locale issue? 
+                # Let's just stick to standard. 
+                # If v is float, it should be fine.
+                # However, if v is something else or has weird chars?
+                # Let's ensure it is float
+                try:
+                    v_float = float(v)
+                    fname = f"scan_{v_float:.4f}V.svg"
+                except:
+                    # Fallback
+                    clean_v = str(v).replace(':', '_').replace('/', '_').replace('\\', '_')
+                    fname = f"scan_{clean_v}V.svg"
+                
                 fig.savefig(os.path.join(save_dir, fname))
             except Exception as e:
                 self.log.error(f"Failed to save scan at {v}: {e}")
@@ -514,8 +623,8 @@ class ZPLDistributionLogic(LogicBase):
             export_data = {
                 "metadata": {
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "scan_channels": self._scan_channels(),
-                    "count_channel": self._count_channel(),
+                    "scan_channels": self._scan_channels,
+                    "count_channel": self._count_channel,
                     "detection_method": self._detection_method,
                     "spot_threshold": self._spot_threshold
                 },
@@ -544,3 +653,88 @@ class ZPLDistributionLogic(LogicBase):
         except Exception as e:
             import traceback
             self.log.error(f"Failed to save JSON export: {e}\n{traceback.format_exc()}")
+
+    def fit_gaussian(self):
+        """
+        Fit a Gaussian to the current histogram data.
+        Returns:
+            dict: { 'amplitude': float, 'mean': float, 'sigma': float, 'offset': float, 'fwhm': float, 'integral_fit': float, 'integral_raw': float, 'x': array, 'y_fit': array }
+            or None if fit fails.
+        """
+        import numpy as np
+        from scipy.optimize import curve_fit
+        
+        # Get data
+        volts = np.array(self._histogram_data['voltage'])
+        counts = np.array(self._histogram_data['counts'])
+        freqs = np.array(self._histogram_data['frequency'])
+        
+        # Decide X axis: Use Frequency if available and not all NaNs, else Voltage
+        if len(freqs) == len(volts) and not np.all(np.isnan(freqs)):
+            x = freqs
+            # Filter NaNs
+            valid = ~np.isnan(x)
+            x = x[valid]
+            y = counts[valid]
+            is_frequency = True
+        else:
+            x = volts
+            y = counts
+            is_frequency = False
+            
+        if len(x) < 4:
+            return None
+            
+        # Define Gaussian function
+        def gaussian(x, a, x0, sigma, c):
+            return a * np.exp(-(x - x0)**2 / (2 * sigma**2)) + c
+            
+        # Initial guesses
+        a_guess = np.max(y) - np.min(y)
+        x0_guess = x[np.argmax(y)]
+        sigma_guess = (np.max(x) - np.min(x)) / 6.0
+        c_guess = np.min(y)
+        
+        try:
+            popt, pcov = curve_fit(gaussian, x, y, p0=[a_guess, x0_guess, sigma_guess, c_guess])
+            a, x0, sigma, c = popt
+            
+            # Calculate derived stats
+            fwhm = 2.35482 * abs(sigma)
+            
+            # Integral of the Gaussian part (A * sqrt(2*pi) * sigma)
+            # This represents the total number of "defects" if A is counts density? 
+            # Actually y is "Number of Spots". So sum(y) is total spots.
+            # The integral of the fit curve over dx? 
+            # If the histogram is counts per bin, then the sum is the integral.
+            # The Gaussian integral is area under curve. 
+            # If x is Frequency (GHz), area is Counts * GHz. Not directly "Number of spots".
+            # The "Integrated Number of Defects" is likely just sum(y) - background?
+            # Or area of the Gaussian peak.
+            # Let's return the area of the Gaussian component.
+            integral_fit = a * np.sqrt(2 * np.pi) * abs(sigma)
+            
+            # Raw integral (sum of counts)
+            integral_raw = np.sum(y)
+            
+            # Generate fit curve for plotting
+            x_fit = np.linspace(np.min(x), np.max(x), 200)
+            y_fit = gaussian(x_fit, *popt)
+            
+            return {
+                'amplitude': a,
+                'mean': x0,
+                'sigma': abs(sigma),
+                'offset': c,
+                'fwhm': fwhm,
+                'integral_fit': integral_fit, 
+                'integral_raw': integral_raw,
+                'x_fit': x_fit,
+                'y_fit': y_fit,
+                'is_frequency': is_frequency,
+                'params': popt
+            }
+            
+        except Exception as e:
+            self.log.warning(f"Gaussian fit failed: {e}")
+            return None
