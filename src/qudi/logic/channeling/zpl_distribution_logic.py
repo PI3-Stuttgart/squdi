@@ -22,6 +22,7 @@ class ZPLDistributionLogic(LogicBase):
 
     # Connectors
     _laser = Connector(name='laser', interface='SimpleLaserInterface')
+    _laser_qinu = Connector(name='laser_qinu', interface='SimpleLaserInterface')
     _scan_logic = Connector(name='scan_logic', interface='ScanningProbeLogic')
     _data_logic = Connector(name='data_logic', interface='ScanningDataLogic')
     _wavemeter = Connector(name='wavemeter', interface='WavemeterInterface')
@@ -44,6 +45,7 @@ class ZPLDistributionLogic(LogicBase):
     _count_channel = ConfigOption(name='count_channel', default='APD1')
     _zero_frequency = ConfigOption(name='zero_frequency', default=484.135) # THz
     _detection_method = ConfigOption(name='detection_method', default='Simple') # 'Simple', 'Gaussian', 'DoG'
+    _active_laser = ConfigOption(name='active_laser', default='Main') # 'Main', 'QInu'
     
     # Focused Mode Config
     _step_mode = ConfigOption(name='step_mode', default='Linear') # 'Linear', 'Focused'
@@ -55,6 +57,7 @@ class ZPLDistributionLogic(LogicBase):
     sigUpdatePlot = QtCore.Signal(object)
     sigMeasurementFinished = QtCore.Signal()
     sigScanCompleted = QtCore.Signal(float, object, list) # voltage, image, spots
+    sigWavelengthCheckFinished = QtCore.Signal(object) # (start_freq, stop_freq) or None if failed
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -70,7 +73,8 @@ class ZPLDistributionLogic(LogicBase):
 
     @QtCore.Slot(float, float, float, str, float)
     def start_measurement(self, start, stop, step, method='Simple', threshold=5000.0, 
-                          mode='Linear', center=50.0, width=20.0, fine=1.0, coarse=5.0):
+                          mode='Linear', center=50.0, width=20.0, fine=1.0, coarse=5.0,
+                          laser='Main'):
         if self._is_running:
             self.log.warning("Measurement already running.")
             return
@@ -81,12 +85,13 @@ class ZPLDistributionLogic(LogicBase):
         self._current_method = method
         self._current_threshold = threshold
         
-        # Store Focused params
+        # Store Focused params and Laser
         self._current_mode = mode
         self._current_center = center
         self._current_width = width
         self._current_fine = fine
         self._current_coarse = coarse
+        self._active_laser = laser
         
         self._is_running = True
         self._stop_requested = False
@@ -157,6 +162,167 @@ class ZPLDistributionLogic(LogicBase):
              voltages = np.arange(start, stop + step/100.0, step)
              return list(voltages)
 
+    @QtCore.Slot()
+    def check_wavelength_coverage(self):
+        """Check the wavelength coverage for the current start/stop settings."""
+        if self._is_running:
+            self.log.warning("Cannot check coverage while measurement is running.")
+            return
+
+        self._is_running = True
+        
+        # Get current settings from status vars which are updated by GUI via properties or direct set? 
+        # Actually in this logic class, start/stop are StatusVars but not automatically synced unless GUI sets them.
+        # But wait, start_measurement takes arguments. check_wavelength coverage should probably too, or rely on stored.
+        # The GUI spinboxes are not directly connected to these StatusVars.
+        # So I should accept arguments.
+        # Wait, the slot signature in GUI will likely just call this. 
+        # Let's update the signature to accept start/stop/laser.
+        pass
+
+    @QtCore.Slot(float, float, float, str, float, float, float, float, str)
+    def check_wavelength_coverage_args(self, start, stop, step, mode, center, width, fine, coarse, laser):
+        if self._is_running:
+            self.log.warning("Cannot check coverage while measurement is running.")
+            return
+
+        self._is_running = True
+        self._check_start = start
+        self._check_stop = stop
+        self._check_step = step
+        self._check_mode = mode
+        self._check_center = center
+        self._check_width = width
+        self._check_fine = fine
+        self._check_coarse = coarse
+        self._active_laser = laser
+        
+        import threading
+        self._check_thread = threading.Thread(target=self._run_wavelength_check)
+        self._check_thread.start()
+
+    def _run_wavelength_check(self):
+        try:
+            laser = self.get_active_laser()
+            if not laser.is_connected:
+                self.log.error("Laser not connected.")
+                self.sigWavelengthCheckFinished.emit(None)
+                return
+            
+            # Generate voltages
+            voltages = self.get_voltage_schedule(
+                self._check_start, 
+                self._check_stop, 
+                self._check_step,
+                self._check_mode,
+                self._check_center,
+                self._check_width,
+                self._check_fine,
+                self._check_coarse
+            )
+            
+            if not voltages:
+                self.log.warning("No voltages generated for check.")
+                self.sigWavelengthCheckFinished.emit(None)
+                return
+
+            measured_cw = []
+            frequencies_ghz = []
+            measured_volts = []
+            
+            total = len(voltages)
+            self.log.info(f"Checking {total} points...")
+            
+            for i, v in enumerate(voltages):
+                if not self._is_running: # Check if stopped/interrupted (though we don't present stop button for check yet)
+                     break
+                     
+                self.log.info(f"Check point {i+1}/{total}: {v:.4f} V")
+                laser().set_pc_voltage(v)
+                time.sleep(0.5) # Shorter sleep for check? Or stick to 2.0s? User asked to scan. 
+                # 2.0s per point for 100 points is 200s (3 mins). Might be slow but safe.
+                # Let's use 1.0s as compromise or stick to wait. 
+                # The measurement loop uses 2.0s. It's safer to use at least 1.0s.
+                
+                # Read wavemeter
+                f_ghz = np.nan
+                
+                if self._wavemeter.is_connected:
+                    try:
+                        wm = self._wavemeter()
+                        val = 0.0
+                        
+                        # Retry loop
+                        max_retries = 10
+                        for attempt in range(max_retries):
+                            # User explicitly asked for get_current_wavelength()
+                            if hasattr(wm, 'get_current_wavelength'):
+                                raw = wm.get_current_wavelength()
+                                # print(f"DEBUG: get_current_wavelength() -> {raw}")
+                                val = float(raw)
+                                
+                            # If 0, maybe default channel is empty, try explicit channels
+                            if val == 0 and hasattr(wm, 'get_wavelength'):
+                                # print("DEBUG: val is 0, trying channels 1-8...")
+                                for ch in range(1, 9): # Channels 1-8
+                                    try:
+                                        temp = float(wm.get_wavelength(ch))
+                                        if temp > 0:
+                                            val = temp
+                                            # self.log.info(f"  -> Found signal on channel {ch}: {val}")
+                                            break
+                                    except Exception as e:
+                                        # print(f"DEBUG: Error reading channel {ch}: {e}")
+                                        pass
+                            
+                            if val > 0:
+                                break
+                                
+                            # Wait before retry if no signal
+                            if attempt < max_retries - 1:
+                                time.sleep(0.1)
+                                
+                        if val > 0:
+                            # Heuristic for units
+                            # ZPL is ~470 THz (637 nm)
+                            # If val > 550, assume nm
+                            if val > 550:
+                                 # Convert nm to THz
+                                 freq_thz = 299792.458 / val
+                            else:
+                                 freq_thz = val
+                                 
+                            f_ghz = (freq_thz - self._zero_frequency) * 1000.0
+                            self.log.info(f"  -> Val: {val}, Rel Freq: {f_ghz:.4f} GHz")
+                        else:
+                            self.log.warning(f"  -> Zero reading from wavemeter at {v:.4f}V after {max_retries} attempts")
+
+                    except Exception as e:
+                         self.log.error(f"Error reading wavemeter: {e}")
+                
+                measured_volts.append(v)
+                frequencies_ghz.append(f_ghz)
+            
+            self.sigWavelengthCheckFinished.emit((measured_volts, frequencies_ghz))
+            
+        except Exception as e:
+            self.log.error(f"Error in wavelength check: {e}")
+            import traceback
+            self.log.error(traceback.format_exc())
+            self.sigWavelengthCheckFinished.emit(None)
+        finally:
+            self._is_running = False
+            # Does not emit sigMeasurementFinished because it's not a measurement run? 
+            # Correct, but we need to ensure GUI knows we are done if we set buttons.
+            # The sigWavelengthCheckFinished should be enough.
+
+    def get_active_laser(self):
+        """Return the currently active laser connector based on config."""
+        if self._active_laser == 'QInu':
+            return self._laser_qinu
+        else:
+            return self._laser
+
     def _run_measurement_loop(self):
         try:
              # Generate Voltage Schedule
@@ -180,7 +346,12 @@ class ZPLDistributionLogic(LogicBase):
             if len(voltages) == 0:
                  self.log.warning("No voltages to scan.")
                  return
-                 return
+
+            # Check Laser Connection
+            laser = self.get_active_laser()
+            if not laser.is_connected:
+                self.log.error(f"Selected laser ({self._active_laser}) is not connected.")
+                return
 
             total_steps = len(voltages)
             
@@ -198,8 +369,8 @@ class ZPLDistributionLogic(LogicBase):
                 self._progress = (i / total_steps) * 100
                 
                 # 1. Set Laser Voltage
-                self.log.info(f"Setting laser voltage to {v:.4f} V")
-                self._laser().set_pc_voltage(v)
+                self.log.info(f"Setting laser ({self._active_laser}) voltage to {v:.4f} V")
+                laser().set_pc_voltage(v)
                 time.sleep(2.0) # Allow settling (increased to 2s based on notebook)
                 
                 # 1b. Measure Wavemeter (if connected)

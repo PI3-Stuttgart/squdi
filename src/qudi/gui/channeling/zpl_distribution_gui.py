@@ -12,6 +12,47 @@ import numpy as np
 from qudi.core.module import GuiBase
 from qudi.core.connector import Connector
 
+class WavelengthCheckDialog(QtWidgets.QDialog):
+    def __init__(self, voltages, freqs, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Wavelength Coverage Check")
+        self.resize(600, 400)
+        
+        layout = QtWidgets.QVBoxLayout()
+        self.setLayout(layout)
+        
+        self.fig = Figure()
+        self.canvas = FigureCanvas(self.fig)
+        self.ax = self.fig.add_subplot(111)
+        
+        # Plot
+        # Filter valid
+        v_valid = []
+        f_valid = []
+        for v, f in zip(voltages, freqs):
+            if not np.isnan(f):
+                v_valid.append(v)
+                f_valid.append(f)
+                
+        if v_valid:
+            self.ax.plot(v_valid, f_valid, 'b.-')
+            self.ax.set_xlabel("Voltage (V)")
+            self.ax.set_ylabel("Frequency (GHz rel. to 484.135 THz)")
+            self.ax.set_title("Wavelength Coverage")
+            self.ax.grid(True)
+            
+            start_f = f_valid[0]
+            end_f = f_valid[-1]
+            layout.addWidget(QtWidgets.QLabel(f"Range: {start_f:.2f} to {end_f:.2f} GHz"))
+        else:
+            self.ax.text(0.5, 0.5, "No Data", ha='center')
+            
+        layout.addWidget(self.canvas)
+        
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
+        btn_box.accepted.connect(self.accept)
+        layout.addWidget(btn_box)
+
 class ZPLDistributionGui(GuiBase):
     """
     GUI Class for ZPL Distribution.
@@ -29,12 +70,14 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigUpdatePlot.connect(self.update_plot)
         self._logic().sigMeasurementFinished.connect(self.on_finished)
         self._logic().sigScanCompleted.connect(self.on_scan_completed)
+        self._logic().sigWavelengthCheckFinished.connect(self.on_coverage_check_finished)
         self.show()
         
     def on_deactivate(self):
         self._logic().sigUpdatePlot.disconnect(self.update_plot)
         self._logic().sigMeasurementFinished.disconnect(self.on_finished)
         self._logic().sigScanCompleted.disconnect(self.on_scan_completed)
+        self._logic().sigWavelengthCheckFinished.disconnect(self.on_coverage_check_finished)
         if self._mw:
             self._mw.close()
 
@@ -88,6 +131,14 @@ class ZPLDistributionGui(GuiBase):
         control_layout.addWidget(self.start_btn)
         control_layout.addWidget(self.pause_btn)
         control_layout.addWidget(self.stop_btn)
+        
+        # Laser Selector
+        self.laser_combo = QtWidgets.QComboBox()
+        self.laser_combo.addItems(["Main", "QInu"])
+        # Set current index based on logic if possible? logic not connected yet fully.
+        # We will set it in on_activate or just relies on default.
+        control_layout.addWidget(QtWidgets.QLabel("Laser:"))
+        control_layout.addWidget(self.laser_combo)
         
         # Focused Mode Controls
         self.mode_combo = QtWidgets.QComboBox()
@@ -146,6 +197,14 @@ class ZPLDistributionGui(GuiBase):
         # Add label for preview stats
         self.preview_label = QtWidgets.QLabel("Points: 0")
         control_layout.addWidget(self.preview_label)
+        
+        # Coverage Check
+        self.check_coverage_btn = QtWidgets.QPushButton("Check Range")
+        self.check_coverage_btn.clicked.connect(self.check_coverage)
+        control_layout.addWidget(self.check_coverage_btn)
+        
+        self.coverage_label = QtWidgets.QLabel("Range: N/A")
+        control_layout.addWidget(self.coverage_label)
 
         layout.addLayout(control_layout)
         
@@ -359,6 +418,9 @@ class ZPLDistributionGui(GuiBase):
         fine = self.fine_step_spin.value()
         coarse = self.coarse_step_spin.value()
         
+        # Laser
+        laser = self.laser_combo.currentText()
+        
         # Reset plots
         self.ax_hist.clear()
         self.ax_hist.set_xlabel("Voltage (V)")
@@ -373,8 +435,9 @@ class ZPLDistributionGui(GuiBase):
         
         # Pass detection parameters directly to start_measurement
         self._logic().start_measurement(start, stop, step, method, threshold,
-                                      mode, center, width, fine, coarse)
+                                      mode, center, width, fine, coarse, laser)
         self.start_btn.setEnabled(False)
+        self.check_coverage_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
         self.pause_btn.setChecked(False)
         self.pause_btn.setText("Pause")
@@ -414,6 +477,7 @@ class ZPLDistributionGui(GuiBase):
 
     def on_finished(self):
         self.start_btn.setEnabled(True)
+        self.check_coverage_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.status_label.setText("Status: Finished")
@@ -539,10 +603,12 @@ class ZPLDistributionGui(GuiBase):
         self.scan_selector.addItem(f"{voltage:.4f} V", voltage)
         self.scan_selector.blockSignals(False)
         
-        # Auto-update if it's the first one or user hasn't selected another one
+        # Auto-update if it's the first one or user hasn't selected another one yet
         if not hasattr(self, '_current_view_voltage') or self._current_view_voltage is None:
+             self._current_view_voltage = voltage
              self.display_scan(voltage, image, spots)
-             # Update combo selection without triggering again (conceptually)
+             
+             # Sync selector
              self.scan_selector.blockSignals(True)
              idx = self.scan_selector.findData(voltage)
              if idx >= 0:
@@ -557,12 +623,21 @@ class ZPLDistributionGui(GuiBase):
              if res:
                  # Populate channel combo
                  self.channel_combo.blockSignals(True)
+                 
+                 # Remember current selection
+                 current_channel = self.channel_combo.currentText()
+                 
                  self.channel_combo.clear()
                  if 'all_channels' in res and res['all_channels']:
                       for ch in res['all_channels'].keys():
                            self.channel_combo.addItem(ch)
-                      # Set to current analysis channel
-                      idx = self.channel_combo.findText(res.get('channel', ''))
+                      
+                      # Try to preserve current selection
+                      idx = self.channel_combo.findText(current_channel)
+                      if idx < 0:
+                          # Default to analysis channel
+                          idx = self.channel_combo.findText(res.get('channel', ''))
+                      
                       if idx >= 0:
                            self.channel_combo.setCurrentIndex(idx)
                  else:
@@ -570,7 +645,8 @@ class ZPLDistributionGui(GuiBase):
                       self.channel_combo.addItem(res.get('channel', 'Unknown'))
                  self.channel_combo.blockSignals(False)
                  
-                 self.display_scan(voltage, res['image'], res['spots'])
+                 self._current_view_voltage = voltage
+                 self.update_scan_view()
 
     def on_hist_pick(self, event):
         # Handle picking for BarContainer elements (Rectangle)
@@ -675,7 +751,8 @@ class ZPLDistributionGui(GuiBase):
             return
             
         if event.button == 1: # Left Click: Add
-            self._logic().add_spot(self._current_view_voltage, ix, iy)
+            if self._logic().add_spot(self._current_view_voltage, ix, iy):
+                self.update_scan_view()
             
         elif event.button == 3: # Right Click: Remove
             # Find nearest spot in list?
@@ -693,7 +770,8 @@ class ZPLDistributionGui(GuiBase):
                         closest_idx = i
                 
                 if closest_idx != -1 and closest_dist < 25: # Tolerance radius sq (5 pixels)
-                    self._logic().remove_spot(self._current_view_voltage, closest_idx)
+                    if self._logic().remove_spot(self._current_view_voltage, closest_idx):
+                        self.update_scan_view()
 
     def remove_selected_spot(self):
         row = self.spots_list_widget.currentRow()
@@ -702,7 +780,44 @@ class ZPLDistributionGui(GuiBase):
              
     def save_all_results(self):
         # Open dialog
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self._mw, "Select Directory to Save Analysis")
+        # Use explicit kwargs to avoid qtpy issue
+        folder = QtWidgets.QFileDialog.getExistingDirectory(parent=self._mw, caption="Select Directory to Save Analysis")
         if folder:
             self._logic().save_all_results(folder)
             QtWidgets.QMessageBox.information(self._mw, "Saved", f"Results saved to {folder}")
+
+    def check_coverage(self):
+        start = self.start_spin.value()
+        stop = self.stop_spin.value()
+        step = self.step_spin.value()
+        mode = self.mode_combo.currentText()
+        center = self.focus_center_spin.value()
+        width = self.focus_width_spin.value()
+        fine = self.fine_step_spin.value()
+        coarse = self.coarse_step_spin.value()
+        laser = self.laser_combo.currentText()
+        
+        self.check_coverage_btn.setEnabled(False)
+        self.start_btn.setEnabled(False)
+        self.status_label.setText(f"Status: Checking coverage ({mode})...")
+        
+        self._logic().check_wavelength_coverage_args(start, stop, step, mode, center, width, fine, coarse, laser)
+        
+    def on_coverage_check_finished(self, result):
+        self.check_coverage_btn.setEnabled(True)
+        self.start_btn.setEnabled(True)
+        self.status_label.setText("Status: Idle")
+        
+        if result:
+            voltages, freqs = result
+            dialog = WavelengthCheckDialog(voltages, freqs, parent=self._mw)
+            dialog.exec_()
+            
+            # Also update label with range?
+            valid_freqs = [f for f in freqs if not np.isnan(f)]
+            if valid_freqs:
+                 self.coverage_label.setText(f"Range: {valid_freqs[0]:.2f} - {valid_freqs[-1]:.2f} GHz")
+            else:
+                 self.coverage_label.setText("Range: No Data")
+        else:
+             self.coverage_label.setText("Range: Failed")
