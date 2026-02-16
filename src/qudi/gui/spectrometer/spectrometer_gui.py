@@ -230,6 +230,12 @@ class SpectrometerGui(GuiBase):
         self._mw.control_widget.spectrum_continue_button.setEnabled(
             self._spectrometer_logic().constant_acquisition
         )
+        
+        # Block controls during acquisition
+        running = self._spectrometer_logic().acquisition_running
+        self._mw.action_spectrometer_settings.setEnabled(not running)
+        self._mw.control_widget.background_correction_switch.setEnabled(not running)
+        self._mw.control_widget.flipper_switch.setEnabled(not running)
 
         self._mw.data_widget.fit_region.setRegion(self._spectrometer_logic().fit_region)
         self._mw.data_widget.fit_region_from.setValue(self._spectrometer_logic().fit_region[0])
@@ -243,7 +249,7 @@ class SpectrometerGui(GuiBase):
 
         self._mw.control_widget.differential_spectrum_switch.blockSignals(True)
         self._mw.control_widget.differential_spectrum_switch.setEnabled(
-            self._spectrometer_logic().differential_spectrum_available
+            self._spectrometer_logic().differential_spectrum_available and not running
         )
         self._mw.control_widget.differential_spectrum_switch.setChecked(
             self._spectrometer_logic().differential_spectrum

@@ -611,6 +611,55 @@ class ZPLDistributionLogic(LogicBase):
             return True
         return False
 
+    def reanalyze_all(self, method, threshold, channel=None):
+        """Re-analyze ALL scans with new parameters."""
+        count = 0
+        for voltage in self._scan_results.keys():
+             # We use the internal reanalyze_scan logic but defer updates? 
+             # Or just do it in loop. Efficiency might be okay for typical number of points (100-200).
+             # Let's optimize by not emitting sigScanCompleted for every point, only sigUpdatePlot at end?
+             # But reanalyze_scan emits signals.
+             # Let's copy logic to avoid spamming signals if needed, or just let it happen.
+             # Actually, reanalyze_scan emits sigScanCompleted which might be heavy if GUI redraws image every time.
+             # But GUI only redraws if voltage matches current view.
+             # sigUpdatePlot redraws histogram. That might be heavy 100 times.
+             
+             res = self._scan_results[voltage]
+             
+             # Select channel
+             image = res['image']
+             current_channel = res['channel']
+             
+             if channel:
+                if 'all_channels' in res and channel in res['all_channels']:
+                    image = res['all_channels'][channel]
+                    current_channel = channel
+             
+             spots = self._detect_spots(image, method, threshold)
+             
+             res['spots'] = spots
+             res['image'] = image
+             res['channel'] = current_channel
+             spot_count = len(spots)
+             
+             # Update histogram source
+             try:
+                idx = self._histogram_data['voltage'].index(voltage)
+                self._histogram_data['counts'][idx] = spot_count
+             except ValueError:
+                pass
+             
+             count += 1
+             
+        self.log.info(f"Re-analyzed {count} scans.")
+        self.sigUpdatePlot.emit(self._histogram_data)
+        
+        # If there is a current view, we should update it too.
+        # But we don't know what GUI is viewing. 
+        # The GUI can request update or we can just emit empty sigScanCompleted? 
+        # Better: The user will likely want to see the new distribution.
+        return count
+
     def get_scan_result(self, voltage):
         return self._scan_results.get(voltage)
 

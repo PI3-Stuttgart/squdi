@@ -172,7 +172,7 @@ class SpectrometerLogic(LogicBase):
         # Start worker thread
         # Capture necessary state for the worker
         do_diff = self.differential_spectrum_available and self._differential_spectrum
-        do_flip = self.flip_mirror() and self.do_flip
+        do_flip = self.flip_mirror.is_connected and self.do_flip
         
         thread = threading.Thread(target=self._acquire_spectrum_worker, args=(do_diff, do_flip))
         thread.start()
@@ -399,7 +399,7 @@ class SpectrometerLogic(LogicBase):
 
     @property
     def differential_spectrum_available(self):
-        return self.modulation_device() is not None
+        return self.modulation_device.is_connected
 
     @property
     def differential_spectrum(self):
@@ -428,7 +428,10 @@ class SpectrometerLogic(LogicBase):
         parameters = {'acquisition repetitions': self.repetitions,
                       'differential_spectrum'  : self.differential_spectrum,
                       'background_correction'  : self.background_correction,
-                      'constant_acquisition'   : self.constant_acquisition}
+                      'constant_acquisition'   : self.constant_acquisition,
+                      'integration_time'       : self.exposure_time,
+                      'central_wavelength'     : self.cwavelength,
+                      'grating'                : self.grating}
         if self.fit_method != 'No Fit' and self.fit_results is not None:
             parameters['fit_method'] = self.fit_method
             parameters['fit_results'] = self.fit_results.params

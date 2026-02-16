@@ -327,6 +327,10 @@ class ZPLDistributionGui(GuiBase):
         self.reanalyze_btn.clicked.connect(self.run_reanalysis)
         side_panel.addWidget(self.reanalyze_btn)
         
+        self.reanalyze_all_btn = QtWidgets.QPushButton("Re-Analyze All")
+        self.reanalyze_all_btn.clicked.connect(self.run_reanalyze_all)
+        side_panel.addWidget(self.reanalyze_all_btn)
+        
         
         # Add a note about manual adding
         side_panel.addWidget(QtWidgets.QLabel("Tip:\nLeft Click: Add Spot\nRight Click: Remove Spot"))
@@ -460,6 +464,31 @@ class ZPLDistributionGui(GuiBase):
                  self.status_label.setText(f"Status: Re-analysis complete.")
              else:
                  self.status_label.setText(f"Status: Re-analysis failed.")
+
+    def run_reanalyze_all(self):
+        method = self.method_combo.currentText()
+        threshold = self.threshold_spin.value()
+        
+        self.status_label.setText(f"Status: Re-analyzing ALL scans with {method}...")
+        QtWidgets.QApplication.processEvents()
+        
+        # We can optionally select a channel if user wants to force a specific channel for all?
+        # Current UI logic for 'Current' uses the dropdown. 
+        # For 'All', we should probably respect the same dropdown if it makes sense, 
+        # or use 'default' logic if channel varies per scan.
+        # But 'channel_combo' content depends on the *currently selected scan*.
+        # So using it for *all* scans might be dangerous if they have different channels.
+        # However, usually a measurement run has consistent channels.
+        # Let's pass None to let logic decide (default or fallback), 
+        # or pass the current combo text if valid.
+        # Logic `reanalyze_all` signature takes `channel`.
+        # Safe bet: pass None (Logic uses original channel or finds match).
+        
+        count = self._logic().reanalyze_all(method, threshold, channel=None)
+        
+        self.status_label.setText(f"Status: Re-analysis of {count} scans complete.")
+        QtWidgets.QMessageBox.information(self._mw, "Re-analysis Complete", f"Re-analyzed {count} scans.")
+
 
     def stop_measurement(self):
         self._logic().stop_measurement()
