@@ -66,7 +66,7 @@ ple_gui._fit_averaged = False
 
 
 
-BASE_FOLDER = r'Z:\Vlad\heavyIV\202-2\dezembre\CPT2\B-sweeps_xy'  # Base folder to save all measurements
+BASE_FOLDER = r'Z:\Vlad\heavyIV\202-2\feb\CPT-3-prep\B-sweeps_xy'  # Base folder to save all measurements
 B_AMPLITUDE = 0.2  # Tesla
 NUM_STEPS = 150     # Number of points
 Bx_offset = 0
@@ -461,31 +461,31 @@ with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
 
 # %%
 all_results = {}
-sweep_definitions_ = {i:j for i, j in sweep_definitions.items() if i in ['XY'] } #'XZ','XY'
+sweep_definitions_ = {i:j for i, j in sweep_definitions.items() if i in ['XZ', 'YZ', "XY"] } #'XZ','XY'
 ple_gui._fit_averaged = False
 
-with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
-    dlc.laser1.wide_scan.trigger.output_enabled.set(True)
-    dlc.laser1.wide_scan.continuous_mode.set(False)
 
-while laser_scanner_logic.module_state()=='locked':
-    ple_gui._mw.actionToggle_scan.setChecked(False)
-    time.sleep(0.25)
-    ple_gui.toggle_scan()
-    time.sleep(1)
-
-time.sleep(1)
-ple_gui._mw.number_of_repeats_SpinBox.editingFinished.emit()
-time.sleep(0.5)
-ple_gui._mw.number_of_repeats_SpinBox.editingFinished.emit()
-time.sleep(0.5)
-ple_gui._mw.actionToggle_scan.setChecked(True)
-time.sleep(0.5)
-ple_gui.toggle_scan()
-time.sleep(0.5)
 
 for plane, config in sweep_definitions_.items():
-    
+    with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
+        dlc.laser1.wide_scan.trigger.output_enabled.set(True)
+        dlc.laser1.wide_scan.continuous_mode.set(False)
+
+    while laser_scanner_logic.module_state()=='locked':
+        ple_gui._mw.actionToggle_scan.setChecked(False)
+        time.sleep(0.25)
+        ple_gui.toggle_scan()
+        time.sleep(1)
+
+    time.sleep(1)
+    ple_gui._mw.number_of_repeats_SpinBox.editingFinished.emit()
+    time.sleep(0.5)
+    ple_gui._mw.number_of_repeats_SpinBox.editingFinished.emit()
+    time.sleep(0.5)
+    ple_gui._mw.actionToggle_scan.setChecked(True)
+    time.sleep(0.5)
+    ple_gui.toggle_scan()
+    time.sleep(0.5)
 
     plane_name=plane
     field_targets=np.array(config['points'])
@@ -544,7 +544,7 @@ for plane, config in sweep_definitions_.items():
                 time.sleep(1)
                 laser_state = dlc._laser1.wide_scan.state.get()
             time.sleep(1)
-            dlc.laser1.wide_scan.trigger.output_enabled.set(False)
+            #dlc.laser1.wide_scan.trigger.output_enabled.set(False)
             
 
     tag = f"plane-{plane_name}"

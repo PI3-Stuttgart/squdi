@@ -16,7 +16,7 @@ class TT(Base):
     _channels_params = ConfigOption('channels_params', dict(), missing='info')
     _remote_tagger_ip = ConfigOption('remote_tagger_ip', None, missing='info')
     _remote_tagger_port = ConfigOption('remote_tagger_port', None, missing='info')
-    _port = ConfigOption('port', 12233, missing='info')
+    _port = ConfigOption('port', 41101, missing='info')
     _remote_channel = ConfigOption('remote_tagger_port', None, missing='info')
     set_conditional_filter = True
     gated_vch = None
