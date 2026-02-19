@@ -73,6 +73,7 @@ class PleDataLogic(LogicBase):
     # signals
     sigHistoryScanDataRestored = QtCore.Signal(object)
     sigSaveStateChanged = QtCore.Signal(bool)
+    sigDataSaved = QtCore.Signal(dict)
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -411,6 +412,7 @@ class PleDataLogic(LogicBase):
                         {"averaged_ch_{channel}": file_path},
                     )
                     self.last_saved_files_paths["parameters"] = parameters
+                self.sigDataSaved.emit(self.last_saved_files_paths)
             finally:
                 self.module_state.unlock()
                 self.sigSaveStateChanged.emit(False)

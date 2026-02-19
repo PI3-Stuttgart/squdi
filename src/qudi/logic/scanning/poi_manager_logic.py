@@ -28,6 +28,7 @@ If not, see <https://www.gnu.org/licenses/>.
 import os
 import numpy as np
 import time
+import sqlite3
 from datetime import datetime
 from collections import OrderedDict
 from PySide2 import QtCore
@@ -312,7 +313,7 @@ class PointOfInterest:
     The actual individual poi is saved in this generic object.
     """
 
-    def __init__(self, position, name=None):
+    def __init__(self, position, name=None, notes="", repump_wavelength=None, repump_power=None, measurements=None):
         # Name of the POI
         self._name = ''
         # Relative POI position within the ROI (x,y,z)
@@ -320,6 +321,10 @@ class PointOfInterest:
         # Initialize properties
         self.position = position
         self.name = name
+        self.notes = notes
+        self.repump_wavelength = repump_wavelength
+        self.repump_power = repump_power
+        self.measurements = measurements if measurements is not None else []
 
     @property
     def name(self):
@@ -347,7 +352,14 @@ class PointOfInterest:
         return
 
     def to_dict(self):
-        return {'name': self.name, 'position': tuple(self.position)}
+        return {
+            'name': self.name,
+            'position': tuple(self.position),
+            'notes': self.notes,
+            'repump_wavelength': self.repump_wavelength,
+            'repump_power': self.repump_power,
+            'measurements': self.measurements
+        }
 
     @classmethod
     def from_dict(cls, dict_repr):
@@ -372,6 +384,8 @@ class PoiManagerLogic(LogicBase):
     _optimizelogic = Connector(name='optimize_logic', interface='ScanningOptimizeLogic')
     _scanninglogic = Connector(name='scanning_logic', interface='ScanningProbeLogic')
     _data_logic = Connector(name='data_logic', interface='ScanningDataLogic')
+    _ple_data_logic = Connector(name='ple_data_logic', interface='PleDataLogic', optional=True)
+    _spectrometer_logic = Connector(name='spectrometer_logic', interface='SpectrometerLogic', optional=True)
 
     # status vars
     _roi = StatusVar(default=RegionOfInterest())  # Notice constructor and representer further below
@@ -380,6 +394,8 @@ class PoiManagerLogic(LogicBase):
     _move_scanner_after_optimization = StatusVar(default=True)
     _poi_threshold = StatusVar(default=5)
     _poi_diameter = StatusVar(default=100e-9)
+    _detector_channel = StatusVar(default=None)
+    _auto_link_measurements = StatusVar(default=False)
 
     # Signals for connecting modules
     sigOptimizeStateUpdated = QtCore.Signal(bool)  # is_active
@@ -428,6 +444,11 @@ class PoiManagerLogic(LogicBase):
             self.start_periodic_refocus, QtCore.Qt.QueuedConnection)
         self.__sigStopPeriodicRefocus.connect(
             self.stop_periodic_refocus, QtCore.Qt.QueuedConnection)
+
+        if self._spectrometer_logic():
+             self._spectrometer_logic().sigDataSaved.connect(self.on_spectrum_saved)
+        if self._ple_data_logic():
+             self._ple_data_logic().sigDataSaved.connect(self.on_ple_saved)
 
         # Initialise the ROI scan image (xy confocal image) if not present
         if self._roi.scan_image is None:
@@ -711,6 +732,206 @@ class PoiManagerLogic(LogicBase):
 
             self.sigActivePoiUpdated.emit('' if self.active_poi is None else self.active_poi)
             return
+
+    @property
+    def detector_channel(self):
+        return self._detector_channel
+
+    @detector_channel.setter
+    def detector_channel(self, channel):
+        self._detector_channel =  str(channel)
+        # TODO: Propagate to optimize logic if needed, or use in set_scan_image
+
+    @property
+    def auto_link_measurements(self):
+        return bool(self._auto_link_measurements)
+
+    @auto_link_measurements.setter
+    def auto_link_measurements(self, value):
+        self._auto_link_measurements = bool(value)
+
+    @QtCore.Slot(str, object)
+    def update_poi_properties(self, poi_name, properties):
+        with self._thread_lock:
+             if poi_name not in self.poi_names:
+                 return
+             poi = self._roi._pois[poi_name]
+             if 'notes' in properties:
+                 poi.notes = properties['notes']
+             if 'repump_wavelength' in properties:
+                 poi.repump_wavelength = properties['repump_wavelength']
+             if 'repump_power' in properties:
+                 poi.repump_power = properties['repump_power']
+             # Signal update? Maybe strictly not needed for dict updates unless we want full GUI refresh
+             # self.sigPoiUpdated.emit(poi_name, poi_name, poi.position + self.origin)
+
+    @QtCore.Slot()
+    def save_spectrum_to_poi(self):
+        if not self._spectrometer_logic():
+            self.log.error("Spectrometer logic not connected.")
+            return
+
+        if self.active_poi is None:
+             self.log.error("No active POI selected.")
+             return
+
+        # Trigger save in spectrometer logic.
+        # This will emit sigDataSaved, which we catch in on_spectrum_saved
+        # We temporarily force auto-link or just rely on manual link?
+        # The prompt says "click on the poi in the manager save ple or save spectrum and then it saves... and as well in the coresponding folder"
+        # So we can just rely on the signal if we know WE triggered it.
+        # But to be safe and explicit, let's set a flag or just assume the signal Handler handles it.
+        # Since the user might ALSO want auto-linking when triggering from Spectrometer GUI, let's use the signal.
+        # However, for this specific button action, we want to force linking even if auto-link is off?
+        # Let's assume the user wants to link if they click "Save Spectrum" in POI Manager.
+        # So we can set a temporary flag or just pass a name_tag that identifies it?
+        name_tag = f"POI_{self.active_poi}"
+        self._spectrometer_logic().save_spectrum_data(name_tag=name_tag)
+
+    @QtCore.Slot()
+    def save_ple_to_poi(self):
+        if not self._ple_data_logic():
+            self.log.error("PLE Data logic not connected.")
+            return
+        if self.active_poi is None:
+             self.log.error("No active POI selected.")
+             return
+        
+        name_tag = f"POI_{self.active_poi}"
+        # We need to get the current scan data from data logic or scan logic?
+        # data_logic.save_scan_by_axis() uses get_current_scan_data internally.
+        self._ple_data_logic().save_scan_by_axis(tag=name_tag)
+
+    @QtCore.Slot(str)
+    def on_spectrum_saved(self, filepath):
+        if self.active_poi and (self.auto_link_measurements or "POI_" in filepath):
+            # If auto-link is ON, OR if the filename suggests it came from our trigger (tag in filename)
+            # Actually, checking "POI_" in filepath is a heuristic.
+            # Ideally we'd have a more robust correlation.
+            # But "POI_" + active_poi name should be in the filename if we triggered it.
+            # Or if auto-link is on, we link ANY save.
+            self.add_measurement_to_poi(self.active_poi, "Spectrum", filepath)
+            
+            # Save to Database immediately?
+            self.save_to_database()
+
+    @QtCore.Slot(dict)
+    def on_ple_saved(self, file_paths):
+        # file_paths is a dict of {key: filepath}
+        if self.active_poi:
+             # Check if we should link
+             # Simple heuristic: if any filepath contains POI name, or auto-link is true.
+             should_link = self.auto_link_measurements
+             if not should_link:
+                 for path in file_paths.values():
+                     if isinstance(path, str) and f"POI_{self.active_poi}" in path:
+                         should_link = True
+                         break
+            
+             if should_link:
+                 for key, path in file_paths.items():
+                     if isinstance(path, str):
+                         self.add_measurement_to_poi(self.active_poi, f"PLE ({key})", path)
+                 self.save_to_database()
+
+    def add_measurement_to_poi(self, poi_name, measurement_type, filepath):
+        if poi_name not in self.poi_names:
+            return
+        poi = self._roi._pois[poi_name]
+        measurement = {
+            'type': measurement_type,
+            'filepath': filepath,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        poi.measurements.append(measurement)
+        self.log.info(f"Linked {measurement_type} measurement to POI {poi_name}: {filepath}")
+
+    @QtCore.Slot(str)
+    def save_to_database(self, db_path="poi_database.db"):
+        # By default save to module dir
+        if not os.path.isabs(db_path):
+            db_path = os.path.join(self.module_default_data_dir, db_path)
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Create tables if not exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pois (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    roi_name TEXT,
+                    name TEXT,
+                    x REAL,
+                    y REAL,
+                    z REAL,
+                    notes TEXT,
+                    repump_wl REAL,
+                    repump_pwr REAL,
+                    creation_time TEXT,
+                    UNIQUE(roi_name, name)
+                )
+            ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS measurements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    poi_id INTEGER,
+                    type TEXT,
+                    filepath TEXT,
+                    timestamp TEXT,
+                    FOREIGN KEY(poi_id) REFERENCES pois(id)
+                )
+            ''')
+
+            # Upsert POIs
+            for name, poi in self._roi._pois.items():
+                abs_pos = poi.position + self.origin
+                cursor.execute('''
+                    INSERT INTO pois (roi_name, name, x, y, z, notes, repump_wl, repump_pwr, creation_time)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(roi_name, name) DO UPDATE SET
+                        x=excluded.x,
+                        y=excluded.y,
+                        z=excluded.z,
+                        notes=excluded.notes,
+                        repump_wl=excluded.repump_wl,
+                        repump_pwr=excluded.repump_pwr
+                ''', (self.roi_name, name, abs_pos[0], abs_pos[1], abs_pos[2], 
+                      poi.notes, poi.repump_wavelength, poi.repump_power, datetime.now().isoformat()))
+                
+                # Get POI ID
+                cursor.execute('SELECT id FROM pois WHERE roi_name=? AND name=?', (self.roi_name, name))
+                poi_id = cursor.fetchone()[0]
+
+                # Insert measurements
+                for meas in poi.measurements:
+                    # Check if measurement already exists
+                    cursor.execute('SELECT id FROM measurements WHERE poi_id=? AND filepath=?', (poi_id, meas['filepath']))
+                    if not cursor.fetchone():
+                        cursor.execute('''
+                            INSERT INTO measurements (poi_id, type, filepath, timestamp)
+                            VALUES (?, ?, ?, ?)
+                        ''', (poi_id, meas['type'], meas['filepath'], meas['timestamp']))
+
+            conn.commit()
+            conn.close()
+            self.log.info(f"Saved POIs to database: {db_path}")
+
+        except Exception as e:
+            self.log.error(f"Failed to save to database: {e}")
+
+    @QtCore.Slot(str)
+    def get_poi_details(self, name=None):
+        """
+        Returns the POI details dict of the specified POI or the active POI if none is given.
+        """
+        with self._thread_lock:
+             if name is None:
+                 name = self.active_poi
+             if name and name in self.poi_names:
+                 return self._roi._pois[name].to_dict()
+             return None
 
     def get_poi_position(self, name=None):
         """

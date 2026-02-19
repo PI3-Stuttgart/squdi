@@ -79,6 +79,8 @@ class SpectrometerLogic(LogicBase):
     _sig_acquisition_step_done = QtCore.Signal(object, object)
     _sig_background_step_done = QtCore.Signal(object)
 
+    sigDataSaved = QtCore.Signal(str)
+
 
     _default_fit_configs = (
         {'name'             : 'Lorentzian',
@@ -520,6 +522,7 @@ class SpectrometerLogic(LogicBase):
         ds.save_thumbnail(figure, file_path=file_path.rsplit('.', 1)[0])
 
         self.log.debug(f'Spectrum saved to:{file_path}')
+        self.sigDataSaved.emit(file_path)
 
     @staticmethod
     def _get_si_scaling(number):

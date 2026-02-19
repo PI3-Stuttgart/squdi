@@ -316,6 +316,9 @@ class PoiManagerGui(GuiBase):
         self.__init_roi_scan_image()
         self.__init_roi_history_plot()
 
+        # Initialize POI Details Widget
+        self._init_poi_details_widget()
+
         # Initialize refocus timer
         self.update_refocus_timer(
             self._poi_manager_logic().module_state() == "locked",
@@ -665,6 +668,98 @@ class PoiManagerGui(GuiBase):
         self._mw.roi_management_view_Action.triggered.disconnect()
         self._mw.poi_tools_view_Action.triggered.disconnect()
         return
+    
+    def _init_poi_details_widget(self):
+        self.poi_details_dockWidget = QtWidgets.QDockWidget("POI Details", self._mw)
+        self.poi_details_dockWidget.setObjectName("poi_details_dockWidget")
+        
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+
+        # Detector
+        layout.addWidget(QtWidgets.QLabel("Detector:"))
+        self.detector_comboBox = QtWidgets.QComboBox()
+        # Populate detector channels from scanning/optimizing logic if possible
+        if self._poi_manager_logic()._scanninglogic:
+             channels = self._poi_manager_logic()._scanninglogic().scanner_channels.keys()
+             self.detector_comboBox.addItems(list(channels))
+        layout.addWidget(self.detector_comboBox)
+        self.detector_comboBox.currentTextChanged.connect(
+            lambda text: setattr(self._poi_manager_logic(), 'detector_channel', text)
+        )
+
+        # Notes
+        layout.addWidget(QtWidgets.QLabel("Notes:"))
+        self.notes_textEdit = QtWidgets.QTextEdit()
+        self.notes_textEdit.setFixedHeight(60)
+        layout.addWidget(self.notes_textEdit)
+        self.notes_textEdit.textChanged.connect(self._on_poi_properties_changed)
+
+        # Repump
+        repump_layout = QtWidgets.QHBoxLayout()
+        repump_layout.addWidget(QtWidgets.QLabel("Repump:"))
+        self.repump_wl_comboBox = QtWidgets.QComboBox()
+        self.repump_wl_comboBox.addItems(['405', '450', '520'])
+        repump_layout.addWidget(self.repump_wl_comboBox)
+        self.repump_wl_comboBox.currentTextChanged.connect(self._on_poi_properties_changed)
+
+        self.repump_pwr_spinBox = QtWidgets.QDoubleSpinBox()
+        self.repump_pwr_spinBox.setSuffix(" uW")
+        self.repump_pwr_spinBox.setRange(0, 5000)
+        repump_layout.addWidget(self.repump_pwr_spinBox)
+        self.repump_pwr_spinBox.valueChanged.connect(self._on_poi_properties_changed)
+        layout.addLayout(repump_layout)
+
+        # Actions
+        actions_layout = QtWidgets.QHBoxLayout()
+        self.save_spectrum_btn = QtWidgets.QPushButton("Save Spectrum")
+        self.save_spectrum_btn.clicked.connect(self._poi_manager_logic().save_spectrum_to_poi)
+        actions_layout.addWidget(self.save_spectrum_btn)
+
+        self.save_ple_btn = QtWidgets.QPushButton("Save PLE")
+        self.save_ple_btn.clicked.connect(self._poi_manager_logic().save_ple_to_poi)
+        actions_layout.addWidget(self.save_ple_btn)
+        layout.addLayout(actions_layout)
+
+        # Auto-Link
+        self.auto_link_cb = QtWidgets.QCheckBox("Auto-Link Measurements")
+        self.auto_link_cb.toggled.connect(
+             lambda checked: setattr(self._poi_manager_logic(), 'auto_link_measurements', checked)
+        )
+        layout.addWidget(self.auto_link_cb)
+
+        # Measurements
+        layout.addWidget(QtWidgets.QLabel("Measurements:"))
+        self.measurements_listWidget = QtWidgets.QListWidget()
+        layout.addWidget(self.measurements_listWidget)
+        self.measurements_listWidget.itemDoubleClicked.connect(self._on_measurement_opened)
+
+        self.poi_details_dockWidget.setWidget(widget)
+        self._mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.poi_details_dockWidget)
+
+        # Check for existing logic value for auto-link
+        self.auto_link_cb.setChecked(self._poi_manager_logic().auto_link_measurements)
+
+    def _on_poi_properties_changed(self):
+        # Gather properties and send to logic
+        active_poi = self._poi_manager_logic().active_poi
+        if not active_poi:
+            return
+        
+        props = {
+            'notes': self.notes_textEdit.toPlainText(),
+            'repump_wavelength': self.repump_wl_comboBox.currentText(),
+            'repump_power': self.repump_pwr_spinBox.value()
+        }
+        self._poi_manager_logic().update_poi_properties(active_poi, props)
+        
+    def _on_measurement_opened(self, item):
+        filepath = item.data(QtCore.Qt.UserRole)
+        if filepath and os.path.exists(filepath):
+            # Open file with default application
+            os.startfile(filepath)
+        else:
+            self.log.error(f"File not found: {filepath}")
 
     def show(self):
         """Make main window visible and put it above all other windows."""
@@ -836,6 +931,41 @@ class PoiManagerGui(GuiBase):
                 ScaledFloat(active_poi_pos[2]),
             )
         )
+        
+        # Update details widget
+        if hasattr(self, 'poi_details_dockWidget'):
+            self.notes_textEdit.blockSignals(True)
+            self.repump_wl_comboBox.blockSignals(True)
+            self.repump_pwr_spinBox.blockSignals(True)
+            self.measurements_listWidget.clear()
+
+            if name:
+                 details = self._poi_manager_logic().get_poi_details(name)
+                 if details:
+                     self.notes_textEdit.setText(details.get('notes', ''))
+                     
+                     wl = details.get('repump_wavelength')
+                     if wl:
+                         index = self.repump_wl_comboBox.findText(str(wl))
+                         if index >= 0: self.repump_wl_comboBox.setCurrentIndex(index)
+                     
+                     pwr = details.get('repump_power')
+                     if pwr:
+                         self.repump_pwr_spinBox.setValue(float(pwr))
+                     
+                     measurements = details.get('measurements', [])
+                     for m in measurements:
+                         item_text = f"{m['timestamp']} - {m['type']}"
+                         item = QtWidgets.QListWidgetItem(item_text)
+                         item.setData(QtCore.Qt.UserRole, m['filepath'])
+                         self.measurements_listWidget.addItem(item)
+            else:
+                self.notes_textEdit.clear()
+                self.repump_pwr_spinBox.setValue(0)
+            
+            self.notes_textEdit.blockSignals(False)
+            self.repump_wl_comboBox.blockSignals(False)
+            self.repump_pwr_spinBox.blockSignals(False)
 
         if name in self._markers:
             self._markers[name].set_radius(
