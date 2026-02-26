@@ -71,6 +71,7 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigMeasurementFinished.connect(self.on_finished)
         self._logic().sigScanCompleted.connect(self.on_scan_completed)
         self._logic().sigWavelengthCheckFinished.connect(self.on_coverage_check_finished)
+        self._logic().sigBackgroundCaptured.connect(self.on_background_captured)
         self.show()
         
     def on_deactivate(self):
@@ -78,6 +79,7 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigMeasurementFinished.disconnect(self.on_finished)
         self._logic().sigScanCompleted.disconnect(self.on_scan_completed)
         self._logic().sigWavelengthCheckFinished.disconnect(self.on_coverage_check_finished)
+        self._logic().sigBackgroundCaptured.disconnect(self.on_background_captured)
         if self._mw:
             self._mw.close()
 
@@ -207,6 +209,34 @@ class ZPLDistributionGui(GuiBase):
         control_layout.addWidget(self.coverage_label)
 
         layout.addLayout(control_layout)
+
+        # --- Background Removal Row ---
+        bg_group = QtWidgets.QGroupBox("Background Removal")
+        bg_layout = QtWidgets.QHBoxLayout()
+        bg_group.setLayout(bg_layout)
+
+        self.bg_measure_btn = QtWidgets.QPushButton("Measure Background")
+        self.bg_measure_btn.setToolTip("Run one spatial scan at the current laser position and store it as background")
+        self.bg_measure_btn.clicked.connect(self._on_measure_background_clicked)
+        bg_layout.addWidget(self.bg_measure_btn)
+
+        self.bg_clear_btn = QtWidgets.QPushButton("Clear Background")
+        self.bg_clear_btn.setToolTip("Discard the stored background image")
+        self.bg_clear_btn.clicked.connect(self._on_clear_background_clicked)
+        self.bg_clear_btn.setEnabled(False)
+        bg_layout.addWidget(self.bg_clear_btn)
+
+        self.bg_enable_chk = QtWidgets.QCheckBox("Subtract Background")
+        self.bg_enable_chk.setToolTip("When checked, background is subtracted from each scan before analysis")
+        self.bg_enable_chk.setEnabled(False)
+        self.bg_enable_chk.toggled.connect(self._on_bg_enable_toggled)
+        bg_layout.addWidget(self.bg_enable_chk)
+
+        self.bg_status_label = QtWidgets.QLabel("No background measured")
+        bg_layout.addWidget(self.bg_status_label)
+        bg_layout.addStretch()
+
+        layout.addWidget(bg_group)
         
         # 2. Main Content Tabs
         self.tabs = QtWidgets.QTabWidget()
@@ -442,6 +472,7 @@ class ZPLDistributionGui(GuiBase):
                                       mode, center, width, fine, coarse, laser)
         self.start_btn.setEnabled(False)
         self.check_coverage_btn.setEnabled(False)
+        self.bg_measure_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
         self.pause_btn.setChecked(False)
         self.pause_btn.setText("Pause")
@@ -507,6 +538,7 @@ class ZPLDistributionGui(GuiBase):
     def on_finished(self):
         self.start_btn.setEnabled(True)
         self.check_coverage_btn.setEnabled(True)
+        self.bg_measure_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.status_label.setText("Status: Finished")
@@ -537,84 +569,77 @@ class ZPLDistributionGui(GuiBase):
             self.fit_results_label.setText("Fit Failed")
 
     def update_plot(self, data):
-        self._last_hist_data = data # Store for picking
+        self._last_hist_data = data  # Store for picking
         self.ax_hist.clear()
-        
+
         volts = np.array(data['voltage'])
         counts = np.array(data['counts'])
         freqs = np.array(data.get('frequency', []))
-        
-        # Determine Primary Axis
-        # User wants "bottom x axis being frequency ... from 484.135 THz"
-        # and "top x axis being voltage".
-        
-        has_freq = len(freqs) == len(volts) and not np.all(np.isnan(freqs)) and len(volts) > 0
-        
+
+        if len(volts) == 0:
+            self.ax_hist.set_xlabel("Voltage (V)")
+            self.ax_hist.set_ylabel("Number of Spots")
+            self.ax_hist.set_title("ZPL Distribution")
+            self.canvas_hist.draw()
+            return
+
+        has_freq = (len(freqs) == len(volts)
+                    and len(volts) > 0
+                    and not np.all(np.isnan(freqs)))
+
         if has_freq:
-            # Primary Axis: Frequency (GHz)
+            # ---- Primary axis: Frequency (GHz) ----
             x_data = freqs
             self.ax_hist.set_xlabel("Frequency (GHz relative to 484.135 THz)")
-            
-            # Plot Bars
-            # Handle variable width? 
-            # If freq is not uniform, bar width is tricky. Use minimal spacing or just points?
-            # Creating bars with width requires scalar width or array.
-            # Avg step in freq:
-            if len(freqs) > 1:
-                width = np.mean(np.diff(freqs)) * 0.8
-            else:
-                width = 0.1 # Default
-                
-            bars = self.ax_hist.bar(x_data, counts, width=width, picker=5, label='Counts')
-            
-            # Plot scatter for scan points (0-spots)
-            self.ax_hist.scatter(x_data, [0]*len(x_data), color='red', marker='|', s=50, picker=5)
 
-            # Secondary Axis: Voltage (Top)
-            # Create a second axis that shares the y-axis
-            # We can't just set data, we need to link the axes.
-            # If the relationship is linear V -> F, we can use secondary_xaxis with functions.
-            # But here we have discrete points.
-            # Simplest approach for visual: Use twinY and plot invisible data or set limits?
-            # Or assume linear fit between V and F for the axis mapping.
-            
-            # Let's try secondary_xaxis if available (matplotlib > 3.1) or twiny.
-            # Given we have (V, F) pairs.
-            # Let's fit V vs F line.
-            # Ensure we have valid (non-NaN, non-Inf) data for fitting
-            valid_mask = np.isfinite(freqs) & np.isfinite(volts)
-            valid_freqs = freqs[valid_mask]
-            valid_volts = volts[valid_mask]
-            
+            # Compute bar width robustly
+            valid_freqs = freqs[np.isfinite(freqs)]
             if len(valid_freqs) > 1:
+                diffs = np.diff(np.sort(valid_freqs))
+                nonzero = diffs[diffs > 0]
+                width = float(np.min(nonzero)) * 0.8 if len(nonzero) > 0 else 1.0
+            else:
+                width = 1.0  # single-point fallback
+
+            self.ax_hist.bar(x_data, counts, width=width, picker=5, label='Counts')
+            self.ax_hist.scatter(x_data, [0] * len(x_data),
+                                 color='red', marker='|', s=50, picker=5)
+
+            # Secondary axis: Voltage (top)
+            valid_mask = np.isfinite(freqs) & np.isfinite(volts)
+            valid_freqs_fit = freqs[valid_mask]
+            valid_volts_fit = volts[valid_mask]
+
+            if len(valid_freqs_fit) > 1:
                 try:
-                    # Linear fit: V = m * F + c
-                    # slope m = dV/dF
                     import warnings
                     with warnings.catch_warnings():
                         warnings.simplefilter('ignore', np.RankWarning)
-                        coef = np.polyfit(valid_freqs, valid_volts, 1)
-                    
-                    m = coef[0]
-                    c = coef[1]
-                    
-                    def f2v(f): return m * f + c
-                    def v2f(v): return (v - c) / m if m != 0 else v
-                    
+                        coef = np.polyfit(valid_freqs_fit, valid_volts_fit, 1)
+                    m, c = coef[0], coef[1]
+                    def f2v(f, _m=m, _c=c): return _m * f + _c
+                    def v2f(v, _m=m, _c=c): return (v - _c) / _m if _m != 0 else v
                     secax = self.ax_hist.secondary_xaxis('top', functions=(f2v, v2f))
                     secax.set_xlabel('Voltage (V)')
                 except Exception as e:
                     print(f"Warning: Failed to create secondary voltage axis: {e}")
-            
+
         else:
-            # Fallback to Voltage if no Frequency
+            # ---- Fallback: Voltage axis ----
             self.ax_hist.set_xlabel("Voltage (V)")
-            bars = self.ax_hist.bar(volts, counts, width=self.step_spin.value()*0.8, picker=5)
-            self.ax_hist.scatter(volts, [0]*len(volts), color='red', marker='|', s=50, picker=5)
+            step = self.step_spin.value()
+            if len(volts) > 1:
+                diffs = np.diff(np.sort(volts))
+                nonzero = diffs[diffs > 0]
+                bar_w = float(np.min(nonzero)) * 0.8 if len(nonzero) > 0 else step * 0.8
+            else:
+                bar_w = step * 0.8 if step > 0 else 1.0
+            self.ax_hist.bar(volts, counts, width=bar_w, picker=5)
+            self.ax_hist.scatter(volts, [0] * len(volts),
+                                 color='red', marker='|', s=50, picker=5)
 
         self.ax_hist.set_ylabel("Number of Spots")
         self.ax_hist.set_title("ZPL Distribution")
-            
         self.canvas_hist.draw()
         
         # Refresh current view if it is still active
@@ -806,7 +831,35 @@ class ZPLDistributionGui(GuiBase):
         row = self.spots_list_widget.currentRow()
         if row >= 0 and self._current_view_voltage is not None:
              self._logic().remove_spot(self._current_view_voltage, row)
-             
+
+    # -------------------------------------------------------------------------
+    # Background removal slots
+    # -------------------------------------------------------------------------
+
+    def _on_measure_background_clicked(self):
+        self.bg_measure_btn.setEnabled(False)
+        self.bg_status_label.setText("Measuring background...")
+        self._logic().measure_background()
+
+    def _on_clear_background_clicked(self):
+        self._logic().clear_background()
+
+    def _on_bg_enable_toggled(self, checked):
+        self._logic().background_enabled = checked
+
+    def on_background_captured(self, image):
+        """Called when sigBackgroundCaptured is emitted from logic."""
+        self.bg_measure_btn.setEnabled(True)
+        if image is not None:
+            self.bg_status_label.setText("Background acquired ✓")
+            self.bg_clear_btn.setEnabled(True)
+            self.bg_enable_chk.setEnabled(True)
+        else:
+            self.bg_status_label.setText("Background measurement FAILED")
+            self.bg_clear_btn.setEnabled(False)
+            self.bg_enable_chk.setEnabled(False)
+            self.bg_enable_chk.setChecked(False)
+
     def save_all_results(self):
         # Open dialog
         # Use explicit kwargs to avoid qtpy issue
