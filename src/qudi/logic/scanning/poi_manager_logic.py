@@ -386,6 +386,7 @@ class PoiManagerLogic(LogicBase):
     _data_logic = Connector(name='data_logic', interface='ScanningDataLogic')
     _ple_data_logic = Connector(name='ple_data_logic', interface='PleDataLogic', optional=True)
     _spectrometer_logic = Connector(name='spectrometer_logic', interface='SpectrometerLogic', optional=True)
+    _odmr_logic = Connector(name='odmr_logic', interface='OdmrLogic', optional=True)
 
     # status vars
     _roi = StatusVar(default=RegionOfInterest())  # Notice constructor and representer further below
@@ -449,6 +450,8 @@ class PoiManagerLogic(LogicBase):
              self._spectrometer_logic().sigDataSaved.connect(self.on_spectrum_saved)
         if self._ple_data_logic():
              self._ple_data_logic().sigDataSaved.connect(self.on_ple_saved)
+        if self._odmr_logic():
+             self._odmr_logic().sigDataSaved.connect(self.on_odmr_saved)
 
         # Initialise the ROI scan image (xy confocal image) if not present
         if self._roi.scan_image is None:
@@ -802,6 +805,18 @@ class PoiManagerLogic(LogicBase):
         # data_logic.save_scan_by_axis() uses get_current_scan_data internally.
         self._ple_data_logic().save_scan_by_axis(tag=name_tag)
 
+    @QtCore.Slot()
+    def save_odmr_to_poi(self):
+        if not self._odmr_logic():
+             self.log.error("ODMR logic not connected.")
+             return
+        if self.active_poi is None:
+             self.log.error("No active POI selected.")
+             return
+        
+        name_tag = f"POI_{self.active_poi}"
+        self._odmr_logic().save_odmr_data(tag=name_tag)
+
     @QtCore.Slot(str)
     def on_spectrum_saved(self, filepath):
         if self.active_poi and (self.auto_link_measurements or "POI_" in filepath):
@@ -833,6 +848,15 @@ class PoiManagerLogic(LogicBase):
                      if isinstance(path, str):
                          self.add_measurement_to_poi(self.active_poi, f"PLE ({key})", path)
                  self.save_to_database()
+
+    @QtCore.Slot(str)
+    def on_odmr_saved(self, filepath):
+        if self.active_poi and (self.auto_link_measurements or "POI_" in filepath):
+             # Ensure the filepath is absolute
+             if not os.path.isabs(filepath):
+                 filepath = os.path.join(self._odmr_logic().module_default_data_dir, filepath)
+             self.add_measurement_to_poi(self.active_poi, 'ODMR', filepath)
+             self.save_to_database()
 
     def add_measurement_to_poi(self, poi_name, measurement_type, filepath):
         if poi_name not in self.poi_names:

@@ -83,6 +83,7 @@ class OdmrLogic(LogicBase):
     sigCwStateUpdated = QtCore.Signal(bool)
     sigScanDataUpdated = QtCore.Signal()
     sigFitUpdated = QtCore.Signal(object, str, int)
+    sigDataSaved = QtCore.Signal(str)
 
     __default_fit_configs = (
         {'name'             : 'Gaussian Dip',
@@ -802,12 +803,13 @@ class OdmrLogic(LogicBase):
             data = self._join_signal_data()
 
             # Save signal data
-            data_storage.save_data(data,
+            file_path, _, _ = data_storage.save_data(data,
                                    metadata=metadata,
                                    nametag=nametag,
                                    timestamp=timestamp,
                                    column_headers=column_headers,
                                    column_dtypes=[float] * len(column_headers))
+            self.sigDataSaved.emit(file_path)
 
     def _draw_figure(self, channel, range_index):
         """ Draw the summary figure to save with the data.

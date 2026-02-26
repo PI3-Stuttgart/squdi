@@ -5,6 +5,7 @@ Performs a frequency scan of the laser and at each step performs a spatial scan 
 to count the number of fluorescent spots (defects).
 """
 
+import copy
 import numpy as np
 import time
 from scipy.ndimage import maximum_filter
@@ -58,15 +59,22 @@ class ZPLDistributionLogic(LogicBase):
     sigMeasurementFinished = QtCore.Signal()
     sigScanCompleted = QtCore.Signal(float, object, list) # voltage, image, spots
     sigWavelengthCheckFinished = QtCore.Signal(object) # (start_freq, stop_freq) or None if failed
+    sigBackgroundCaptured = QtCore.Signal(object)  # background image ndarray or None
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
         self._stop_requested = False
         self._is_paused = False
         self._is_running = False
+        self._background_image = None
+        self._background_enabled = False
+        self._background_running = False
 
     def on_activate(self):
         self._is_running = False
+        self._background_image = None
+        self._background_enabled = False
+        self._background_running = False
 
     def on_deactivate(self):
         self.stop_measurement()
@@ -442,10 +450,18 @@ class ZPLDistributionLogic(LogicBase):
                              self.log.warning(f"Channel '{target_channel}' not found. Using '{channel_name}' instead.")
                              image_data = scan_data.data[channel_name]
                         
+                        # Apply background subtraction if enabled
+                        display_image = image_data
+                        if self._background_enabled and self._background_image is not None:
+                            if self._background_image.shape == image_data.shape:
+                                display_image = np.clip(image_data.astype(float) - self._background_image.astype(float), 0, None)
+                            else:
+                                self.log.warning("Background image shape mismatch; skipping subtraction.")
+
                         # Use configured method and threshold from start_measurement
                         method = getattr(self, '_current_method', self._detection_method)
                         threshold = getattr(self, '_current_threshold', self._spot_threshold)
-                        spots_list = self._detect_spots(image_data, method=method, threshold=threshold)
+                        spots_list = self._detect_spots(display_image, method=method, threshold=threshold)
                         spot_count = len(spots_list)
                         
                         self.log.info(f"Found {spot_count} spots at {v:.4f} V on {channel_name} ({method})")
@@ -454,9 +470,10 @@ class ZPLDistributionLogic(LogicBase):
                         self._histogram_data['voltage'].append(v)
                         self._histogram_data['counts'].append(spot_count)
                         self._histogram_data['frequency'].append(frequency_ghz)
-                        
+
                         self._scan_results[v] = {
                             'image': image_data,
+                            'display_image': display_image,
                             'spots': spots_list,
                             'timestamp': timestamp,
                             'scan_name': scan_name.replace(':', '-').replace('/', '-').replace('\\', '-'),
@@ -465,10 +482,10 @@ class ZPLDistributionLogic(LogicBase):
                             'frequency': frequency_ghz,
                             'all_channels': scan_data.data if hasattr(scan_data, 'data') else {}
                         }
-                        
-                        # Emit updates
-                        self.sigUpdatePlot.emit(self._histogram_data)
-                        self.sigScanCompleted.emit(v, image_data, spots_list)
+
+                        # Emit updates — deep-copy to avoid cross-thread mutation
+                        self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
+                        self.sigScanCompleted.emit(v, display_image, spots_list)
                         
                     except Exception as e:
                          import traceback
@@ -576,19 +593,29 @@ class ZPLDistributionLogic(LogicBase):
         """Re-analyze a specific scan with new parameters."""
         if voltage in self._scan_results:
             res = self._scan_results[voltage]
-            
+
             # Select channel
             image = res['image']
             current_channel = res['channel']
-            
+
             if channel:
                 if 'all_channels' in res and channel in res['all_channels']:
                     image = res['all_channels'][channel]
                     current_channel = channel
                 elif channel != current_channel:
-                     self.log.warning(f"Channel {channel} not found for {voltage} V")
+                    self.log.warning(f"Channel {channel} not found for {voltage} V")
 
-            spots = self._detect_spots(image, method, threshold)
+            # Apply background subtraction if enabled
+            display_image = image
+            if self._background_enabled and self._background_image is not None:
+                if self._background_image.shape == image.shape:
+                    display_image = np.clip(
+                        image.astype(float) - self._background_image.astype(float), 0, None
+                    )
+                else:
+                    self.log.warning("Background shape mismatch in reanalyze_scan; skipping.")
+
+            spots = self._detect_spots(display_image, method, threshold)
             
             # Update results
             res['spots'] = spots
@@ -605,8 +632,8 @@ class ZPLDistributionLogic(LogicBase):
                 
             self.log.info(f"Re-analyzed {voltage:.2f} V with {method} (Thresh: {threshold}): {spot_count} spots")
             
-            # Emit updates
-            self.sigUpdatePlot.emit(self._histogram_data)
+            # Emit updates — deep-copy to avoid cross-thread mutation
+            self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
             self.sigScanCompleted.emit(voltage, image, spots) # Re-emit to update GUI view
             return True
         return False
@@ -652,7 +679,7 @@ class ZPLDistributionLogic(LogicBase):
              count += 1
              
         self.log.info(f"Re-analyzed {count} scans.")
-        self.sigUpdatePlot.emit(self._histogram_data)
+        self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
         
         # If there is a current view, we should update it too.
         # But we don't know what GUI is viewing. 
@@ -692,7 +719,7 @@ class ZPLDistributionLogic(LogicBase):
             except ValueError:
                 pass
                 
-            self.sigUpdatePlot.emit(self._histogram_data)
+            self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
             return True
         return False
 
@@ -713,10 +740,80 @@ class ZPLDistributionLogic(LogicBase):
                 except ValueError:
                     pass
                     
-                self.sigUpdatePlot.emit(self._histogram_data)
+                self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
                 return True
         return False
-        
+
+    # -------------------------------------------------------------------------
+    # Background measurement
+    # -------------------------------------------------------------------------
+
+    @property
+    def background_enabled(self):
+        return self._background_enabled
+
+    @background_enabled.setter
+    def background_enabled(self, value):
+        self._background_enabled = bool(value)
+
+    def get_background_image(self):
+        """Return the stored background image (ndarray or None)."""
+        return self._background_image
+
+    def clear_background(self):
+        """Remove the stored background."""
+        self._background_image = None
+        self._background_enabled = False
+        self.sigBackgroundCaptured.emit(None)
+
+    def measure_background(self):
+        """Run one spatial scan and store it as the background image.
+        Non-blocking: launches a thread and emits sigBackgroundCaptured when done.
+        """
+        if self._is_running or self._background_running:
+            self.log.warning("Cannot measure background while a measurement is running.")
+            return
+        import threading
+        self._background_running = True
+        t = threading.Thread(target=self._run_background_scan, daemon=True)
+        t.start()
+
+    def _run_background_scan(self):
+        try:
+            scan_axes = tuple(self._scan_channels)
+            self.log.info("Starting background scan...")
+            self._scan_logic().toggle_scan(True, scan_axes)
+            time.sleep(1.0)
+            while self._scan_logic().module_state() != 'idle':
+                time.sleep(0.1)
+
+            scan_data = self._data_logic().get_current_scan_data(scan_axes=scan_axes)
+            if scan_data and hasattr(scan_data, 'data') and scan_data.data:
+                target_channel = self._count_channel
+                if target_channel in scan_data.data:
+                    bg_image = scan_data.data[target_channel]
+                else:
+                    keys = list(scan_data.data.keys())
+                    if not keys:
+                        self.log.error("Background scan: empty data dict.")
+                        self.sigBackgroundCaptured.emit(None)
+                        return
+                    bg_image = scan_data.data[keys[0]]
+                    self.log.warning(f"Background: channel '{target_channel}' not found, using '{keys[0]}'.")
+
+                self._background_image = bg_image.copy() if hasattr(bg_image, 'copy') else np.array(bg_image)
+                self.log.info("Background image acquired.")
+                self.sigBackgroundCaptured.emit(self._background_image)
+            else:
+                self.log.error("Background scan returned no data.")
+                self.sigBackgroundCaptured.emit(None)
+        except Exception as e:
+            import traceback
+            self.log.error(f"Background scan failed: {e}\n{traceback.format_exc()}")
+            self.sigBackgroundCaptured.emit(None)
+        finally:
+            self._background_running = False
+
     def save_all_results(self, save_dir):
         """Save results to folder."""
         import os

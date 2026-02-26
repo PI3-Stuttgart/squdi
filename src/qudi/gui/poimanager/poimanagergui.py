@@ -712,13 +712,23 @@ class PoiManagerGui(GuiBase):
 
         # Actions
         actions_layout = QtWidgets.QHBoxLayout()
-        self.save_spectrum_btn = QtWidgets.QPushButton("Save Spectrum")
-        self.save_spectrum_btn.clicked.connect(self._poi_manager_logic().save_spectrum_to_poi)
-        actions_layout.addWidget(self.save_spectrum_btn)
+        
+        # Check if logics are available (connected) and add buttons accordingly
+        if self._poi_manager_logic()._spectrometer_logic():
+            self.save_spectrum_btn = QtWidgets.QPushButton("Save Spectrum")
+            self.save_spectrum_btn.clicked.connect(self._poi_manager_logic().save_spectrum_to_poi)
+            actions_layout.addWidget(self.save_spectrum_btn)
 
-        self.save_ple_btn = QtWidgets.QPushButton("Save PLE")
-        self.save_ple_btn.clicked.connect(self._poi_manager_logic().save_ple_to_poi)
-        actions_layout.addWidget(self.save_ple_btn)
+        if self._poi_manager_logic()._ple_data_logic():
+            self.save_ple_btn = QtWidgets.QPushButton("Save PLE")
+            self.save_ple_btn.clicked.connect(self._poi_manager_logic().save_ple_to_poi)
+            actions_layout.addWidget(self.save_ple_btn)
+
+        if self._poi_manager_logic()._odmr_logic():
+            self.save_odmr_btn = QtWidgets.QPushButton("Save ODMR")
+            self.save_odmr_btn.clicked.connect(self._poi_manager_logic().save_odmr_to_poi)
+            actions_layout.addWidget(self.save_odmr_btn)
+
         layout.addLayout(actions_layout)
 
         # Auto-Link
