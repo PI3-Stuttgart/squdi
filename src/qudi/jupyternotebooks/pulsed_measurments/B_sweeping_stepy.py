@@ -66,7 +66,7 @@ ple_gui._fit_averaged = False
 
 
 
-BASE_FOLDER = r'Z:\Vlad\heavyIV\202-2\feb\CPT-3-prep\B-sweeps_xy'  # Base folder to save all measurements
+BASE_FOLDER = r'Z:\Vlad\heavyIV\202-2\feb-'  # Base folder to save all measurements
 B_AMPLITUDE = 0.2  # Tesla
 NUM_STEPS = 150     # Number of points
 Bx_offset = 0
@@ -461,7 +461,7 @@ with DLCpro(NetworkConnection(dl_pro.tcp_address)) as dlc:
 
 # %%
 all_results = {}
-sweep_definitions_ = {i:j for i, j in sweep_definitions.items() if i in ['XZ', 'YZ', "XY"] } #'XZ','XY'
+sweep_definitions_ = {i:j for i, j in sweep_definitions.items() if i in ['XZ', 'YZ'] } #'XZ','XY'
 ple_gui._fit_averaged = False
 
 
