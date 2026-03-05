@@ -385,8 +385,13 @@ class TimeTaggerLogic(LogicBase):
         return
 
     def configure_gated_counter(self, data):
-        """Start or stop a CRC-gated counter using the configured veto channel."""
-        freq, length, channels, toggle = data['gated_counter']
+        """Start or stop a CRC-gated counter using the configured veto channel.
+
+        Gate logic:
+          - Closes IMMEDIATELY on rising edge of veto_ch (kick starts)
+          - Opens after extra_gate_ms delay past the falling edge (kick ends + laser transient)
+        """
+        freq, length, channels, toggle, extra_gate_ms = data['gated_counter']
         veto_ch = self._gated_counter_crc_veto_channel
         if veto_ch is None:
             self.log.warning('No gated_counter_crc_veto_channel configured, cannot start gated counter.')
@@ -396,6 +401,7 @@ class TimeTaggerLogic(LogicBase):
             self._gated_counter_poll_timer.stop()
             self.gated_counter = None
             self._gated_veto_channel_obj = None
+            self._delayed_open_ch = None
 
             self.gated_toggled_channels = [ch for ch, enabled in channels.items() if enabled]
             self.gated_counter_freq = freq
@@ -405,22 +411,43 @@ class TimeTaggerLogic(LogicBase):
                 bin_width = int(1 / freq * 1e12)
                 n_values = int(length * 1e12 / bin_width)
                 try:
-                    from TimeTagger import GatedChannel, GatedChannelInitial
-                    # Gate is ACTIVE HIGH: CRC pulls veto line HIGH during bad state.
-                    # We want to COUNT when veto is LOW (charge is resonant / OK).
-                    # Gate opens on FALLING edge (-veto_ch) and closes on RISING edge (+veto_ch).
+                    from TimeTagger import GatedChannel, GatedChannelInitial, DelayedChannel
+
+                    # Gate logic:
+                    #   RETURN HIGH = kick active = repump OFF  → gate OPENS immediately
+                    #   RETURN LOW  = repump ON                 → gate CLOSES after extra_gate_ms
+                    #
+                    # Delaying the CLOSE edge (not the open edge) avoids a race condition:
+                    # when extra_gate_ms > kick_duration, a delayed open event would fire
+                    # after the close event, re-opening the gate while repump is on.
+                    gate_start_ch = int(veto_ch)  # opens immediately on RETURN RISING (repump OFF)
+
+                    if extra_gate_ms > 0:
+                        # Delay the falling edge: gate stays closed extra_gate_ms AFTER
+                        # the repump turns on, blocking any laser turn-on transient photons.
+                        extra_ps = int(extra_gate_ms * 1e9)  # ms → ps
+                        self._delayed_open_ch = DelayedChannel(
+                            self._timetagger.tagger, -int(veto_ch), extra_ps
+                        )
+                        gate_stop_ch = self._delayed_open_ch.getChannel()  # +virtual (delayed falling)
+                        self.log.info(f'Gated counter: extra close delay = {extra_gate_ms:.0f} ms')
+                    else:
+                        self._delayed_open_ch = None
+                        gate_stop_ch = -int(veto_ch)   # closes immediately on RETURN FALLING
+
                     self._gated_veto_channel_obj = GatedChannel(
                         tagger=self._timetagger.tagger,
                         input_channel=self.gated_toggled_channels[0],
-                        gate_start_channel=-int(veto_ch),
-                        gate_stop_channel=int(veto_ch),
-                        initial=GatedChannelInitial.Open
+                        gate_start_channel=gate_start_ch,
+                        gate_stop_channel=gate_stop_ch,
+                        initial=GatedChannelInitial.Closed  # start closed: assume repump on at boot
                     )
                     gated_ch = self._gated_veto_channel_obj.getChannel()
                     self.gated_counter = self._timetagger.counter(
                         channels=[gated_ch], bin_width=bin_width, n_values=n_values
                     )
                     meta_dict = {'Channels': self.gated_toggled_channels, 'Veto Channel': veto_ch,
+                                 'Extra Gate ms': extra_gate_ms,
                                  'Bin Width': bin_width / 1e12, 'Number of Bins': n_values,
                                  'Units': [(self.gated_toggled_channels[0], 'Cps')]}
                     self.metadata['gated_counter'] = meta_dict
@@ -429,6 +456,7 @@ class TimeTaggerLogic(LogicBase):
                     self.log.exception('Failed to configure gated counter.')
                     self.gated_counter = None
                     self._gated_veto_channel_obj = None
+                    self._delayed_open_ch = None
 
     def acquire_gated_counter_block(self):
         """Poll the gated counter and emit the data."""

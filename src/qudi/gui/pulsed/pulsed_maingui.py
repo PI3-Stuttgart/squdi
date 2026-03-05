@@ -124,8 +124,26 @@ class CRCSettingsDialog(QtWidgets.QDialog):
 
         # Load it
         super().__init__()
-
         uic.loadUi(ui_file, self)
+
+        # Configure ScienDSpinBox properties after loading
+        # Threshold: displayed in kcps (kilocounts per second)
+        self.crc_threshold_SpinBox.setMinimum(0.001)
+        self.crc_threshold_SpinBox.setMaximum(10000.0)
+        self.crc_threshold_SpinBox.setValue(0.300)
+        self.crc_threshold_SpinBox.setSuffix(' kcps')
+
+        # Kick length: in microseconds
+        self.crc_kick_SpinBox.setMinimum(1.0)
+        self.crc_kick_SpinBox.setMaximum(1e10)   # up to 10s
+        self.crc_kick_SpinBox.setValue(2e6)       # default 2s in µs
+        self.crc_kick_SpinBox.setSuffix(' µs')
+
+        # Check interval: in microseconds
+        self.crc_interval_SpinBox.setMinimum(1.0)
+        self.crc_interval_SpinBox.setMaximum(1e10)
+        self.crc_interval_SpinBox.setValue(5e5)   # default 500ms in µs
+        self.crc_interval_SpinBox.setSuffix(' µs')
 
 
 class PredefinedMethodsTab(QtWidgets.QWidget):
@@ -1234,12 +1252,15 @@ class PulsedMeasurementGui(GuiBase):
     ###########################################################################
     def show_crc_settings(self):
         """ Open the CRC Settings Window. """
-        # Populate the dialog from the current logic state before opening
         if hasattr(self.pulsedmasterlogic(), 'crc_settings'):
             current = self.pulsedmasterlogic().crc_settings
-            self._crc_s.crc_threshold_SpinBox.setValue(current.get('threshold', 1))
-            self._crc_s.crc_kick_SpinBox.setValue(current.get('kick', 150))
-            self._crc_s.crc_interval_SpinBox.setValue(current.get('interval', 2000))
+            interval_us = current.get('interval', 500000)  # µs
+            raw_threshold = current.get('threshold', 150)
+            # kcps = raw_counts / interval_s = raw_counts / (interval_µs / 1e6)
+            kcps = raw_threshold / (interval_us / 1e6) / 1e3 if interval_us > 0 else 0.0
+            self._crc_s.crc_threshold_SpinBox.setValue(kcps)
+            self._crc_s.crc_kick_SpinBox.setValue(current.get('kick', 2e6))    # µs
+            self._crc_s.crc_interval_SpinBox.setValue(interval_us)             # µs
             self._crc_s.crc_enabled_CheckBox.setChecked(current.get('enabled', False))
         self._crc_s.exec_()
         return
@@ -1248,10 +1269,14 @@ class PulsedMeasurementGui(GuiBase):
         """ Apply the CRC settings from the dialog to the logic. """
         if not hasattr(self.pulsedmasterlogic(), 'set_crc_settings'):
             return
+        interval_us = self._crc_s.crc_interval_SpinBox.value()   # µs
+        kcps = self._crc_s.crc_threshold_SpinBox.value()
+        # Convert kcps → raw counts per interval: counts = kcps * 1000 cps/kcps * interval_s
+        raw_threshold = max(1, int(round(kcps * 1e3 * interval_us / 1e6)))
         settings = {
-            'threshold': self._crc_s.crc_threshold_SpinBox.value(),
-            'kick': self._crc_s.crc_kick_SpinBox.value(),
-            'interval': self._crc_s.crc_interval_SpinBox.value(),
+            'threshold': raw_threshold,
+            'kick': self._crc_s.crc_kick_SpinBox.value(),       # µs
+            'interval': interval_us,                              # µs
             'enabled': self._crc_s.crc_enabled_CheckBox.isChecked(),
         }
         self.pulsedmasterlogic().set_crc_settings(settings)
@@ -1261,9 +1286,12 @@ class PulsedMeasurementGui(GuiBase):
         """ Revert the CRC settings dialog to the last known logic state. """
         if hasattr(self.pulsedmasterlogic(), 'crc_settings'):
             current = self.pulsedmasterlogic().crc_settings
-            self._crc_s.crc_threshold_SpinBox.setValue(current.get('threshold', 1))
-            self._crc_s.crc_kick_SpinBox.setValue(current.get('kick', 150))
-            self._crc_s.crc_interval_SpinBox.setValue(current.get('interval', 2000))
+            interval_us = current.get('interval', 500000)
+            raw_threshold = current.get('threshold', 150)
+            kcps = raw_threshold / (interval_us / 1e6) / 1e3 if interval_us > 0 else 0.0
+            self._crc_s.crc_threshold_SpinBox.setValue(kcps)
+            self._crc_s.crc_kick_SpinBox.setValue(current.get('kick', 2e6))
+            self._crc_s.crc_interval_SpinBox.setValue(interval_us)
             self._crc_s.crc_enabled_CheckBox.setChecked(current.get('enabled', False))
         return
 
@@ -1274,9 +1302,12 @@ class PulsedMeasurementGui(GuiBase):
         self._crc_s.crc_kick_SpinBox.blockSignals(True)
         self._crc_s.crc_interval_SpinBox.blockSignals(True)
         self._crc_s.crc_enabled_CheckBox.blockSignals(True)
-        self._crc_s.crc_threshold_SpinBox.setValue(settings.get('threshold', 1))
-        self._crc_s.crc_kick_SpinBox.setValue(settings.get('kick', 150))
-        self._crc_s.crc_interval_SpinBox.setValue(settings.get('interval', 2000))
+        interval_us = settings.get('interval', 500000)           # µs
+        raw_threshold = settings.get('threshold', 150)
+        kcps = raw_threshold / (interval_us / 1e6) / 1e3 if interval_us > 0 else 0.0
+        self._crc_s.crc_threshold_SpinBox.setValue(kcps)
+        self._crc_s.crc_kick_SpinBox.setValue(settings.get('kick', 2e6))  # µs
+        self._crc_s.crc_interval_SpinBox.setValue(interval_us)             # µs
         self._crc_s.crc_enabled_CheckBox.setChecked(settings.get('enabled', False))
         self._crc_s.crc_threshold_SpinBox.blockSignals(False)
         self._crc_s.crc_kick_SpinBox.blockSignals(False)

@@ -307,6 +307,7 @@ class TTGui(GuiBase):
 
         # --- Dock Widget ---
         self._gated_counter_dock = QtWidgets.QDockWidget('Gated Counter (CRC)', self._mw)
+        self._gated_counter_dock.setObjectName('gated_counter_crc_dockWidget')
         self._gated_counter_dock.setAllowedAreas(QtCore.Qt.AllDockWidgetAreas)
         contents = QtWidgets.QWidget()
         layout = QtWidgets.QGridLayout(contents)
@@ -355,6 +356,20 @@ class TTGui(GuiBase):
         self._gated_toggle_btn.setCheckable(True)
         self._gated_toggle_btn.toggled.connect(self.update_gated_counter)
         settings_layout.addRow(self._gated_toggle_btn)
+
+        # Extra gate closure spinbox (keeps gate closed after kick ends)
+        self._gated_extra_gate_spinbox = QtWidgets.QDoubleSpinBox()
+        self._gated_extra_gate_spinbox.setSuffix(' ms')
+        self._gated_extra_gate_spinbox.setDecimals(0)
+        self._gated_extra_gate_spinbox.setMinimum(0)
+        self._gated_extra_gate_spinbox.setMaximum(10000)
+        self._gated_extra_gate_spinbox.setValue(400)  # default: 400 ms (20% of 2 s kick)
+        self._gated_extra_gate_spinbox.setToolTip(
+            'Extra time the gate stays closed after the kick ends\n'
+            '(covers laser turn-off transient). Re-toggle to apply.'
+        )
+        settings_layout.addRow('Extra Gate', self._gated_extra_gate_spinbox)
+
         layout.addWidget(settings_grp, 0, 1)
 
         # Display frame
@@ -392,7 +407,8 @@ class TTGui(GuiBase):
         length = self._gated_length_spinbox.value()
         channels = {ch: cb.isChecked() for ch, cb in self._gated_channel_checkboxes.items()}
         toggle = self._gated_toggle_btn.isChecked()
-        self.sigToggleGatedCounter.emit({'gated_counter': (freq, length, channels, toggle)})
+        extra_gate_ms = self._gated_extra_gate_spinbox.value()
+        self.sigToggleGatedCounter.emit({'gated_counter': (freq, length, channels, toggle, extra_gate_ms)})
 
     def update_gated_counter_data(self, data):
         """Update the gated counter plot and count display."""
