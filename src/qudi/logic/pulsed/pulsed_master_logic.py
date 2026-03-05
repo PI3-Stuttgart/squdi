@@ -66,7 +66,7 @@ class PulsedMasterLogic(LogicBase):
     sigToggleMeasurementPause = QtCore.Signal(bool)
     sigTogglePulser = QtCore.Signal(bool)
     sigToggleExtMicrowave = QtCore.Signal(bool)
-    sigFastCounterSettingsChanged = QtCore.Signal(dict)
+    sigTaggerSettingsChanged = QtCore.Signal(dict)
     sigMeasurementSettingsChanged = QtCore.Signal(dict)
     sigExtMicrowaveSettingsChanged = QtCore.Signal(dict)
     sigAnalysisSettingsChanged = QtCore.Signal(dict)
@@ -83,7 +83,7 @@ class PulsedMasterLogic(LogicBase):
     sigPulserRunningUpdated = QtCore.Signal(bool)
     sigExtMicrowaveRunningUpdated = QtCore.Signal(bool)
     sigExtMicrowaveSettingsUpdated = QtCore.Signal(dict)
-    sigFastCounterSettingsUpdated = QtCore.Signal(dict)
+    sigTaggerSettingsUpdated = QtCore.Signal(dict)
     sigMeasurementSettingsUpdated = QtCore.Signal(dict)
     sigAnalysisSettingsUpdated = QtCore.Signal(dict)
     sigExtractionSettingsUpdated = QtCore.Signal(dict)
@@ -152,8 +152,8 @@ class PulsedMasterLogic(LogicBase):
             self.pulsedmeasurementlogic().toggle_pulse_generator, QtCore.Qt.QueuedConnection)
         self.sigToggleExtMicrowave.connect(
             self.pulsedmeasurementlogic().toggle_microwave, QtCore.Qt.QueuedConnection)
-        self.sigFastCounterSettingsChanged.connect(
-            self.pulsedmeasurementlogic().set_fast_counter_settings, QtCore.Qt.QueuedConnection)
+        self.sigTaggerSettingsChanged.connect(
+            self.pulsedmeasurementlogic().set_tagger_settings, QtCore.Qt.QueuedConnection)
         self.sigMeasurementSettingsChanged.connect(
             self.pulsedmeasurementlogic().set_measurement_settings, QtCore.Qt.QueuedConnection)
         self.sigExtMicrowaveSettingsChanged.connect(
@@ -184,8 +184,8 @@ class PulsedMasterLogic(LogicBase):
             self.ext_microwave_running_updated, QtCore.Qt.QueuedConnection)
         self.pulsedmeasurementlogic().sigExtMicrowaveSettingsUpdated.connect(
             self.sigExtMicrowaveSettingsUpdated, QtCore.Qt.QueuedConnection)
-        self.pulsedmeasurementlogic().sigFastCounterSettingsUpdated.connect(
-            self.sigFastCounterSettingsUpdated, QtCore.Qt.QueuedConnection)
+        self.pulsedmeasurementlogic().sigTaggerSettingsUpdated.connect(
+            self.sigTaggerSettingsUpdated, QtCore.Qt.QueuedConnection)
         self.pulsedmeasurementlogic().sigMeasurementSettingsUpdated.connect(
             self.sigMeasurementSettingsUpdated, QtCore.Qt.QueuedConnection)
         self.pulsedmeasurementlogic().sigAnalysisSettingsUpdated.connect(
@@ -263,7 +263,7 @@ class PulsedMasterLogic(LogicBase):
         self.sigToggleMeasurementPause.disconnect()
         self.sigTogglePulser.disconnect()
         self.sigToggleExtMicrowave.disconnect()
-        self.sigFastCounterSettingsChanged.disconnect()
+        self.sigTaggerSettingsChanged.disconnect()
         self.sigMeasurementSettingsChanged.disconnect()
         self.sigExtMicrowaveSettingsChanged.disconnect()
         self.sigAnalysisSettingsChanged.disconnect()
@@ -279,7 +279,7 @@ class PulsedMasterLogic(LogicBase):
         self.pulsedmeasurementlogic().sigPulserRunningUpdated.disconnect()
         self.pulsedmeasurementlogic().sigExtMicrowaveRunningUpdated.disconnect()
         self.pulsedmeasurementlogic().sigExtMicrowaveSettingsUpdated.disconnect()
-        self.pulsedmeasurementlogic().sigFastCounterSettingsUpdated.disconnect()
+        self.pulsedmeasurementlogic().sigTaggerSettingsUpdated.disconnect()
         self.pulsedmeasurementlogic().sigMeasurementSettingsUpdated.disconnect()
         self.pulsedmeasurementlogic().sigAnalysisSettingsUpdated.disconnect()
         self.pulsedmeasurementlogic().sigExtractionSettingsUpdated.disconnect()
@@ -322,8 +322,12 @@ class PulsedMasterLogic(LogicBase):
         return self.pulsedmeasurementlogic().fast_counter_constraints
 
     @property
+    def tagger_settings(self):
+        return self.pulsedmeasurementlogic().tagger_settings
+
+    @property
     def fast_counter_settings(self):
-        return self.pulsedmeasurementlogic().fast_counter_settings
+        return self.tagger_settings
 
     @property
     def elapsed_sweeps(self):
@@ -418,17 +422,21 @@ class PulsedMasterLogic(LogicBase):
         return
 
     @QtCore.Slot(dict)
-    def set_fast_counter_settings(self, settings_dict=None, **kwargs):
+    def set_tagger_settings(self, settings_dict=None, **kwargs):
         """
 
         @param settings_dict:
         @param kwargs:
         """
         if isinstance(settings_dict, dict):
-            self.sigFastCounterSettingsChanged.emit(settings_dict)
+            self.sigTaggerSettingsChanged.emit(settings_dict)
         else:
-            self.sigFastCounterSettingsChanged.emit(kwargs)
+            self.sigTaggerSettingsChanged.emit(kwargs)
         return
+
+    @QtCore.Slot(dict)
+    def set_fast_counter_settings(self, settings_dict=None, **kwargs):
+        return self.set_tagger_settings(settings_dict, **kwargs)
 
     @QtCore.Slot(dict)
     def set_ext_microwave_settings(self, settings_dict=None, **kwargs):

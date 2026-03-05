@@ -52,6 +52,112 @@ def _data_storage_from_cfg_option(cfg_str):
     raise ValueError('Invalid ConfigOption value to specify data storage type.')
 
 
+class _TimeTaggerFastCounterAdapter:
+    """Fast-counter compatible adapter that uses a TT module directly."""
+
+    def __init__(self, tagger, channel_apd_0, channel_apd_1, channel_detect, channel_sequence,
+                 sum_channels=True):
+        self._tagger = tagger
+        self._channel_apd_0 = int(channel_apd_0)
+        self._channel_apd_1 = int(channel_apd_1)
+        self._channel_detect = int(channel_detect)
+        self._channel_sequence = int(channel_sequence)
+        self._sum_channels = bool(sum_channels)
+
+        self._combined_channel = None
+        self._apd_channel = self._channel_apd_0
+        if self._sum_channels:
+            self._combined_channel = self._tagger.combiner(
+                channels=[self._channel_apd_0, self._channel_apd_1]
+            )
+            self._apd_channel = self._combined_channel.getChannel()
+
+        self._bin_width = 1.0e-9
+        self._record_length = 3.0e-6
+        self._number_of_gates = 1
+        self._task = None
+        self._status = 0
+
+    def close(self):
+        if self._task is not None:
+            try:
+                self._task.stop()
+            finally:
+                self._task.clear()
+                self._task = None
+        self._status = 0
+
+    def get_constraints(self):
+        return {'hardware_binwidth_list': [1 / 1000e6]}
+
+    def is_gated(self):
+        return True
+
+    def configure(self, bin_width_s=1e-9, record_length_s=3e-6, number_of_gates=1):
+        self._bin_width = float(bin_width_s)
+        self._record_length = float(record_length_s)
+        self._number_of_gates = max(1, int(number_of_gates))
+
+        if self._task is not None:
+            self._task.stop()
+            self._task.clear()
+
+        self._task = self._tagger.time_differences(
+            click_channel=self._apd_channel,
+            start_channel=self._channel_detect,
+            next_channel=self._channel_sequence,
+            binwidth=max(1, int(np.round(self._bin_width * 1e12))),
+            n_bins=max(1, 1 + int(self._record_length / self._bin_width)),
+            n_histograms=self._number_of_gates
+        )
+        self._task.stop()
+        self._status = 1
+        return self._bin_width, self._record_length, self._number_of_gates
+
+    def start_measure(self):
+        if self._task is None:
+            self._status = -1
+            return -1
+        self._task.clear()
+        self._task.start()
+        if hasattr(self._tagger, 'tagger') and hasattr(self._tagger.tagger, 'sync'):
+            self._tagger.tagger.sync()
+        self._status = 2
+        return 0
+
+    def stop_measure(self):
+        if self._task is not None:
+            self._task.stop()
+        self._status = 1
+        return 0
+
+    def pause_measure(self):
+        if self._task is not None:
+            self._task.stop()
+        self._status = 3
+        return 0
+
+    def continue_measure(self):
+        if self._task is None:
+            self._status = -1
+            return -1
+        self._task.start()
+        self._status = 2
+        return 0
+
+    def get_data_trace(self):
+        if self._task is None:
+            return np.zeros((max(1, self._number_of_gates), 0), dtype='int64'), dict(
+                elapsed_sweeps=None,
+                elapsed_time=None
+            )
+        return np.array(self._task.getData(), dtype='int64'), dict(elapsed_sweeps=None,
+                                                                   elapsed_time=None)
+
+    def get_status(self):
+        return self._status
+
+
 class PulsedMeasurementLogic(LogicBase):
     """
     This is the Logic class for the control of pulsed measurements.
@@ -61,16 +167,23 @@ class PulsedMeasurementLogic(LogicBase):
     pulsed_measurement_logic:
         module.Class: 'pulsed.pulsed_measurement_logic.PulsedMeasurementLogic'
         options:
-            raw_data_save_type: 'text'
+            default_data_storage_type: 'text'
+            timetagger_channel_apd_0: 1
+            timetagger_channel_apd_1: 2
+            timetagger_channel_detect: 5
+            timetagger_channel_sequence: 5
+            timetagger_sum_channels: True
             #additional_extraction_path: # optional
             #additional_analysis_path:   # optional
         connect:
-            fastcounter: 'fast_counter_dummy'
-            pulsegenerator: 'pulser_dummy'
+            # one of these connectors can be used for counting:
+            # fastcounter: 'fastcounter_timetagger'
+            tagger: 'tagger'
+            pulsegenerator: 'pulsestreamer'
     """
 
     # declare connectors
-    _fastcounter = Connector(name='fastcounter', interface='FastCounterInterface')
+    _tagger = Connector(name='tagger', interface='TT')
     _pulsegenerator = Connector(name='pulsegenerator', interface='PulserInterface')
     _microwave = Connector(name='microwave', interface='MicrowaveInterface', optional=True)
 
@@ -84,6 +197,11 @@ class PulsedMeasurementLogic(LogicBase):
                                              default='text',
                                              constructor=_data_storage_from_cfg_option)
     _save_thumbnails = ConfigOption(name='save_thumbnails', default=True)
+    _timetagger_channel_apd_0 = ConfigOption(name='timetagger_channel_apd_0', default=1)
+    _timetagger_channel_apd_1 = ConfigOption(name='timetagger_channel_apd_1', default=2)
+    _timetagger_channel_detect = ConfigOption(name='timetagger_channel_detect', default=5)
+    _timetagger_channel_sequence = ConfigOption(name='timetagger_channel_sequence', default=5)
+    _timetagger_sum_channels = ConfigOption(name='timetagger_sum_channels', default=True)
 
     # status variables
     # ext. microwave settings
@@ -91,10 +209,10 @@ class PulsedMeasurementLogic(LogicBase):
     __microwave_freq = StatusVar(default=2870e6)
     __use_ext_microwave = StatusVar(default=False)
 
-    # fast counter settings
-    __fast_counter_record_length = StatusVar(default=3.0e-6)
-    __fast_counter_binwidth = StatusVar(default=1.0e-9)
-    __fast_counter_gates = StatusVar(default=0)
+    # tagger settings
+    __tagger_record_length = StatusVar(default=3.0e-6)
+    __tagger_binwidth = StatusVar(default=1.0e-9)
+    __tagger_gates = StatusVar(default=0)
 
     # measurement timer settings
     __timer_interval = StatusVar(default=5)
@@ -138,7 +256,7 @@ class PulsedMeasurementLogic(LogicBase):
     sigPulserRunningUpdated = QtCore.Signal(bool)
     sigExtMicrowaveRunningUpdated = QtCore.Signal(bool)
     sigExtMicrowaveSettingsUpdated = QtCore.Signal(dict)
-    sigFastCounterSettingsUpdated = QtCore.Signal(dict)
+    sigTaggerSettingsUpdated = QtCore.Signal(dict)
     sigMeasurementSettingsUpdated = QtCore.Signal(dict)
     sigAnalysisSettingsUpdated = QtCore.Signal(dict)
     sigExtractionSettingsUpdated = QtCore.Signal(dict)
@@ -216,6 +334,8 @@ class PulsedMeasurementLogic(LogicBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self._counter_backend = None
+
         # timer for measurement
         self.__analysis_timer = None
         self.__start_time = 0
@@ -271,17 +391,20 @@ class PulsedMeasurementLogic(LogicBase):
         # Turn off pulse generator
         self.pulse_generator_off()
 
-        # Check and configure fast counter
-        binning_constraints = self._fastcounter().get_constraints()['hardware_binwidth_list']
-        if self.__fast_counter_binwidth not in binning_constraints:
-            self.__fast_counter_binwidth = binning_constraints[0]
-        if self.__fast_counter_record_length <= 0:
-            self.__fast_counter_record_length = 3e-6
-        self.fast_counter_off()
+        # Initialize the tagger backend
+        self._counter_backend = self._resolve_counter_backend()
+
+        # Check and configure tagger
+        binning_constraints = self._counter_device().get_constraints()['hardware_binwidth_list']
+        if self.__tagger_binwidth not in binning_constraints:
+            self.__tagger_binwidth = binning_constraints[0]
+        if self.__tagger_record_length <= 0:
+            self.__tagger_record_length = 3e-6
+        self.tagger_off()
         # Set default number of gates to a reasonable number for gated counters (>0 if gated)
-        if self._fastcounter().is_gated() and self.__fast_counter_gates < 1:
-            self.__fast_counter_gates = max(1, self._number_of_lasers)
-        self.set_fast_counter_settings()
+        if self._counter_device().is_gated() and self.__tagger_gates < 1:
+            self.__tagger_gates = max(1, self._number_of_lasers)
+        self.set_tagger_settings()
 
         # Check and configure external microwave
         if self.__use_ext_microwave:
@@ -306,10 +429,36 @@ class PulsedMeasurementLogic(LogicBase):
         """
         if self.module_state() == 'locked':
             self.stop_pulsed_measurement()
+        if self._counter_backend is not None:
+            self.tagger_off()
+            close_backend = getattr(self._counter_backend, 'close', None)
+            if callable(close_backend):
+                close_backend()
+            self._counter_backend = None
         self.__analysis_timer.timeout.disconnect()
         self.sigStartTimer.disconnect()
         self.sigStopTimer.disconnect()
         return
+
+    def _resolve_counter_backend(self):
+        tagger = self._tagger()
+        if tagger is None:
+            raise RuntimeError('PulsedMeasurementLogic requires a "tagger" connection.')
+
+        self.log.info('Using direct tagger backend for pulsed counting.')
+        return _TimeTaggerFastCounterAdapter(
+            tagger=tagger,
+            channel_apd_0=self._timetagger_channel_apd_0,
+            channel_apd_1=self._timetagger_channel_apd_1,
+            channel_detect=self._timetagger_channel_detect,
+            channel_sequence=self._timetagger_channel_sequence,
+            sum_channels=self._timetagger_sum_channels
+        )
+
+    def _counter_device(self):
+        if self._counter_backend is None:
+            raise RuntimeError('Counter backend has not been initialized yet.')
+        return self._counter_backend
 
     @extraction_parameters.representer
     def __repr_extraction_parameters(self, value):
@@ -333,128 +482,148 @@ class PulsedMeasurementLogic(LogicBase):
         return value
 
     ############################################################################
-    # Fast counter control methods and properties
+    # Tagger control methods and properties
     ############################################################################
     @property
-    def fast_counter_settings(self):
+    def tagger_settings(self):
         settings_dict = dict()
-        settings_dict['bin_width'] = float(self.__fast_counter_binwidth)
-        settings_dict['record_length'] = float(self.__fast_counter_record_length)
-        settings_dict['number_of_gates'] = int(self.__fast_counter_gates)
-        settings_dict['is_gated'] = bool(self._fastcounter().is_gated())
+        settings_dict['bin_width'] = float(self.__tagger_binwidth)
+        settings_dict['record_length'] = float(self.__tagger_record_length)
+        settings_dict['number_of_gates'] = int(self.__tagger_gates)
+        settings_dict['is_gated'] = bool(self._counter_device().is_gated())
         return settings_dict
+
+    # Backward-compatible alias
+    @property
+    def fast_counter_settings(self):
+        return self.tagger_settings
 
     @fast_counter_settings.setter
     def fast_counter_settings(self, settings_dict):
         if isinstance(settings_dict, dict):
-            self.set_fast_counter_settings(settings_dict)
+            self.set_tagger_settings(settings_dict)
+        return
+
+    @tagger_settings.setter
+    def tagger_settings(self, settings_dict):
+        if isinstance(settings_dict, dict):
+            self.set_tagger_settings(settings_dict)
         return
 
     @property
+    def tagger_constraints(self):
+        return self._counter_device().get_constraints()
+
+    # Backward-compatible alias
+    @property
     def fast_counter_constraints(self):
-        return self._fastcounter().get_constraints()
+        return self.tagger_constraints
 
     @QtCore.Slot(dict)
-    def set_fast_counter_settings(self, settings_dict=None, **kwargs):
+    def set_tagger_settings(self, settings_dict=None, **kwargs):
         """
-        Either accepts a settings dictionary as positional argument or keyword arguments.
-        If both are present, both are being used by updating the settings_dict with kwargs.
-        The keyword arguments take precedence over the items in settings_dict if there are
-        conflicting names.
+        Configure the tagger. Accepts a settings dict or keyword arguments.
+        Keyword arguments take precedence.
 
         @param settings_dict:
         @param kwargs:
         @return:
         """
-        # Check if fast counter is running and do nothing if that is the case
-        counter_status = self._fastcounter().get_status()
+        counter_status = self._counter_device().get_status()
         if not counter_status >= 2 and not counter_status < 0:
-            # Determine complete settings dictionary
             if not isinstance(settings_dict, dict):
                 settings_dict = kwargs
             else:
                 settings_dict.update(kwargs)
 
-            # Set parameters if present
             if 'bin_width' in settings_dict:
-                self.__fast_counter_binwidth = float(settings_dict['bin_width'])
+                self.__tagger_binwidth = float(settings_dict['bin_width'])
             if 'record_length' in settings_dict:
-                self.__fast_counter_record_length = float(settings_dict['record_length'])
+                self.__tagger_record_length = float(settings_dict['record_length'])
             if 'number_of_gates' in settings_dict:
-                if self._fastcounter().is_gated():
-                    self.__fast_counter_gates = int(settings_dict['number_of_gates'])
+                if self._counter_device().is_gated():
+                    self.__tagger_gates = int(settings_dict['number_of_gates'])
                 else:
-                    self.__fast_counter_gates = 0
+                    self.__tagger_gates = 0
 
-            # Apply the settings to hardware
-            self.__fast_counter_binwidth, \
-            self.__fast_counter_record_length, \
-            self.__fast_counter_gates = self._fastcounter().configure(
-                self.__fast_counter_binwidth,
-                self.__fast_counter_record_length,
-                self.__fast_counter_gates
+            self.__tagger_binwidth, \
+            self.__tagger_record_length, \
+            self.__tagger_gates = self._counter_device().configure(
+                self.__tagger_binwidth,
+                self.__tagger_record_length,
+                self.__tagger_gates
             )
         else:
-            self.log.warning('Fast counter is not idle (status: {0}).\n'
+            self.log.warning('Tagger is not idle (status: {0}).\n'
                              'Unable to apply new settings.'.format(counter_status))
 
-        # emit update signal for master (GUI or other logic module)
-        self.sigFastCounterSettingsUpdated.emit(self.fast_counter_settings)
-        return self.fast_counter_settings
+        self.sigTaggerSettingsUpdated.emit(self.tagger_settings)
+        return self.tagger_settings
+
+    # Backward-compatible alias
+    @QtCore.Slot(dict)
+    def set_fast_counter_settings(self, settings_dict=None, **kwargs):
+        return self.set_tagger_settings(settings_dict, **kwargs)
+
+    def tagger_on(self):
+        """Start the tagger measurement.
+
+        @return int: error code (0:OK, -1:error)
+        """
+        return self._counter_device().start_measure()
+
+    def tagger_off(self):
+        """Stop the tagger measurement.
+
+        @return int: error code (0:OK, -1:error)
+        """
+        return self._counter_device().stop_measure()
 
     def fast_counter_on(self):
-        """Switching on the fast counter
-
-        @return int: error code (0:OK, -1:error)
-        """
-        return self._fastcounter().start_measure()
+        return self.tagger_on()
 
     def fast_counter_off(self):
-        """Switching off the fast counter
+        return self.tagger_off()
 
-        @return int: error code (0:OK, -1:error)
-        """
-        return self._fastcounter().stop_measure()
+    @QtCore.Slot(bool)
+    def toggle_tagger(self, switch_on):
+        if not isinstance(switch_on, bool):
+            return -1
+        return self.tagger_on() if switch_on else self.tagger_off()
 
     @QtCore.Slot(bool)
     def toggle_fast_counter(self, switch_on):
-        """
-        """
-        if not isinstance(switch_on, bool):
-            return -1
+        return self.toggle_tagger(switch_on)
 
-        if switch_on:
-            err = self.fast_counter_on()
-        else:
-            err = self.fast_counter_off()
-        return err
+    def tagger_pause(self):
+        """Pause the tagger measurement.
+
+        @return int: error code (0:OK, -1:error)
+        """
+        return self._counter_device().pause_measure()
+
+    def tagger_continue(self):
+        """Resume the tagger measurement.
+
+        @return int: error code (0:OK, -1:error)
+        """
+        return self._counter_device().continue_measure()
 
     def fast_counter_pause(self):
-        """Switching off the fast counter
-
-        @return int: error code (0:OK, -1:error)
-        """
-        return self._fastcounter().pause_measure()
+        return self.tagger_pause()
 
     def fast_counter_continue(self):
-        """Switching off the fast counter
+        return self.tagger_continue()
 
-        @return int: error code (0:OK, -1:error)
-        """
-        return self._fastcounter().continue_measure()
+    @QtCore.Slot(bool)
+    def tagger_pause_continue(self, continue_counter):
+        if not isinstance(continue_counter, bool):
+            return -1
+        return self.tagger_continue() if continue_counter else self.tagger_pause()
 
     @QtCore.Slot(bool)
     def fast_counter_pause_continue(self, continue_counter):
-        """
-        """
-        if not isinstance(continue_counter, bool):
-            return -1
-
-        if continue_counter:
-            err = self.fast_counter_continue()
-        else:
-            err = self.fast_counter_pause()
-        return err
+        return self.tagger_pause_continue(continue_counter)
 
     @property
     def elapsed_sweeps(self):
@@ -849,7 +1018,7 @@ class PulsedMeasurementLogic(LogicBase):
                                                          dtype=float)
                 if 'number_of_lasers' in settings_dict:
                     self._number_of_lasers = int(settings_dict.get('number_of_lasers'))
-                    if self._fastcounter().is_gated():
+                    if self._counter_device().is_gated():
                         self.set_fast_counter_settings(number_of_gates=self._number_of_lasers)
                 if 'laser_ignore_list' in settings_dict:
                     self._laser_ignore_list = sorted(settings_dict.get('laser_ignore_list'))
@@ -1179,17 +1348,17 @@ class PulsedMeasurementLogic(LogicBase):
             return
 
         if 'counting_length' in self._measurement_information:
-            fast_counter_record_length = self._measurement_information.get('counting_length')
+            tagger_record_length = self._measurement_information.get('counting_length')
         else:
             self.log.error('Unable to invoke setting for "counting_length".\n'
                            'Measurement information container is incomplete/invalid.')
             return
 
-        if self._fastcounter().is_gated():
-            self.set_fast_counter_settings(number_of_gates=self._number_of_lasers,
-                                           record_length=fast_counter_record_length)
+        if self._counter_device().is_gated():
+            self.set_tagger_settings(number_of_gates=self._number_of_lasers,
+                                     record_length=tagger_record_length)
         else:
-            self.set_fast_counter_settings(record_length=fast_counter_record_length)
+            self.set_tagger_settings(record_length=tagger_record_length)
         return
 
     def _measurement_settings_sanity_check(self):
@@ -1207,7 +1376,7 @@ class PulsedMeasurementLogic(LogicBase):
                            'controlled_variable ticks ({1:d}).'
                            ''.format(number_of_analyzed_lasers, len(self._controlled_variable)))
 
-        if self._fastcounter().is_gated() and self._number_of_lasers != self.__fast_counter_gates:
+        if self._counter_device().is_gated() and self._number_of_lasers != self.__fast_counter_gates:
             self.log.error('Gated fast counter gate number ({0:d}) differs from number of laser pulses ({1:d})'
                            'configured in measurement settings.'.format(self._number_of_lasers,
                                                                         self.__fast_counter_gates))
@@ -1295,7 +1464,7 @@ class PulsedMeasurementLogic(LogicBase):
                                                  info_dict with keys 'elapsed_sweeps' and 'elapsed_time'
         """
         # get raw data from fast counter
-        fc_data = self._fastcounter().get_data_trace()
+        fc_data = self._counter_device().get_data_trace()
         if type(fc_data) == tuple and len(fc_data) == 2:  # if the hardware implement the new version of the interface
             fc_data, info_dict = fc_data
         else:
@@ -1350,11 +1519,11 @@ class PulsedMeasurementLogic(LogicBase):
         self.measurement_error = np.zeros((signal_dim, len(self._controlled_variable)), dtype=float)
         self.measurement_error[0] = self._controlled_variable
 
-        number_of_bins = int(self.__fast_counter_record_length / self.__fast_counter_binwidth)
-        laser_length = number_of_bins if self.__fast_counter_gates > 0 else 500
+        number_of_bins = int(self.__tagger_record_length / self.__tagger_binwidth)
+        laser_length = number_of_bins if self.__tagger_gates > 0 else 500
         self.laser_data = np.zeros((self._number_of_lasers, laser_length), dtype='int64')
 
-        if self.__fast_counter_gates > 0:
+        if self.__tagger_gates > 0:
             self.raw_data = np.zeros((self._number_of_lasers, number_of_bins), dtype='int64')
         else:
             self.raw_data = np.zeros(number_of_bins, dtype='int64')
@@ -1364,9 +1533,9 @@ class PulsedMeasurementLogic(LogicBase):
 
     ############################################################################
     def _get_raw_metadata(self):
-        return {'bin width (s)'               : self.__fast_counter_binwidth,
-                'record length (s)'           : self.__fast_counter_record_length,
-                'gated counting'              : self.fast_counter_settings['is_gated'],
+        return {'bin width (s)'               : self.__tagger_binwidth,
+                'record length (s)'           : self.__tagger_record_length,
+                'gated counting'              : self.tagger_settings['is_gated'],
                 'Number of laser pulses'      : self._number_of_lasers,
                 'alternating'                 : self._alternating,
                 'Controlled variable'         : list(self.signal_data[0]),
@@ -1374,9 +1543,9 @@ class PulsedMeasurementLogic(LogicBase):
                 'Measurement sweeps'          : self.__elapsed_sweeps}
 
     def _get_laser_metadata(self):
-        return {'bin width (s)'        : self.__fast_counter_binwidth,
-                'record length (s)'    : self.__fast_counter_record_length,
-                'gated counting'       : self.fast_counter_settings['is_gated'],
+        return {'bin width (s)'        : self.__tagger_binwidth,
+                'record length (s)'    : self.__tagger_record_length,
+                'gated counting'       : self.tagger_settings['is_gated'],
                 'extraction parameters': self.extraction_settings}
 
     def _get_signal_metadata(self):
@@ -1387,7 +1556,7 @@ class PulsedMeasurementLogic(LogicBase):
                     'alternating'                 : self._alternating,
                     'analysis parameters'         : self.analysis_settings,
                     'extraction parameters'       : self.extraction_settings,
-                    'fast counter settings'       : self.fast_counter_settings,
+                    'fast counter settings'       : self.tagger_settings,
                     # todo: save sequence belonging to signal, not last uploaded one
                     'generation parameters'       : self.sampling_information.get('generation_parameters'),
                     'generation method parameters': self.generation_method_parameters}

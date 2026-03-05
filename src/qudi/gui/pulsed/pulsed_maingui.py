@@ -470,7 +470,7 @@ class PulsedMeasurementGui(GuiBase):
         self.pulsedmasterlogic().sigPulserRunningUpdated.connect(self.pulser_running_updated)
         self.pulsedmasterlogic().sigExtMicrowaveRunningUpdated.connect(self.microwave_running_updated)
         self.pulsedmasterlogic().sigExtMicrowaveSettingsUpdated.connect(self.microwave_settings_updated)
-        self.pulsedmasterlogic().sigFastCounterSettingsUpdated.connect(self.fast_counter_settings_updated)
+        self.pulsedmasterlogic().sigTaggerSettingsUpdated.connect(self.fast_counter_settings_updated)
         self.pulsedmasterlogic().sigMeasurementSettingsUpdated.connect(self.measurement_settings_updated)
         self.pulsedmasterlogic().sigAnalysisSettingsUpdated.connect(self.analysis_settings_updated)
         self.pulsedmasterlogic().sigExtractionSettingsUpdated.connect(self.extraction_settings_updated)
@@ -631,7 +631,7 @@ class PulsedMeasurementGui(GuiBase):
         self.pulsedmasterlogic().sigPulserRunningUpdated.disconnect()
         self.pulsedmasterlogic().sigExtMicrowaveRunningUpdated.disconnect()
         self.pulsedmasterlogic().sigExtMicrowaveSettingsUpdated.disconnect()
-        self.pulsedmasterlogic().sigFastCounterSettingsUpdated.disconnect()
+        self.pulsedmasterlogic().sigTaggerSettingsUpdated.disconnect()
         self.pulsedmasterlogic().sigMeasurementSettingsUpdated.disconnect()
         self.pulsedmasterlogic().sigAnalysisSettingsUpdated.disconnect()
         self.pulsedmasterlogic().sigExtractionSettingsUpdated.disconnect()
@@ -2447,7 +2447,7 @@ class PulsedMeasurementGui(GuiBase):
 
         # Update measurement, microwave and fast counter settings from logic
         self.measurement_settings_updated(self.pulsedmasterlogic().measurement_settings)
-        self.fast_counter_settings_updated(self.pulsedmasterlogic().fast_counter_settings)
+        self.fast_counter_settings_updated(self.pulsedmasterlogic().tagger_settings)
         self.microwave_settings_updated(self.pulsedmasterlogic().ext_microwave_settings)
         # Update analysis interval from logic
         self._pa.time_param_ana_periode_DoubleSpinBox.setValue(
@@ -2470,7 +2470,7 @@ class PulsedMeasurementGui(GuiBase):
         to the analysis tab GUI elements.
         """
         mw_constraints = self.pulsedmasterlogic().ext_microwave_constraints
-        fc_constraints = self.pulsedmasterlogic().fast_counter_constraints
+        fc_constraints = self.pulsedmasterlogic().tagger_constraints
         # block signals
         self._pa.ext_control_mw_freq_DoubleSpinBox.blockSignals(True)
         self._pa.ext_control_mw_power_DoubleSpinBox.blockSignals(True)
