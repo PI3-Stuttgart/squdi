@@ -318,8 +318,12 @@ class PulsedMasterLogic(LogicBase):
     ###             Pulsed measurement properties                       ###
     #######################################################################
     @property
+    def tagger_constraints(self):
+        return self.pulsedmeasurementlogic().tagger_constraints
+
+    @property
     def fast_counter_constraints(self):
-        return self.pulsedmeasurementlogic().fast_counter_constraints
+        return self.tagger_constraints
 
     @property
     def tagger_settings(self):

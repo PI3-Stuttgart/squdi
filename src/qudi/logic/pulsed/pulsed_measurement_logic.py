@@ -370,6 +370,21 @@ class PulsedMeasurementLogic(LogicBase):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
+        # Initialize the tagger backend
+        self._counter_backend = self._resolve_counter_backend()
+
+        # Check and configure tagger
+        binning_constraints = self._counter_device().get_constraints()['hardware_binwidth_list']
+        if self.__tagger_binwidth not in binning_constraints:
+            self.__tagger_binwidth = binning_constraints[0]
+        if self.__tagger_record_length <= 0:
+            self.__tagger_record_length = 3e-6
+        self.tagger_off()
+        # Set default number of gates to a reasonable number for gated counters (>0 if gated)
+        if self._counter_device().is_gated() and self.__tagger_gates < 1:
+            self.__tagger_gates = max(1, self._number_of_lasers)
+        self.set_tagger_settings()
+
         # Create an instance of PulseExtractor
         self._pulseextractor = PulseExtractor(pulsedmeasurementlogic=self)
         self._pulseanalyzer = PulseAnalyzer(pulsedmeasurementlogic=self)
@@ -390,21 +405,6 @@ class PulsedMeasurementLogic(LogicBase):
 
         # Turn off pulse generator
         self.pulse_generator_off()
-
-        # Initialize the tagger backend
-        self._counter_backend = self._resolve_counter_backend()
-
-        # Check and configure tagger
-        binning_constraints = self._counter_device().get_constraints()['hardware_binwidth_list']
-        if self.__tagger_binwidth not in binning_constraints:
-            self.__tagger_binwidth = binning_constraints[0]
-        if self.__tagger_record_length <= 0:
-            self.__tagger_record_length = 3e-6
-        self.tagger_off()
-        # Set default number of gates to a reasonable number for gated counters (>0 if gated)
-        if self._counter_device().is_gated() and self.__tagger_gates < 1:
-            self.__tagger_gates = max(1, self._number_of_lasers)
-        self.set_tagger_settings()
 
         # Check and configure external microwave
         if self.__use_ext_microwave:
