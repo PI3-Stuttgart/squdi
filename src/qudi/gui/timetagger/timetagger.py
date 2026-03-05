@@ -49,6 +49,7 @@ class TTGui(GuiBase):
     sigSetTimeDiffRanges = QtCore.Signal(float, float)
     sigSetTimeDiffRefRanges = QtCore.Signal(float, float)
     sigToggleDump = QtCore.Signal(bool, str, str)
+    sigToggleGatedCounter = QtCore.Signal(object)
 
     # --- Status Variables ---
     _counter_freq = StatusVar('counter_freq', default=50)
@@ -83,11 +84,15 @@ class TTGui(GuiBase):
         self._fit_config_dialog = None
         self._mw = None
         self._pw = None
+        self._gated_counter_dock = None  # created programmatically if veto channel configured
 
     def on_deactivate(self):
         """ Reverse steps of activation """
         self._save_window_geometry(self._mw)
         self.__disconnect_fit_control_signals()
+        if self._gated_counter_dock is not None:
+            self.sigToggleGatedCounter.disconnect()
+            self._timetaggerlogic.sigGatedCounterDataChanged.disconnect(self.update_gated_counter_data)
         self._fsd.close()
         self._fsd = None
         self._mw.close()
@@ -277,6 +282,12 @@ class TTGui(GuiBase):
         self._mw.currPathLabel.setText(self._save_folderpath)
         self._mw.DailyPathPushButton.clicked.connect(self._daily_path_clicked)
         self._mw.newPathPushButton.clicked.connect(self._new_path_clicked)
+
+        # --- Optional: Gated Counter (CRC-filtered) dock widget ---
+        if self._timetaggerlogic.gated_counter_available:
+            self._setup_gated_counter_dock()
+        else:
+            self._gated_counter_dock = None
     
     
 
@@ -287,8 +298,113 @@ class TTGui(GuiBase):
         self._mw.activateWindow()
         self._mw.raise_()
         return
+
+    def _setup_gated_counter_dock(self):
+        """Programmatically create the optional Gated Counter dock widget."""
+        color = [pg.mkColor(c) for c in ['#115f9a', '#991f17', '#76c68f', '#ffb400']]
+        hw_constr = self._timetaggerlogic._constraints
+        counter_channels = hw_constr['counter']['channels']
+
+        # --- Dock Widget ---
+        self._gated_counter_dock = QtWidgets.QDockWidget('Gated Counter (CRC)', self._mw)
+        self._gated_counter_dock.setAllowedAreas(QtCore.Qt.AllDockWidgetAreas)
+        contents = QtWidgets.QWidget()
+        layout = QtWidgets.QGridLayout(contents)
+
+        # Plot
+        self._gated_pw = pg.PlotWidget()
+        self._gated_pw.setLabel('bottom', 'Time', units='s')
+        self._gated_pw.setLabel('left', 'Counts (CRC gated)', units='c/s')
+        self._gated_pw.setMouseEnabled(x=False, y=False)
+        self._gated_pw.setMenuEnabled(False)
+        self._gated_pw.hideButtons()
+        layout.addWidget(self._gated_pw, 0, 0, 3, 1)
+
+        # Settings group
+        settings_grp = QtWidgets.QGroupBox('Settings')
+        settings_grp.setMaximumWidth(195)
+        settings_layout = QtWidgets.QFormLayout(settings_grp)
+
+        self._gated_freq_spinbox = QtWidgets.QDoubleSpinBox()
+        self._gated_freq_spinbox.setSuffix(' Hz')
+        self._gated_freq_spinbox.setDecimals(0)
+        self._gated_freq_spinbox.setMinimum(1)
+        self._gated_freq_spinbox.setMaximum(100000)
+        self._gated_freq_spinbox.setValue(self._counter_freq)
+        settings_layout.addRow('Count Freq.', self._gated_freq_spinbox)
+
+        self._gated_length_spinbox = QtWidgets.QDoubleSpinBox()
+        self._gated_length_spinbox.setSuffix(' s')
+        self._gated_length_spinbox.setDecimals(0)
+        self._gated_length_spinbox.setMinimum(1)
+        self._gated_length_spinbox.setMaximum(1000000)
+        self._gated_length_spinbox.setValue(self._counter_length)
+        settings_layout.addRow('Length', self._gated_length_spinbox)
+
+        self._gated_channel_checkboxes = {}
+        ch_label = QtWidgets.QLabel('Channels:')
+        settings_layout.addRow(ch_label)
+        for ch in counter_channels:
+            cb = QtWidgets.QCheckBox(f'Ch {ch}')
+            cb.setChecked(True)
+            cb.toggled.connect(self.update_gated_counter)
+            self._gated_channel_checkboxes[ch] = cb
+            settings_layout.addRow(cb)
+
+        self._gated_toggle_btn = QtWidgets.QPushButton('Toggle')
+        self._gated_toggle_btn.setCheckable(True)
+        self._gated_toggle_btn.toggled.connect(self.update_gated_counter)
+        settings_layout.addRow(self._gated_toggle_btn)
+        layout.addWidget(settings_grp, 0, 1)
+
+        # Display frame
+        disp_frame = QtWidgets.QFrame()
+        disp_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        disp_frame.setMaximumWidth(195)
+        disp_layout = QtWidgets.QVBoxLayout(disp_frame)
+        self._gated_count_label = QtWidgets.QLabel('0 c/s')
+        font = QtGui.QFont('Segoe UI Semilight', 20)
+        self._gated_count_label.setFont(font)
+        self._gated_count_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        disp_layout.addWidget(self._gated_count_label)
+        layout.addWidget(disp_frame, 1, 1)
+
+        layout.addItem(QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum,
+                                              QtWidgets.QSizePolicy.Expanding), 2, 1)
+
+        self._gated_counter_dock.setWidget(contents)
+        self._mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, self._gated_counter_dock)
+        self._mw.tabifyDockWidget(self._mw.corr_dockWidget, self._gated_counter_dock)
+
+        # Plot curve
+        self._gated_curve = pg.PlotCurveItem(pen=pg.mkPen(color[2]), clipToView=True)
+        self._gated_curve_avg = pg.PlotCurveItem(pen=pg.mkPen(color[3]), clipToView=True)
+        self._gated_pw.addItem(self._gated_curve)
+        self._gated_pw.addItem(self._gated_curve_avg)
+
+        # Connect signals
+        self.sigToggleGatedCounter.connect(self._timetaggerlogic.configure_gated_counter, QtCore.Qt.QueuedConnection)
+        self._timetaggerlogic.sigGatedCounterDataChanged.connect(self.update_gated_counter_data, QtCore.Qt.QueuedConnection)
         
+    def update_gated_counter(self):
+        """Emit signal to start/stop gated counter with current settings."""
+        freq = self._gated_freq_spinbox.value()
+        length = self._gated_length_spinbox.value()
+        channels = {ch: cb.isChecked() for ch, cb in self._gated_channel_checkboxes.items()}
+        toggle = self._gated_toggle_btn.isChecked()
+        self.sigToggleGatedCounter.emit({'gated_counter': (freq, length, channels, toggle)})
+
+    def update_gated_counter_data(self, data):
+        """Update the gated counter plot and count display."""
+        x, y = data['trace']
+        self._gated_curve.setData(x=x, y=y)
+        if data['trace_avg'][0].size > 0:
+            xa, ya = data['trace_avg']
+            self._gated_curve_avg.setData(x=xa, y=ya)
+        self._gated_count_label.setText('{:.2r}c/s'.format(ScaledFloat(data['sum'])))
+
     def update_counter(self):
+
         self._counter_freq = self._mw.counterCountFreqDoubleSpinBox.value()
         self._counter_length = self._mw.counterCountLengthDoubleSpinBox.value()
         channels = {ch: cb.isChecked() for ch, cb in self.counter_channel_checkBoxes.items()}

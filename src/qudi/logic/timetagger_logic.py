@@ -19,12 +19,15 @@ class TimeTaggerLogic(LogicBase):
 
     timetagger = Connector(interface='TT')
     queryInterval = ConfigOption('query_interval', 500)
+    # Optional CRC veto channel for gated counter (set to None to disable)
+    _gated_counter_crc_veto_channel = ConfigOption('gated_counter_crc_veto_channel', default=None, missing='nothing')
     
     sigCounterDataChanged = QtCore.Signal(object)
     sigCorrDataChanged = QtCore.Signal(object)
     sigHistDataChanged = QtCore.Signal(object)
     sigTimeDiffDataChanged = QtCore.Signal(object)
     sigDumpSizeChanged = QtCore.Signal(object)
+    sigGatedCounterDataChanged = QtCore.Signal(object)
 
     sigUpdate = QtCore.Signal()
     sigNewMeasurement = QtCore.Signal()
@@ -95,11 +98,19 @@ class TimeTaggerLogic(LogicBase):
         self._dump_poll_timer.timeout.connect(self.acquire_dump_size, QtCore.Qt.QueuedConnection)
         self._dump_poll_timer.setInterval(1000)
 
+        # Timer for Gated Counter data (CRC-filtered)
+        self._gated_counter_poll_timer = QtCore.QTimer()
+        self._gated_counter_poll_timer.setSingleShot(False)
+        self._gated_counter_poll_timer.timeout.connect(self.acquire_gated_counter_block, QtCore.Qt.QueuedConnection)
+        self._gated_counter_poll_timer.setInterval(50)
+
         # Initialize measurement objects and parameters
         self.counter = None
         self.corr = None
         self.hist = None
         self.time_diff = None
+        self.gated_counter = None
+        self._gated_veto_channel_obj = None
         self.trace_data = {}
         self.counter_params = self._timetagger._counter
         self.hist_params = self._timetagger._hist
@@ -119,8 +130,9 @@ class TimeTaggerLogic(LogicBase):
         self.hist_data = None
         self.time_diff_data = None
         self.time_diff_data_raw = None
+        self.gated_counter_data = None
 
-        self.metadata = {'counter':None, 'hist':None, 'corr':None, 'time_diff':None, 'time_diff_raw':None}
+        self.metadata = {'counter':None, 'hist':None, 'corr':None, 'time_diff':None, 'time_diff_raw':None, 'gated_counter':None}
     
     def on_deactivate(self):
         self._fit_config = self._fit_config_model.dump_configs()
@@ -129,11 +141,15 @@ class TimeTaggerLogic(LogicBase):
         self._hist_poll_timer.stop()
         self._time_diff_poll_timer.stop()
         self._dump_poll_timer.stop()
+        self._gated_counter_poll_timer.stop()
         self._counter_poll_timer = None
         self._corr_poll_timer = None
         self._hist_poll_timer = None
         self._time_diff_poll_timer = None
         self._dump_poll_timer = None
+        self._gated_counter_poll_timer = None
+        self.gated_counter = None
+        self._gated_veto_channel_obj = None
     
     def configure_counter(self, data):
         self.counter_freq, self.counter_length, self.counter_channels, self.counter_toggle, self.display_channel = data['counter']
@@ -367,6 +383,75 @@ class TimeTaggerLogic(LogicBase):
                 'time_diff_data_raw': self.time_diff_data_raw
             })
         return
+
+    def configure_gated_counter(self, data):
+        """Start or stop a CRC-gated counter using the configured veto channel."""
+        freq, length, channels, toggle = data['gated_counter']
+        veto_ch = self._gated_counter_crc_veto_channel
+        if veto_ch is None:
+            self.log.warning('No gated_counter_crc_veto_channel configured, cannot start gated counter.')
+            return
+
+        with self.threadlock:
+            self._gated_counter_poll_timer.stop()
+            self.gated_counter = None
+            self._gated_veto_channel_obj = None
+
+            self.gated_toggled_channels = [ch for ch, enabled in channels.items() if enabled]
+            self.gated_counter_freq = freq
+            self.gated_counter_length = length
+
+            if self.gated_toggled_channels and toggle:
+                bin_width = int(1 / freq * 1e12)
+                n_values = int(length * 1e12 / bin_width)
+                try:
+                    from TimeTagger import GatedChannel, GatedChannelInitial
+                    # Gate is ACTIVE HIGH: CRC pulls veto line HIGH during bad state.
+                    # We want to COUNT when veto is LOW (charge is resonant / OK).
+                    # Gate opens on FALLING edge (-veto_ch) and closes on RISING edge (+veto_ch).
+                    self._gated_veto_channel_obj = GatedChannel(
+                        tagger=self._timetagger.tagger,
+                        input_channel=self.gated_toggled_channels[0],
+                        gate_start_channel=-int(veto_ch),
+                        gate_stop_channel=int(veto_ch),
+                        initial=GatedChannelInitial.Open
+                    )
+                    gated_ch = self._gated_veto_channel_obj.getChannel()
+                    self.gated_counter = self._timetagger.counter(
+                        channels=[gated_ch], bin_width=bin_width, n_values=n_values
+                    )
+                    meta_dict = {'Channels': self.gated_toggled_channels, 'Veto Channel': veto_ch,
+                                 'Bin Width': bin_width / 1e12, 'Number of Bins': n_values,
+                                 'Units': [(self.gated_toggled_channels[0], 'Cps')]}
+                    self.metadata['gated_counter'] = meta_dict
+                    self._gated_counter_poll_timer.start()
+                except Exception:
+                    self.log.exception('Failed to configure gated counter.')
+                    self.gated_counter = None
+                    self._gated_veto_channel_obj = None
+
+    def acquire_gated_counter_block(self):
+        """Poll the gated counter and emit the data."""
+        with self.threadlock:
+            if self.gated_counter is None:
+                return
+            raw = self.gated_counter.getDataNormalized()
+            index = self.gated_counter.getIndex() / 1e12
+            w = max(1, int(round(len(index) / 50)))
+            y = raw[0] if raw.ndim > 1 else raw
+            avg = np.convolve(y, np.ones(w), 'same') / w
+            count_now = float(np.mean(np.nan_to_num(y[-w:-1]))) if len(y) > w else 0.0
+            self.gated_counter_data = (index, np.nan_to_num(y))
+            self.sigGatedCounterDataChanged.emit({
+                'trace': self.gated_counter_data,
+                'trace_avg': (index[w:-w], avg[w:-w]),
+                'sum': count_now
+            })
+
+    @property
+    def gated_counter_available(self):
+        """Returns True if a CRC veto channel is configured."""
+        return self._gated_counter_crc_veto_channel is not None
 
     @QtCore.Slot(bool, str, str)
     def dump_data(self, do_dump, name_tag, save_path):

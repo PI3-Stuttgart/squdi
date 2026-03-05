@@ -62,6 +62,7 @@
     <addaction name="action_Settings_Analysis"/>
     <addaction name="action_FitSettings"/>
     <addaction name="action_Settings_Generator"/>
+    <addaction name="action_Settings_CRC"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuSettings"/>
@@ -210,6 +211,15 @@
    </property>
    <property name="text">
     <string>Pulse Generator Settings</string>
+   </property>
+  </action>
+  <action name="action_Settings_CRC">
+   <property name="icon">
+    <iconset>
+     <normaloff>../../artwork/icons/configure.svg</normaloff>../../artwork/icons/configure.svg</iconset>
+   </property>
+   <property name="text">
+    <string>CRC Settings</string>
    </property>
   </action>
   <action name="action_save_as">

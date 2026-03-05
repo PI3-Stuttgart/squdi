@@ -67,6 +67,7 @@ class PulsedMasterLogic(LogicBase):
     sigTogglePulser = QtCore.Signal(bool)
     sigToggleExtMicrowave = QtCore.Signal(bool)
     sigTaggerSettingsChanged = QtCore.Signal(dict)
+    sigCrcSettingsChanged = QtCore.Signal(dict)
     sigMeasurementSettingsChanged = QtCore.Signal(dict)
     sigExtMicrowaveSettingsChanged = QtCore.Signal(dict)
     sigAnalysisSettingsChanged = QtCore.Signal(dict)
@@ -84,6 +85,7 @@ class PulsedMasterLogic(LogicBase):
     sigExtMicrowaveRunningUpdated = QtCore.Signal(bool)
     sigExtMicrowaveSettingsUpdated = QtCore.Signal(dict)
     sigTaggerSettingsUpdated = QtCore.Signal(dict)
+    sigCrcSettingsUpdated = QtCore.Signal(dict)
     sigMeasurementSettingsUpdated = QtCore.Signal(dict)
     sigAnalysisSettingsUpdated = QtCore.Signal(dict)
     sigExtractionSettingsUpdated = QtCore.Signal(dict)
@@ -162,6 +164,8 @@ class PulsedMasterLogic(LogicBase):
             self.pulsedmeasurementlogic().set_analysis_settings, QtCore.Qt.QueuedConnection)
         self.sigExtractionSettingsChanged.connect(
             self.pulsedmeasurementlogic().set_extraction_settings, QtCore.Qt.QueuedConnection)
+        self.sigCrcSettingsChanged.connect(
+            self.pulsedmeasurementlogic().set_crc_settings, QtCore.Qt.QueuedConnection)
         self.sigTimerIntervalChanged.connect(
             self.pulsedmeasurementlogic().set_timer_interval, QtCore.Qt.QueuedConnection)
         self.sigAlternativeDataTypeChanged.connect(
@@ -186,6 +190,8 @@ class PulsedMasterLogic(LogicBase):
             self.sigExtMicrowaveSettingsUpdated, QtCore.Qt.QueuedConnection)
         self.pulsedmeasurementlogic().sigTaggerSettingsUpdated.connect(
             self.sigTaggerSettingsUpdated, QtCore.Qt.QueuedConnection)
+        self.pulsedmeasurementlogic().sigCrcSettingsUpdated.connect(
+            self.sigCrcSettingsUpdated, QtCore.Qt.QueuedConnection)
         self.pulsedmeasurementlogic().sigMeasurementSettingsUpdated.connect(
             self.sigMeasurementSettingsUpdated, QtCore.Qt.QueuedConnection)
         self.pulsedmeasurementlogic().sigAnalysisSettingsUpdated.connect(
@@ -268,6 +274,7 @@ class PulsedMasterLogic(LogicBase):
         self.sigExtMicrowaveSettingsChanged.disconnect()
         self.sigAnalysisSettingsChanged.disconnect()
         self.sigExtractionSettingsChanged.disconnect()
+        self.sigCrcSettingsChanged.disconnect()
         self.sigTimerIntervalChanged.disconnect()
         self.sigAlternativeDataTypeChanged.disconnect()
         self.sigManuallyPullData.disconnect()
@@ -280,6 +287,7 @@ class PulsedMasterLogic(LogicBase):
         self.pulsedmeasurementlogic().sigExtMicrowaveRunningUpdated.disconnect()
         self.pulsedmeasurementlogic().sigExtMicrowaveSettingsUpdated.disconnect()
         self.pulsedmeasurementlogic().sigTaggerSettingsUpdated.disconnect()
+        self.pulsedmeasurementlogic().sigCrcSettingsUpdated.disconnect()
         self.pulsedmeasurementlogic().sigMeasurementSettingsUpdated.disconnect()
         self.pulsedmeasurementlogic().sigAnalysisSettingsUpdated.disconnect()
         self.pulsedmeasurementlogic().sigExtractionSettingsUpdated.disconnect()
@@ -328,6 +336,10 @@ class PulsedMasterLogic(LogicBase):
     @property
     def tagger_settings(self):
         return self.pulsedmeasurementlogic().tagger_settings
+
+    @property
+    def crc_settings(self):
+        return self.pulsedmeasurementlogic().crc_settings
 
     @property
     def fast_counter_settings(self):
@@ -436,6 +448,18 @@ class PulsedMasterLogic(LogicBase):
             self.sigTaggerSettingsChanged.emit(settings_dict)
         else:
             self.sigTaggerSettingsChanged.emit(kwargs)
+        return
+
+    @QtCore.Slot(dict)
+    def set_crc_settings(self, settings_dict=None, **kwargs):
+        """
+        @param settings_dict:
+        @param kwargs:
+        """
+        if isinstance(settings_dict, dict):
+            self.sigCrcSettingsChanged.emit(settings_dict)
+        else:
+            self.sigCrcSettingsChanged.emit(kwargs)
         return
 
     @QtCore.Slot(dict)

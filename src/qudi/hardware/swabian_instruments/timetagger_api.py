@@ -244,7 +244,7 @@ class TT(Base):
             delay=delay
         )
     
-    def gated_channel(self, signal_channel, gate_start_channel, gate_stop_channel):
+    def gated_channel(self, signal_channel, gate_start_channel, gate_stop_channel, initial=GatedChannelInitial.Closed):
         """
         Creates a gated channel.
 
@@ -252,6 +252,7 @@ class TT(Base):
             signal_channel (int): The channel to be gated.
             gate1_start_channel (int): The channel that starts the gate.
             gate1_stop_channel (int): The channel that stops the gate.
+            initial (GatedChannelInitial): The initial state of the gate. Defaults to Closed.
 
         Returns:
             TimeTagger.GatedChannel: A GatedChannel object.
@@ -261,7 +262,7 @@ class TT(Base):
             input_channel=signal_channel,
             gate_start_channel=gate_start_channel,
             gate_stop_channel=gate_stop_channel,
-            initial = GatedChannelInitial.Closed
+            initial=initial
         )
 
     

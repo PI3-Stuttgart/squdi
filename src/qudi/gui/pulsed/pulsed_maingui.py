@@ -116,6 +116,18 @@ class GeneratorSettingDialog(QtWidgets.QDialog):
         uic.loadUi(ui_file, self)
 
 
+class CRCSettingsDialog(QtWidgets.QDialog):
+    def __init__(self):
+        # Get the path to the *.ui file
+        this_dir = os.path.dirname(__file__)
+        ui_file = os.path.join(this_dir, 'ui_pulsed_main_gui_settings_crc.ui')
+
+        # Load it
+        super().__init__()
+
+        uic.loadUi(ui_file, self)
+
+
 class PredefinedMethodsTab(QtWidgets.QWidget):
     def __init__(self):
         # Get the path to the *.ui file
@@ -190,6 +202,7 @@ class PulsedMeasurementGui(GuiBase):
         self._sg = SequenceGeneratorTab()
         self._as = AnalysisSettingDialog()
         self._pgs = GeneratorSettingDialog()
+        self._crc_s = CRCSettingsDialog()
         self._pm_cfg = PredefinedMethodsConfigDialog()
         self._fcd = FitConfigurationDialog(
             parent=self._mw,
@@ -339,6 +352,7 @@ class PulsedMeasurementGui(GuiBase):
         self._mw.action_save_as.triggered.connect(self.save_as_clicked)
         self._mw.action_Settings_Analysis.triggered.connect(self.show_analysis_settings)
         self._mw.action_Settings_Generator.triggered.connect(self.show_generator_settings)
+        self._mw.action_Settings_CRC.triggered.connect(self.show_crc_settings)
         self._mw.action_FitSettings.triggered.connect(self._fcd.show)
         return
 
@@ -358,6 +372,11 @@ class PulsedMeasurementGui(GuiBase):
         self._pgs.rejected.connect(self.keep_former_generator_settings)
         self._pgs.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(self.apply_generator_settings)
         self._pgs.pg_benchmark.clicked.connect(self.run_pg_benchmark)
+
+        # Connect signals for CRC settings dialog
+        self._crc_s.accepted.connect(self.apply_crc_settings)
+        self._crc_s.rejected.connect(self.keep_former_crc_settings)
+        self._crc_s.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(self.apply_crc_settings)
         return
 
     def _connect_pulse_generator_tab_signals(self):
@@ -491,6 +510,8 @@ class PulsedMeasurementGui(GuiBase):
         self.pulsedmasterlogic().sigGeneratorSettingsUpdated.connect(self.pulse_generator_settings_updated)
         self.pulsedmasterlogic().sigSamplingSettingsUpdated.connect(self.generation_parameters_updated)
         self.pulsedmasterlogic().sigPredefinedSequenceGenerated.connect(self.predefined_generated)
+        if hasattr(self.pulsedmasterlogic(), 'sigCrcSettingsUpdated'):
+            self.pulsedmasterlogic().sigCrcSettingsUpdated.connect(self.crc_settings_updated)
         return
 
     def _disconnect_main_window_signals(self):
@@ -505,6 +526,7 @@ class PulsedMeasurementGui(GuiBase):
         self._mw.action_save_as.triggered.disconnect()
         self._mw.action_Settings_Analysis.triggered.disconnect()
         self._mw.action_Settings_Generator.triggered.disconnect()
+        self._mw.action_Settings_CRC.triggered.disconnect()
         self._mw.action_FitSettings.triggered.disconnect()
 
     def _disconnect_dialog_signals(self):
@@ -522,6 +544,11 @@ class PulsedMeasurementGui(GuiBase):
         self._pgs.accepted.disconnect()
         self._pgs.rejected.disconnect()
         self._pgs.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.disconnect()
+
+        # Connect signals for CRC settings dialog
+        self._crc_s.accepted.disconnect()
+        self._crc_s.rejected.disconnect()
+        self._crc_s.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.disconnect()
         return
 
     def _disconnect_pulse_generator_tab_signals(self):
@@ -647,6 +674,8 @@ class PulsedMeasurementGui(GuiBase):
         self.pulsedmasterlogic().sigGeneratorSettingsUpdated.disconnect()
         self.pulsedmasterlogic().sigSamplingSettingsUpdated.disconnect()
         self.pulsedmasterlogic().sigPredefinedSequenceGenerated.disconnect()
+        if hasattr(self.pulsedmasterlogic(), 'sigCrcSettingsUpdated'):
+            self.pulsedmasterlogic().sigCrcSettingsUpdated.disconnect()
         return
 
     ###########################################################################
@@ -1198,6 +1227,61 @@ class PulsedMeasurementGui(GuiBase):
         """ Open the Pulse generator settings window. """
         self.sigPulseGeneratorSettingsUpdated.emit()
         self._pgs.exec_()
+        return
+
+    ###########################################################################
+    #                    CRC settings dialog related methods                  #
+    ###########################################################################
+    def show_crc_settings(self):
+        """ Open the CRC Settings Window. """
+        # Populate the dialog from the current logic state before opening
+        if hasattr(self.pulsedmasterlogic(), 'crc_settings'):
+            current = self.pulsedmasterlogic().crc_settings
+            self._crc_s.crc_threshold_SpinBox.setValue(current.get('threshold', 1))
+            self._crc_s.crc_kick_SpinBox.setValue(current.get('kick', 150))
+            self._crc_s.crc_interval_SpinBox.setValue(current.get('interval', 2000))
+            self._crc_s.crc_enabled_CheckBox.setChecked(current.get('enabled', False))
+        self._crc_s.exec_()
+        return
+
+    def apply_crc_settings(self):
+        """ Apply the CRC settings from the dialog to the logic. """
+        if not hasattr(self.pulsedmasterlogic(), 'set_crc_settings'):
+            return
+        settings = {
+            'threshold': self._crc_s.crc_threshold_SpinBox.value(),
+            'kick': self._crc_s.crc_kick_SpinBox.value(),
+            'interval': self._crc_s.crc_interval_SpinBox.value(),
+            'enabled': self._crc_s.crc_enabled_CheckBox.isChecked(),
+        }
+        self.pulsedmasterlogic().set_crc_settings(settings)
+        return
+
+    def keep_former_crc_settings(self):
+        """ Revert the CRC settings dialog to the last known logic state. """
+        if hasattr(self.pulsedmasterlogic(), 'crc_settings'):
+            current = self.pulsedmasterlogic().crc_settings
+            self._crc_s.crc_threshold_SpinBox.setValue(current.get('threshold', 1))
+            self._crc_s.crc_kick_SpinBox.setValue(current.get('kick', 150))
+            self._crc_s.crc_interval_SpinBox.setValue(current.get('interval', 2000))
+            self._crc_s.crc_enabled_CheckBox.setChecked(current.get('enabled', False))
+        return
+
+    @QtCore.Slot(dict)
+    def crc_settings_updated(self, settings):
+        """ Update the CRC settings dialog from logic. """
+        self._crc_s.crc_threshold_SpinBox.blockSignals(True)
+        self._crc_s.crc_kick_SpinBox.blockSignals(True)
+        self._crc_s.crc_interval_SpinBox.blockSignals(True)
+        self._crc_s.crc_enabled_CheckBox.blockSignals(True)
+        self._crc_s.crc_threshold_SpinBox.setValue(settings.get('threshold', 1))
+        self._crc_s.crc_kick_SpinBox.setValue(settings.get('kick', 150))
+        self._crc_s.crc_interval_SpinBox.setValue(settings.get('interval', 2000))
+        self._crc_s.crc_enabled_CheckBox.setChecked(settings.get('enabled', False))
+        self._crc_s.crc_threshold_SpinBox.blockSignals(False)
+        self._crc_s.crc_kick_SpinBox.blockSignals(False)
+        self._crc_s.crc_interval_SpinBox.blockSignals(False)
+        self._crc_s.crc_enabled_CheckBox.blockSignals(False)
         return
 
     ###########################################################################

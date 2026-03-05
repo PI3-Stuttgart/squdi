@@ -56,13 +56,15 @@ class _TimeTaggerFastCounterAdapter:
     """Fast-counter compatible adapter that uses a TT module directly."""
 
     def __init__(self, tagger, channel_apd_0, channel_apd_1, channel_detect, channel_sequence,
-                 sum_channels=True):
+                 sum_channels=True, channel_crc_veto=None, crc_enabled=False):
         self._tagger = tagger
         self._channel_apd_0 = int(channel_apd_0)
         self._channel_apd_1 = int(channel_apd_1)
         self._channel_detect = int(channel_detect)
         self._channel_sequence = int(channel_sequence)
         self._sum_channels = bool(sum_channels)
+        self._channel_crc_veto = channel_crc_veto if channel_crc_veto is not None else None
+        self._crc_enabled = bool(crc_enabled)
 
         self._combined_channel = None
         self._apd_channel = self._channel_apd_0
@@ -71,6 +73,21 @@ class _TimeTaggerFastCounterAdapter:
                 channels=[self._channel_apd_0, self._channel_apd_1]
             )
             self._apd_channel = self._combined_channel.getChannel()
+
+        # Wrap APD channel with CRC hardware veto if enabled
+        self._gated_veto_channel = None
+        if self._crc_enabled and self._channel_crc_veto is not None:
+            # We assume CRC veto is ACTIVE HIGH. Thus counting happens when veto is LOW.
+            # Start counting on dropping edge (-channel), stop on rising edge (+channel).
+            # Initial state is Open, so we count immediately unless veto is held high.
+            from TimeTagger import GatedChannelInitial
+            self._gated_veto_channel = self._tagger.gated_channel(
+                signal_channel=self._apd_channel,
+                gate_start_channel=-int(self._channel_crc_veto),
+                gate_stop_channel=int(self._channel_crc_veto),
+                initial=GatedChannelInitial.Open
+            )
+            self._apd_channel = self._gated_veto_channel.getChannel()
 
         self._bin_width = 1.0e-9
         self._record_length = 3.0e-6
@@ -186,6 +203,7 @@ class PulsedMeasurementLogic(LogicBase):
     _tagger = Connector(name='tagger', interface='TT')
     _pulsegenerator = Connector(name='pulsegenerator', interface='PulserInterface')
     _microwave = Connector(name='microwave', interface='MicrowaveInterface', optional=True)
+    _crc = Connector(name='crc', interface='STM32CRC', optional=True)
 
     # Config options
     # Optional additional paths to import from
@@ -197,11 +215,12 @@ class PulsedMeasurementLogic(LogicBase):
                                              default='text',
                                              constructor=_data_storage_from_cfg_option)
     _save_thumbnails = ConfigOption(name='save_thumbnails', default=True)
-    _timetagger_channel_apd_0 = ConfigOption(name='timetagger_channel_apd_0', default=1)
-    _timetagger_channel_apd_1 = ConfigOption(name='timetagger_channel_apd_1', default=2)
-    _timetagger_channel_detect = ConfigOption(name='timetagger_channel_detect', default=5)
-    _timetagger_channel_sequence = ConfigOption(name='timetagger_channel_sequence', default=5)
-    _timetagger_sum_channels = ConfigOption(name='timetagger_sum_channels', default=True)
+    _timetagger_channel_apd_0 = ConfigOption('timetagger_channel_apd_0', default=1, missing='warn')
+    _timetagger_channel_apd_1 = ConfigOption('timetagger_channel_apd_1', default=2, missing='warn')
+    _timetagger_channel_detect = ConfigOption('timetagger_channel_detect', default=5, missing='warn')
+    _timetagger_channel_sequence = ConfigOption('timetagger_channel_sequence', default=5, missing='warn')
+    _timetagger_sum_channels = ConfigOption('timetagger_sum_channels', default=True, missing='warn')
+    _timetagger_channel_crc_veto = ConfigOption('timetagger_channel_crc_veto', default=6, missing='warn')
 
     # status variables
     # ext. microwave settings
@@ -257,6 +276,7 @@ class PulsedMeasurementLogic(LogicBase):
     sigExtMicrowaveRunningUpdated = QtCore.Signal(bool)
     sigExtMicrowaveSettingsUpdated = QtCore.Signal(dict)
     sigTaggerSettingsUpdated = QtCore.Signal(dict)
+    sigCrcSettingsUpdated = QtCore.Signal(dict)
     sigMeasurementSettingsUpdated = QtCore.Signal(dict)
     sigAnalysisSettingsUpdated = QtCore.Signal(dict)
     sigExtractionSettingsUpdated = QtCore.Signal(dict)
@@ -446,13 +466,19 @@ class PulsedMeasurementLogic(LogicBase):
             raise RuntimeError('PulsedMeasurementLogic requires a "tagger" connection.')
 
         self.log.info('Using direct tagger backend for pulsed counting.')
+        crc_enabled = False
+        if self._crc() is not None:
+            crc_enabled = self._crc().crc_enabled
+
         return _TimeTaggerFastCounterAdapter(
             tagger=tagger,
             channel_apd_0=self._timetagger_channel_apd_0,
             channel_apd_1=self._timetagger_channel_apd_1,
             channel_detect=self._timetagger_channel_detect,
             channel_sequence=self._timetagger_channel_sequence,
-            sum_channels=self._timetagger_sum_channels
+            sum_channels=self._timetagger_sum_channels,
+            channel_crc_veto=self._timetagger_channel_crc_veto,
+            crc_enabled=crc_enabled
         )
 
     def _counter_device(self):
@@ -493,7 +519,41 @@ class PulsedMeasurementLogic(LogicBase):
         settings_dict['is_gated'] = bool(self._counter_device().is_gated())
         return settings_dict
 
-    # Backward-compatible alias
+    @property
+    def crc_settings(self):
+        crc = self._crc()
+        if crc is None:
+            return None
+        return {
+            'threshold': crc.threshold,
+            'kick': crc.kick,
+            'interval': crc.interval,
+            'enabled': crc.crc_enabled
+        }
+
+    @QtCore.Slot(dict)
+    def set_crc_settings(self, settings_dict):
+        """ Update CRC parameters in the STM32 device. Note: Changing enabled requires counter re-init. """
+        crc = self._crc()
+        if crc is None or not settings_dict:
+            return
+
+        reinit_needed = False
+        if 'threshold' in settings_dict:
+            crc.set_threshold(settings_dict['threshold'])
+        if 'kick' in settings_dict:
+            crc.set_kick(settings_dict['kick'])
+        if 'interval' in settings_dict:
+            crc.set_interval(settings_dict['interval'])
+        if 'enabled' in settings_dict and crc.crc_enabled != settings_dict['enabled']:
+            crc.crc_enabled = settings_dict['enabled']
+            reinit_needed = True
+
+        if reinit_needed:
+            self._counter_backend = self._resolve_counter_backend()
+            self.set_tagger_settings()
+
+    # Backward-compatible alias for tagger_settings
     @property
     def fast_counter_settings(self):
         return self.tagger_settings
