@@ -16,6 +16,7 @@ from qudi.core.statusvariable import StatusVar
 from qudi.util.units import ScaledFloat
 from qudi.util.mutex import Mutex
 from qudi.util.widgets.fitting import FitWidget, FitConfigurationDialog
+from qudi.util.widgets.scientific_spinbox import ScienDSpinBox
 from qtpy import uic
 
 class TTWindow(QtWidgets.QMainWindow):
@@ -358,12 +359,12 @@ class TTGui(GuiBase):
         settings_layout.addRow(self._gated_toggle_btn)
 
         # Extra gate closure spinbox (keeps gate closed after kick ends)
-        self._gated_extra_gate_spinbox = QtWidgets.QDoubleSpinBox()
-        self._gated_extra_gate_spinbox.setSuffix(' ms')
-        self._gated_extra_gate_spinbox.setDecimals(0)
+        self._gated_extra_gate_spinbox = ScienDSpinBox()
+        self._gated_extra_gate_spinbox.setSuffix(' µs')
+        self._gated_extra_gate_spinbox.setDecimals(3)
         self._gated_extra_gate_spinbox.setMinimum(0)
-        self._gated_extra_gate_spinbox.setMaximum(10000)
-        self._gated_extra_gate_spinbox.setValue(400)  # default: 400 ms (20% of 2 s kick)
+        self._gated_extra_gate_spinbox.setMaximum(10)
+        self._gated_extra_gate_spinbox.setValue(0.1)  # default: 400 mus (20% of 2 s kick)
         self._gated_extra_gate_spinbox.setToolTip(
             'Extra time the gate stays closed after the kick ends\n'
             '(covers laser turn-off transient). Re-toggle to apply.'
