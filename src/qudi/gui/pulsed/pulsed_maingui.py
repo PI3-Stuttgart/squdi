@@ -146,6 +146,132 @@ class CRCSettingsDialog(QtWidgets.QDialog):
         self.crc_interval_SpinBox.setSuffix(' µs')
 
 
+class SSRSettingsDialog(QtWidgets.QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('SSR Readout Settings')
+        self.setModal(True)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        grid = QtWidgets.QGridLayout()
+        row = 0
+
+        self.use_ssr_CheckBox = QtWidgets.QCheckBox()
+        grid.addWidget(QtWidgets.QLabel('Use SSR readout:'), row, 0)
+        grid.addWidget(self.use_ssr_CheckBox, row, 1)
+        row += 1
+
+        self.output_state_ComboBox = QtWidgets.QComboBox()
+        self.output_state_ComboBox.addItems(['Dark', 'Bright'])
+        grid.addWidget(QtWidgets.QLabel('Displayed probability:'), row, 0)
+        grid.addWidget(self.output_state_ComboBox, row, 1)
+        row += 1
+
+        self.crc_threshold_DSpinBox = ScienDSpinBox()
+        self.crc_threshold_DSpinBox.setMinimum(0.0)
+        self.crc_threshold_DSpinBox.setMaximum(np.inf)
+        grid.addWidget(QtWidgets.QLabel('CRC threshold:'), row, 0)
+        grid.addWidget(self.crc_threshold_DSpinBox, row, 1)
+        row += 1
+
+        self.ssr_threshold_DSpinBox = ScienDSpinBox()
+        self.ssr_threshold_DSpinBox.setMinimum(0.0)
+        self.ssr_threshold_DSpinBox.setMaximum(np.inf)
+        grid.addWidget(QtWidgets.QLabel('SSR threshold:'), row, 0)
+        grid.addWidget(self.ssr_threshold_DSpinBox, row, 1)
+        row += 1
+
+        self.crc_window_start_DSpinBox = ScienDSpinBox()
+        self.crc_window_start_DSpinBox.setMinimum(0.0)
+        self.crc_window_start_DSpinBox.setMaximum(np.inf)
+        self.crc_window_start_DSpinBox.setSuffix('s')
+        grid.addWidget(QtWidgets.QLabel('CRC window start:'), row, 0)
+        grid.addWidget(self.crc_window_start_DSpinBox, row, 1)
+        row += 1
+
+        self.crc_window_width_DSpinBox = ScienDSpinBox()
+        self.crc_window_width_DSpinBox.setMinimum(0.0)
+        self.crc_window_width_DSpinBox.setMaximum(np.inf)
+        self.crc_window_width_DSpinBox.setSuffix('s')
+        grid.addWidget(QtWidgets.QLabel('CRC window width:'), row, 0)
+        grid.addWidget(self.crc_window_width_DSpinBox, row, 1)
+        row += 1
+
+        self.readout_window_start_DSpinBox = ScienDSpinBox()
+        self.readout_window_start_DSpinBox.setMinimum(0.0)
+        self.readout_window_start_DSpinBox.setMaximum(np.inf)
+        self.readout_window_start_DSpinBox.setSuffix('s')
+        grid.addWidget(QtWidgets.QLabel('Readout window start:'), row, 0)
+        grid.addWidget(self.readout_window_start_DSpinBox, row, 1)
+        row += 1
+
+        self.readout_window_width_DSpinBox = ScienDSpinBox()
+        self.readout_window_width_DSpinBox.setMinimum(0.0)
+        self.readout_window_width_DSpinBox.setMaximum(np.inf)
+        self.readout_window_width_DSpinBox.setSuffix('s')
+        grid.addWidget(QtWidgets.QLabel('Readout window width:'), row, 0)
+        grid.addWidget(self.readout_window_width_DSpinBox, row, 1)
+        row += 1
+
+        self.sequence_stride_SpinBox = ScienSpinBox()
+        self.sequence_stride_SpinBox.setMinimum(1)
+        self.sequence_stride_SpinBox.setMaximum(999999)
+        grid.addWidget(QtWidgets.QLabel('Sequence stride:'), row, 0)
+        grid.addWidget(self.sequence_stride_SpinBox, row, 1)
+        row += 1
+
+        self.crc_index_SpinBox = ScienSpinBox()
+        self.crc_index_SpinBox.setMinimum(0)
+        self.crc_index_SpinBox.setMaximum(999999)
+        grid.addWidget(QtWidgets.QLabel('CRC pulse index:'), row, 0)
+        grid.addWidget(self.crc_index_SpinBox, row, 1)
+        row += 1
+
+        self.readout_index_SpinBox = ScienSpinBox()
+        self.readout_index_SpinBox.setMinimum(0)
+        self.readout_index_SpinBox.setMaximum(999999)
+        grid.addWidget(QtWidgets.QLabel('Readout pulse index:'), row, 0)
+        grid.addWidget(self.readout_index_SpinBox, row, 1)
+        row += 1
+
+        self.bright_state_if_above_CheckBox = QtWidgets.QCheckBox()
+        grid.addWidget(QtWidgets.QLabel('Bright if above threshold:'), row, 0)
+        grid.addWidget(self.bright_state_if_above_CheckBox, row, 1)
+        row += 1
+
+        layout.addLayout(grid)
+
+        self.buttonBox = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Apply
+            | QtWidgets.QDialogButtonBox.Cancel
+            | QtWidgets.QDialogButtonBox.Ok
+        )
+        layout.addWidget(self.buttonBox)
+
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.use_ssr_CheckBox.toggled.connect(self._toggle_enabled_state)
+        self._toggle_enabled_state(False)
+
+    @QtCore.Slot(bool)
+    def _toggle_enabled_state(self, enabled):
+        widgets = (
+            self.output_state_ComboBox,
+            self.crc_threshold_DSpinBox,
+            self.ssr_threshold_DSpinBox,
+            self.crc_window_start_DSpinBox,
+            self.crc_window_width_DSpinBox,
+            self.readout_window_start_DSpinBox,
+            self.readout_window_width_DSpinBox,
+            self.sequence_stride_SpinBox,
+            self.crc_index_SpinBox,
+            self.readout_index_SpinBox,
+            self.bright_state_if_above_CheckBox
+        )
+        for widget in widgets:
+            widget.setEnabled(enabled)
+
+
 class PredefinedMethodsTab(QtWidgets.QWidget):
     def __init__(self):
         # Get the path to the *.ui file
@@ -221,11 +347,13 @@ class PulsedMeasurementGui(GuiBase):
         self._as = AnalysisSettingDialog()
         self._pgs = GeneratorSettingDialog()
         self._crc_s = CRCSettingsDialog()
+        self._ssr_s = SSRSettingsDialog()
         self._pm_cfg = PredefinedMethodsConfigDialog()
         self._fcd = FitConfigurationDialog(
             parent=self._mw,
             fit_config_model=self.pulsedmasterlogic().fit_config_model
         )
+        self._analysis_method_before_ssr = None
 
         self._mw.tabWidget.addTab(self._pa, 'Analysis')
         self._mw.tabWidget.addTab(self._pe, 'Pulse Extraction')
@@ -236,6 +364,7 @@ class PulsedMeasurementGui(GuiBase):
         self._activate_main_window_ui()
         self._activate_extraction_ui()
         self._activate_analysis_ui()
+        self._activate_ssr_ui()
         self._activate_generator_settings_ui()
         self._activate_pulse_generator_ui()
         self._activate_predefined_methods_ui()
@@ -294,6 +423,7 @@ class PulsedMeasurementGui(GuiBase):
         """
         self._deactivate_predefined_methods_settings_ui()
         self._deactivate_analysis_settings_ui()
+        self._deactivate_ssr_ui()
         self._deactivate_generator_settings_ui()
         self._deactivate_sequence_generator_ui()
         self._deactivate_predefined_methods_ui()
@@ -395,6 +525,13 @@ class PulsedMeasurementGui(GuiBase):
         self._crc_s.accepted.connect(self.apply_crc_settings)
         self._crc_s.rejected.connect(self.keep_former_crc_settings)
         self._crc_s.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(self.apply_crc_settings)
+
+        # Connect signals for SSR settings dialog
+        self._ssr_s.accepted.connect(self.apply_ssr_settings)
+        self._ssr_s.rejected.connect(self.keep_former_ssr_settings)
+        self._ssr_s.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(
+            self.apply_ssr_settings
+        )
         return
 
     def _connect_pulse_generator_tab_signals(self):
@@ -464,6 +601,8 @@ class PulsedMeasurementGui(GuiBase):
         self._pa.time_param_ana_periode_DoubleSpinBox.editingFinished.connect(self.measurement_timer_changed)
         self._pa.ana_param_errorbars_CheckBox.toggled.connect(self.toggle_error_bars)
         self._pa.second_plot_ComboBox.currentIndexChanged[str].connect(self.second_plot_changed)
+        self._pa.ssr_use_CheckBox.toggled.connect(self.ssr_use_toggled)
+        self._pa.ssr_setup_PushButton.clicked.connect(self.show_ssr_settings)
         return
 
     def _connect_extraction_tab_signals(self):
@@ -567,6 +706,11 @@ class PulsedMeasurementGui(GuiBase):
         self._crc_s.accepted.disconnect()
         self._crc_s.rejected.disconnect()
         self._crc_s.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.disconnect()
+
+        # Connect signals for SSR settings dialog
+        self._ssr_s.accepted.disconnect()
+        self._ssr_s.rejected.disconnect()
+        self._ssr_s.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.disconnect()
         return
 
     def _disconnect_pulse_generator_tab_signals(self):
@@ -636,6 +780,8 @@ class PulsedMeasurementGui(GuiBase):
         self._pa.time_param_ana_periode_DoubleSpinBox.editingFinished.disconnect()
         self._pa.ana_param_errorbars_CheckBox.toggled.disconnect()
         self._pa.second_plot_ComboBox.currentIndexChanged[str].disconnect()
+        self._pa.ssr_use_CheckBox.toggled.disconnect()
+        self._pa.ssr_setup_PushButton.clicked.disconnect()
         return
 
     def _disconnect_extraction_tab_signals(self):
@@ -1059,6 +1205,12 @@ class PulsedMeasurementGui(GuiBase):
         axis_units = (self._as.ana_param_x_axis_unit_LineEdit.text(),
                       self._as.ana_param_y_axis_unit_LineEdit.text())
 
+        # Keep the underlying non-SSR y-axis metadata untouched while SSR overlays probability labels.
+        if self._is_ssr_method(self.pulsedmasterlogic().analysis_settings):
+            measurement_settings = self.pulsedmasterlogic().measurement_settings
+            axis_labels = (axis_labels[0], measurement_settings['labels'][1])
+            axis_units = (axis_units[0], measurement_settings['units'][1])
+
         self._ana_param_second_plot_x_axis_name_text = self._as.ana_param_second_plot_x_axis_name_LineEdit.text()
         self._ana_param_second_plot_x_axis_unit_text = self._as.ana_param_second_plot_x_axis_unit_LineEdit.text()
         self._ana_param_second_plot_y_axis_name_text = self._as.ana_param_second_plot_y_axis_name_LineEdit.text()
@@ -1090,6 +1242,244 @@ class PulsedMeasurementGui(GuiBase):
     def show_analysis_settings(self):
         """ Open the Analysis Settings Window. """
         self._as.exec_()
+        return
+
+    def _default_non_ssr_analysis_method(self):
+        methods = [name for name in self.pulsedmasterlogic().analysis_methods if name != 'snv_ssr']
+        if 'mean_norm' in methods:
+            return 'mean_norm'
+        methods = natural_sort(methods)
+        return methods[0] if methods else 'snv_ssr'
+
+    @staticmethod
+    def _is_ssr_method(settings_dict):
+        return isinstance(settings_dict, dict) and settings_dict.get('method') == 'snv_ssr'
+
+    @staticmethod
+    def _ssr_probability_label(output_state):
+        return 'Bright-State Probability' if output_state == 'bright' else 'Dark-State Probability'
+
+    def _set_ssr_label_editor_state(self, enabled, output_state='dark'):
+        y_label = self._ssr_probability_label(output_state)
+        self._as.ana_param_y_axis_name_LineEdit.blockSignals(True)
+        self._as.ana_param_y_axis_unit_LineEdit.blockSignals(True)
+        if enabled:
+            self._as.ana_param_y_axis_name_LineEdit.setText(y_label)
+            self._as.ana_param_y_axis_unit_LineEdit.setText('')
+        else:
+            settings = self.pulsedmasterlogic().measurement_settings
+            self._as.ana_param_y_axis_name_LineEdit.setText(settings['labels'][1])
+            self._as.ana_param_y_axis_unit_LineEdit.setText(settings['units'][1])
+        self._as.ana_param_y_axis_name_LineEdit.setEnabled(not enabled)
+        self._as.ana_param_y_axis_unit_LineEdit.setEnabled(not enabled)
+        self._as.ana_param_y_axis_name_LineEdit.blockSignals(False)
+        self._as.ana_param_y_axis_unit_LineEdit.blockSignals(False)
+        return
+
+    def _refresh_analysis_plot_labels(self):
+        if not hasattr(self, '_pa') or not hasattr(self, '_pe'):
+            return
+
+        measurement_settings = self.pulsedmasterlogic().measurement_settings
+        x_label = measurement_settings['labels'][0]
+        x_unit = measurement_settings['units'][0]
+        y_label = measurement_settings['labels'][1]
+        y_unit = measurement_settings['units'][1]
+
+        analysis_settings = self.pulsedmasterlogic().analysis_settings
+        if self._is_ssr_method(analysis_settings):
+            output_state = str(analysis_settings.get('output_state', 'dark')).strip().lower()
+            y_label = self._ssr_probability_label(output_state)
+            y_unit = ''
+            self._pe.measuring_error_PlotWidget.setLabel(
+                axis='left',
+                text='SSR uncertainty',
+                units=''
+            )
+            self._set_ssr_label_editor_state(True, output_state)
+        else:
+            self._pe.measuring_error_PlotWidget.setLabel(
+                axis='left',
+                text='measuring error',
+                units='arb.u.'
+            )
+            self._set_ssr_label_editor_state(False)
+
+        self._pa.pulse_analysis_PlotWidget.setLabel(axis='bottom', text=x_label, units=x_unit)
+        self._pa.pulse_analysis_PlotWidget.setLabel(axis='left', text=y_label, units=y_unit)
+        self._pe.measuring_error_PlotWidget.setLabel(axis='bottom', text=x_label, units=x_unit)
+        return
+
+    def _sync_ssr_settings_from_logic(self, settings_dict):
+        if not isinstance(settings_dict, dict):
+            settings_dict = dict()
+
+        enabled = self._is_ssr_method(settings_dict)
+        output_state = str(settings_dict.get('output_state', 'dark')).strip().lower()
+        if output_state not in ('dark', 'bright'):
+            output_state = 'dark'
+
+        if not enabled and isinstance(settings_dict, dict) and settings_dict.get('method'):
+            self._analysis_method_before_ssr = settings_dict.get('method')
+        elif self._analysis_method_before_ssr is None:
+            self._analysis_method_before_ssr = self._default_non_ssr_analysis_method()
+
+        if hasattr(self._pa, 'ssr_use_CheckBox'):
+            self._pa.ssr_use_CheckBox.blockSignals(True)
+            self._pa.ssr_use_CheckBox.setChecked(enabled)
+            self._pa.ssr_use_CheckBox.blockSignals(False)
+        if hasattr(self._pa, 'ssr_output_LineEdit'):
+            self._pa.ssr_output_LineEdit.setText(self._ssr_probability_label(output_state))
+
+        if hasattr(self, '_ssr_s'):
+            self._ssr_s.use_ssr_CheckBox.blockSignals(True)
+            self._ssr_s.output_state_ComboBox.blockSignals(True)
+            self._ssr_s.use_ssr_CheckBox.setChecked(enabled)
+            self._ssr_s.output_state_ComboBox.setCurrentText(output_state.capitalize())
+            self._ssr_s.use_ssr_CheckBox.blockSignals(False)
+            self._ssr_s.output_state_ComboBox.blockSignals(False)
+
+        signal_start = float(settings_dict.get('signal_start', 0.0))
+        signal_end = float(settings_dict.get('signal_end', signal_start))
+        norm_start = float(settings_dict.get('norm_start', 0.0))
+        norm_end = float(settings_dict.get('norm_end', norm_start))
+
+        if hasattr(self, '_ssr_s'):
+            self._ssr_s.readout_window_start_DSpinBox.setValue(signal_start)
+            self._ssr_s.readout_window_width_DSpinBox.setValue(max(0.0, signal_end - signal_start))
+            self._ssr_s.crc_window_start_DSpinBox.setValue(norm_start)
+            self._ssr_s.crc_window_width_DSpinBox.setValue(max(0.0, norm_end - norm_start))
+            self._ssr_s.crc_threshold_DSpinBox.setValue(float(settings_dict.get('crc_threshold', 5.0)))
+            self._ssr_s.ssr_threshold_DSpinBox.setValue(float(settings_dict.get('ssr_threshold', 2.0)))
+            self._ssr_s.sequence_stride_SpinBox.setValue(int(settings_dict.get('sequence_stride', 3)))
+            self._ssr_s.crc_index_SpinBox.setValue(int(settings_dict.get('crc_index', 0)))
+            self._ssr_s.readout_index_SpinBox.setValue(int(settings_dict.get('readout_index', 2)))
+            self._ssr_s.bright_state_if_above_CheckBox.setChecked(
+                bool(settings_dict.get('bright_state_if_above', True))
+            )
+        self._refresh_analysis_plot_labels()
+        return
+
+    def _update_ssr_statistics_display(self):
+        if not hasattr(self._pa, 'ssr_fidelity_LineEdit') or not hasattr(self._pa, 'ssr_valid_fraction_LineEdit'):
+            return
+
+        result = self.pulsedmasterlogic().analysis_result_data
+        if not self._is_ssr_method(self.pulsedmasterlogic().analysis_settings):
+            self._pa.ssr_fidelity_LineEdit.setText('n/a')
+            self._pa.ssr_valid_fraction_LineEdit.setText('n/a')
+            self._clear_ssr_histogram_display()
+            return
+
+        fidelity = result.get('fidelity', np.nan) if isinstance(result, dict) else np.nan
+        valid_fraction = result.get('valid_fraction', np.nan) if isinstance(result, dict) else np.nan
+
+        if np.isfinite(fidelity):
+            self._pa.ssr_fidelity_LineEdit.setText('{0:.2%}'.format(fidelity))
+        else:
+            self._pa.ssr_fidelity_LineEdit.setText('n/a')
+
+        if np.isfinite(valid_fraction):
+            self._pa.ssr_valid_fraction_LineEdit.setText('{0:.2%}'.format(valid_fraction))
+        else:
+            self._pa.ssr_valid_fraction_LineEdit.setText('n/a')
+
+        if hasattr(self._pa, 'ssr_hist_PlotWidget'):
+            bright_if_above = bool(result.get('bright_state_if_above', True)) if isinstance(result, dict) else True
+            self._pa.ssr_hist_PlotWidget.setTitle(
+                'bright > threshold' if bright_if_above else 'bright < threshold'
+            )
+
+        hist_edges = np.asarray(result.get('histogram_edges', []), dtype=float) if isinstance(result, dict) else np.array([], dtype=float)
+        hist_bright = np.asarray(result.get('histogram_bright', []), dtype=float) if isinstance(result, dict) else np.array([], dtype=float)
+        hist_dark = np.asarray(result.get('histogram_dark', []), dtype=float) if isinstance(result, dict) else np.array([], dtype=float)
+
+        if (
+            hist_edges.ndim == 1 and hist_edges.size >= 2 and
+            hist_bright.ndim == 1 and hist_bright.size == hist_edges.size - 1 and
+            hist_dark.ndim == 1 and hist_dark.size == hist_edges.size - 1 and
+            hasattr(self._pa, 'ssr_hist_bright_bars') and hasattr(self._pa, 'ssr_hist_dark_bars')
+        ):
+            centers = 0.5 * (hist_edges[:-1] + hist_edges[1:])
+            self._pa.ssr_hist_dark_bars.setOpts(
+                x0=hist_edges[:-1],
+                x1=centers,
+                height=hist_dark
+            )
+            self._pa.ssr_hist_bright_bars.setOpts(
+                x0=centers,
+                x1=hist_edges[1:],
+                height=hist_bright
+            )
+        else:
+            self._clear_ssr_histogram_display()
+
+        threshold = result.get('ssr_threshold', np.nan) if isinstance(result, dict) else np.nan
+        if hasattr(self._pa, 'ssr_hist_threshold_line'):
+            if np.isfinite(threshold):
+                self._pa.ssr_hist_threshold_line.setValue(float(threshold))
+                self._pa.ssr_hist_threshold_line.show()
+            else:
+                self._pa.ssr_hist_threshold_line.hide()
+        return
+
+    def _clear_ssr_histogram_display(self):
+        empty = np.array([], dtype=float)
+        if hasattr(self._pa, 'ssr_hist_bright_bars'):
+            self._pa.ssr_hist_bright_bars.setOpts(x0=empty, x1=empty, height=empty)
+        if hasattr(self._pa, 'ssr_hist_dark_bars'):
+            self._pa.ssr_hist_dark_bars.setOpts(x0=empty, x1=empty, height=empty)
+        if hasattr(self._pa, 'ssr_hist_threshold_line'):
+            self._pa.ssr_hist_threshold_line.hide()
+        if hasattr(self._pa, 'ssr_hist_PlotWidget'):
+            self._pa.ssr_hist_PlotWidget.setTitle('')
+        return
+
+    def show_ssr_settings(self):
+        self._sync_ssr_settings_from_logic(self.pulsedmasterlogic().analysis_settings)
+        self._ssr_s.exec_()
+        return
+
+    def apply_ssr_settings(self):
+        use_ssr = self._ssr_s.use_ssr_CheckBox.isChecked()
+        if not use_ssr:
+            self.pulsedmasterlogic().set_analysis_settings(
+                {'method': self._analysis_method_before_ssr or self._default_non_ssr_analysis_method()}
+            )
+            return
+
+        readout_start = self._ssr_s.readout_window_start_DSpinBox.value()
+        readout_width = self._ssr_s.readout_window_width_DSpinBox.value()
+        crc_start = self._ssr_s.crc_window_start_DSpinBox.value()
+        crc_width = self._ssr_s.crc_window_width_DSpinBox.value()
+
+        settings_dict = {
+            'method': 'snv_ssr',
+            'output_state': self._ssr_s.output_state_ComboBox.currentText().strip().lower(),
+            'signal_start': readout_start,
+            'signal_end': readout_start + readout_width,
+            'norm_start': crc_start,
+            'norm_end': crc_start + crc_width,
+            'crc_threshold': self._ssr_s.crc_threshold_DSpinBox.value(),
+            'ssr_threshold': self._ssr_s.ssr_threshold_DSpinBox.value(),
+            'sequence_stride': self._ssr_s.sequence_stride_SpinBox.value(),
+            'crc_index': self._ssr_s.crc_index_SpinBox.value(),
+            'readout_index': self._ssr_s.readout_index_SpinBox.value(),
+            'bright_state_if_above': self._ssr_s.bright_state_if_above_CheckBox.isChecked()
+        }
+        self.pulsedmasterlogic().set_analysis_settings(settings_dict)
+        return
+
+    def keep_former_ssr_settings(self):
+        self._sync_ssr_settings_from_logic(self.pulsedmasterlogic().analysis_settings)
+        return
+
+    @QtCore.Slot(bool)
+    def ssr_use_toggled(self, enabled):
+        self._ssr_s.use_ssr_CheckBox.blockSignals(True)
+        self._ssr_s.use_ssr_CheckBox.setChecked(enabled)
+        self._ssr_s.use_ssr_CheckBox.blockSignals(False)
+        self.apply_ssr_settings()
         return
 
     ###########################################################################
@@ -2579,6 +2969,86 @@ class PulsedMeasurementGui(GuiBase):
         self._ana_param_errorbars = self._pa.ana_param_errorbars_CheckBox.isChecked()
         return
 
+    def _activate_ssr_ui(self):
+        self._pa.ssr_groupBox = QtWidgets.QGroupBox('SSR Readout')
+        self._pa.ssr_groupBox.setMaximumWidth(260)
+        self._pa.ssr_groupBox.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Preferred
+        )
+        layout = QtWidgets.QGridLayout(self._pa.ssr_groupBox)
+
+        self._pa.ssr_use_CheckBox = QtWidgets.QCheckBox()
+        self._pa.ssr_setup_PushButton = QtWidgets.QPushButton('Setup...')
+        self._pa.ssr_output_LineEdit = QtWidgets.QLineEdit()
+        self._pa.ssr_output_LineEdit.setReadOnly(True)
+        self._pa.ssr_fidelity_LineEdit = QtWidgets.QLineEdit()
+        self._pa.ssr_fidelity_LineEdit.setReadOnly(True)
+        self._pa.ssr_valid_fraction_LineEdit = QtWidgets.QLineEdit()
+        self._pa.ssr_valid_fraction_LineEdit.setReadOnly(True)
+
+        layout.addWidget(QtWidgets.QLabel('Use SSR:'), 0, 0)
+        layout.addWidget(self._pa.ssr_use_CheckBox, 0, 1)
+        layout.addWidget(self._pa.ssr_setup_PushButton, 0, 2)
+        layout.addWidget(QtWidgets.QLabel('Displayed:'), 1, 0)
+        layout.addWidget(self._pa.ssr_output_LineEdit, 1, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel('Fidelity:'), 2, 0)
+        layout.addWidget(self._pa.ssr_fidelity_LineEdit, 2, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel('Valid shots:'), 3, 0)
+        layout.addWidget(self._pa.ssr_valid_fraction_LineEdit, 3, 1, 1, 2)
+
+        self._pa.horizontalLayout_3.insertWidget(2, self._pa.ssr_groupBox)
+
+        self._pa.ssr_hist_groupBox = QtWidgets.QGroupBox('SSR Histogram')
+        self._pa.ssr_hist_groupBox.setMinimumWidth(280)
+        self._pa.ssr_hist_groupBox.setMaximumWidth(380)
+        self._pa.ssr_hist_groupBox.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Preferred
+        )
+        hist_layout = QtWidgets.QVBoxLayout(self._pa.ssr_hist_groupBox)
+        self._pa.ssr_hist_PlotWidget = pg.PlotWidget()
+        self._pa.ssr_hist_PlotWidget.showGrid(x=True, y=True, alpha=0.5)
+        self._pa.ssr_hist_PlotWidget.setLabel(axis='left', text='Shots', units='')
+        self._pa.ssr_hist_PlotWidget.setLabel(axis='bottom', text='Integrated counts', units='#')
+        self._pa.ssr_hist_PlotWidget.addLegend(offset=(4, 4))
+        self._pa.ssr_hist_dark_bars = pg.BarGraphItem(
+            x0=np.array([], dtype=float),
+            x1=np.array([], dtype=float),
+            height=np.array([], dtype=float),
+            pen=pg.mkPen(palette.c4, width=1),
+            brush=pg.mkBrush(palette.c4),
+            name='Dark'
+        )
+        self._pa.ssr_hist_bright_bars = pg.BarGraphItem(
+            x0=np.array([], dtype=float),
+            x1=np.array([], dtype=float),
+            height=np.array([], dtype=float),
+            pen=pg.mkPen(palette.c1, width=1),
+            brush=pg.mkBrush(palette.c1),
+            name='Bright'
+        )
+        self._pa.ssr_hist_PlotWidget.addItem(self._pa.ssr_hist_dark_bars)
+        self._pa.ssr_hist_PlotWidget.addItem(self._pa.ssr_hist_bright_bars)
+        self._pa.ssr_hist_threshold_line = pg.InfiniteLine(
+            angle=90,
+            movable=False,
+            pen=pg.mkPen(palette.c3, width=2, style=QtCore.Qt.DashLine)
+        )
+        self._pa.ssr_hist_threshold_line.setZValue(20)
+        self._pa.ssr_hist_PlotWidget.addItem(self._pa.ssr_hist_threshold_line)
+        self._pa.ssr_hist_threshold_line.hide()
+        hist_layout.addWidget(self._pa.ssr_hist_PlotWidget)
+        self._pa.horizontalLayout_3.insertWidget(3, self._pa.ssr_hist_groupBox)
+
+        self._sync_ssr_settings_from_logic(self.pulsedmasterlogic().analysis_settings)
+        self._update_ssr_statistics_display()
+        return
+
+    def _deactivate_ssr_ui(self):
+        self._ssr_s.close()
+        return
+
     def _pa_apply_hardware_constraints(self):
         """
         Retrieve the constraints from pulser and fast counter hardware and apply these constraints
@@ -2660,6 +3130,7 @@ class PulsedMeasurementGui(GuiBase):
 
         # dealing with the laser plot
         self.update_laser_data()
+        self._update_ssr_statistics_display()
         return
 
     @QtCore.Slot(str, object, bool)
@@ -2941,6 +3412,7 @@ class PulsedMeasurementGui(GuiBase):
         self._pe.laserpulses_ComboBox.blockSignals(False)
 
         self.second_plot_changed(self.pulsedmasterlogic().alternative_data_type)
+        self._refresh_analysis_plot_labels()
         return
 
     def set_plot_dimensions(self):
@@ -3345,6 +3817,8 @@ class PulsedMeasurementGui(GuiBase):
         self.sig_end_line.blockSignals(False)
         self.ref_start_line.blockSignals(False)
         self.ref_end_line.blockSignals(False)
+        self._sync_ssr_settings_from_logic(settings_dict)
+        self._update_ssr_statistics_display()
         return
 
     @QtCore.Slot()

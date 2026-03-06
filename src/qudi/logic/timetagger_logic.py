@@ -28,6 +28,7 @@ class TimeTaggerLogic(LogicBase):
     sigTimeDiffDataChanged = QtCore.Signal(object)
     sigDumpSizeChanged = QtCore.Signal(object)
     sigGatedCounterDataChanged = QtCore.Signal(object)
+    sigSsrDataChanged = QtCore.Signal(object)
 
     sigUpdate = QtCore.Signal()
     sigNewMeasurement = QtCore.Signal()
@@ -104,12 +105,19 @@ class TimeTaggerLogic(LogicBase):
         self._gated_counter_poll_timer.timeout.connect(self.acquire_gated_counter_block, QtCore.Qt.QueuedConnection)
         self._gated_counter_poll_timer.setInterval(50)
 
+        # Timer for SSR data
+        self._ssr_poll_timer = QtCore.QTimer()
+        self._ssr_poll_timer.setSingleShot(False)
+        self._ssr_poll_timer.timeout.connect(self.acquire_ssr_block, QtCore.Qt.QueuedConnection)
+        self._ssr_poll_timer.setInterval(100)
+
         # Initialize measurement objects and parameters
         self.counter = None
         self.corr = None
         self.hist = None
         self.time_diff = None
         self.gated_counter = None
+        self.ssr = None
         self._gated_veto_channel_obj = None
         self.trace_data = {}
         self.counter_params = self._timetagger._counter
@@ -131,8 +139,19 @@ class TimeTaggerLogic(LogicBase):
         self.time_diff_data = None
         self.time_diff_data_raw = None
         self.gated_counter_data = None
+        self.ssr_raw_data = None
+        self.ssr_hist_data = None
+        self.ssr_state_data = None
 
-        self.metadata = {'counter':None, 'hist':None, 'corr':None, 'time_diff':None, 'time_diff_raw':None, 'gated_counter':None}
+        self.metadata = {
+            'counter': None,
+            'hist': None,
+            'corr': None,
+            'time_diff': None,
+            'time_diff_raw': None,
+            'gated_counter': None,
+            'ssr': None
+        }
     
     def on_deactivate(self):
         self._fit_config = self._fit_config_model.dump_configs()
@@ -142,13 +161,16 @@ class TimeTaggerLogic(LogicBase):
         self._time_diff_poll_timer.stop()
         self._dump_poll_timer.stop()
         self._gated_counter_poll_timer.stop()
+        self._ssr_poll_timer.stop()
         self._counter_poll_timer = None
         self._corr_poll_timer = None
         self._hist_poll_timer = None
         self._time_diff_poll_timer = None
         self._dump_poll_timer = None
         self._gated_counter_poll_timer = None
+        self._ssr_poll_timer = None
         self.gated_counter = None
+        self.ssr = None
         self._gated_veto_channel_obj = None
     
     def configure_counter(self, data):
@@ -384,6 +406,123 @@ class TimeTaggerLogic(LogicBase):
             })
         return
 
+    @staticmethod
+    def _sum_window_counts(raw_data_2d, time_index_ps, start_ns, stop_ns):
+        """Sum counts per histogram in the time window [start_ns, stop_ns]."""
+        start_ps = float(start_ns) * 1000.0
+        stop_ps = float(stop_ns) * 1000.0
+        if stop_ps <= start_ps:
+            return np.zeros(raw_data_2d.shape[0], dtype=float)
+
+        idx_start = np.searchsorted(time_index_ps, start_ps, side='left')
+        idx_stop = np.searchsorted(time_index_ps, stop_ps, side='right')
+
+        idx_start = min(max(idx_start, 0), raw_data_2d.shape[1])
+        idx_stop = min(max(idx_stop, idx_start), raw_data_2d.shape[1])
+        if idx_stop <= idx_start:
+            return np.zeros(raw_data_2d.shape[0], dtype=float)
+
+        return np.sum(raw_data_2d[:, idx_start:idx_stop], axis=1)
+
+    def configure_ssr(self, data):
+        """Configure an SSR monitor based on TimeDifferences histograms."""
+        (self.ssr_bin_width, self.ssr_record_length, self.ssr_click_channel, self.ssr_num_histograms,
+         self.ssr_toggled, self.ssr_crc_start_ns, self.ssr_crc_stop_ns,
+         self.ssr_readout_start_ns, self.ssr_readout_stop_ns,
+         self.ssr_crc_threshold, self.ssr_readout_threshold) = data['ssr']
+
+        with self.threadlock:
+            self._ssr_poll_timer.stop()
+            self.ssr = None
+
+            if self.ssr_toggled:
+                record_length_ps = float(self.ssr_record_length) * 1e6  # us -> ps
+                start_channel = self._constraints['time_differences']['start_channel']
+                next_channel = self._constraints['time_differences']['next_channel']
+                number_of_bins = max(1, int(record_length_ps / float(self.ssr_bin_width)))
+
+                self.ssr = self._timetagger.time_differences(
+                    click_channel=int(self.ssr_click_channel),
+                    start_channel=start_channel,
+                    next_channel=next_channel,
+                    binwidth=max(1, int(self.ssr_bin_width)),
+                    n_bins=number_of_bins,
+                    n_histograms=max(1, int(self.ssr_num_histograms))
+                )
+
+                crc_start, crc_stop = sorted((float(self.ssr_crc_start_ns), float(self.ssr_crc_stop_ns)))
+                ro_start, ro_stop = sorted((float(self.ssr_readout_start_ns), float(self.ssr_readout_stop_ns)))
+                self.ssr_crc_start_ns, self.ssr_crc_stop_ns = crc_start, crc_stop
+                self.ssr_readout_start_ns, self.ssr_readout_stop_ns = ro_start, ro_stop
+
+                self.metadata['ssr'] = {
+                    'Click Channel': int(self.ssr_click_channel),
+                    'Start Channel': start_channel,
+                    'Next Channel': next_channel,
+                    'Bin Width': int(self.ssr_bin_width) / 1e12,
+                    'Number of Bins': number_of_bins,
+                    'Number of Histograms': int(self.ssr_num_histograms),
+                    'CRC Window (ns)': (crc_start, crc_stop),
+                    'Readout Window (ns)': (ro_start, ro_stop),
+                    'CRC Threshold': float(self.ssr_crc_threshold),
+                    'Readout Threshold': float(self.ssr_readout_threshold),
+                    'Units': [('SSR counts', 'Counts')]
+                }
+                self._ssr_poll_timer.start()
+
+    def acquire_ssr_block(self):
+        """Poll SSR data and emit derived single-shot statistics."""
+        with self.threadlock:
+            if self.ssr is None:
+                return
+
+            raw_data_2d = np.asarray(self.ssr.getData(), dtype=float)
+            if raw_data_2d.ndim < 2:
+                raw_data_2d = np.atleast_2d(raw_data_2d)
+            time_index_ps = self.ssr.getIndex()
+
+            summed_raw_data = np.sum(raw_data_2d, axis=0)
+            self.ssr_raw_data = (time_index_ps / 1e12, np.nan_to_num(summed_raw_data))
+
+            crc_counts = self._sum_window_counts(
+                raw_data_2d, time_index_ps, self.ssr_crc_start_ns, self.ssr_crc_stop_ns
+            )
+            readout_counts = self._sum_window_counts(
+                raw_data_2d, time_index_ps, self.ssr_readout_start_ns, self.ssr_readout_stop_ns
+            )
+
+            valid_mask = crc_counts >= float(self.ssr_crc_threshold)
+            states = np.full(raw_data_2d.shape[0], np.nan, dtype=float)
+            states[valid_mask & (readout_counts > float(self.ssr_readout_threshold))] = 0.0
+            states[valid_mask & (readout_counts <= float(self.ssr_readout_threshold))] = 1.0
+            self.ssr_state_data = states
+
+            valid_readout_counts = readout_counts[valid_mask]
+            if valid_readout_counts.size > 0:
+                n_bins = min(60, max(10, int(np.sqrt(valid_readout_counts.size))))
+                hist_y, hist_edges = np.histogram(valid_readout_counts, bins=n_bins)
+                hist_x = 0.5 * (hist_edges[:-1] + hist_edges[1:])
+                bright_rate = float(np.mean(states[valid_mask] == 0.0))
+                dark_rate = float(np.mean(states[valid_mask] == 1.0))
+            else:
+                hist_x = np.array([])
+                hist_y = np.array([])
+                bright_rate = 0.0
+                dark_rate = 0.0
+
+            self.ssr_hist_data = (hist_x, hist_y)
+
+            self.sigSsrDataChanged.emit({
+                'raw_trace': self.ssr_raw_data,
+                'ssr_hist': self.ssr_hist_data,
+                'readout_threshold': float(self.ssr_readout_threshold),
+                'total_shots': int(raw_data_2d.shape[0]),
+                'valid_shots': int(np.sum(valid_mask)),
+                'crc_pass_rate': float(np.mean(valid_mask)) if valid_mask.size else 0.0,
+                'bright_rate': bright_rate,
+                'dark_rate': dark_rate
+            })
+
     def configure_gated_counter(self, data):
         """Start or stop a CRC-gated counter using the configured veto channel.
 
@@ -480,6 +619,12 @@ class TimeTaggerLogic(LogicBase):
     def gated_counter_available(self):
         """Returns True if a CRC veto channel is configured."""
         return self._gated_counter_crc_veto_channel is not None
+
+    @property
+    def ssr_available(self):
+        """Returns True if TimeDifferences constraints are configured for SSR mode."""
+        td = self._constraints.get('time_differences', {})
+        return bool(td.get('channels')) and 'start_channel' in td and 'next_channel' in td
 
     @QtCore.Slot(bool, str, str)
     def dump_data(self, do_dump, name_tag, save_path):

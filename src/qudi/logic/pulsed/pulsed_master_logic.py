@@ -398,6 +398,10 @@ class PulsedMasterLogic(LogicBase):
         return self.pulsedmeasurementlogic().measurement_error
 
     @property
+    def analysis_result_data(self):
+        return self.pulsedmeasurementlogic().last_analysis_result
+
+    @property
     def raw_data(self):
         return self.pulsedmeasurementlogic().raw_data
 

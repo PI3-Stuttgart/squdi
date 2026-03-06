@@ -294,6 +294,73 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         created_ensembles.append(block_ensemble)
         return created_blocks, created_ensembles, created_sequences
 
+    def generate_snv_ssr(self, name='snv_ssr', tau_start=0.0, tau_step=20e-9, num_of_points=50,
+                         crc_length=0.5e-6, init_length=1.0e-6, mw_pi_length=50e-9,
+                         readout_length=1.0e-6, reset_length=0.0, reset_channel=''):
+        """
+        Generate a simple SnV SSR pulse block:
+        CRC -> Init -> variable delay (tau) -> MW pi pulse -> resonant readout.
+        """
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+
+        num_of_points = max(1, int(num_of_points))
+        tau_array = tau_start + np.arange(num_of_points) * tau_step
+
+        crc_element = self._get_laser_gate_element(length=crc_length, increment=0)
+        crc_delay_element = self._get_delay_gate_element()
+        init_element = self._get_laser_gate_element(length=init_length, increment=0)
+        init_delay_element = self._get_delay_gate_element()
+        tau_element = self._get_idle_element(length=tau_start, increment=tau_step)
+        mw_element = self._get_mw_element(length=mw_pi_length,
+                                          increment=0,
+                                          amp=self.microwave_amplitude,
+                                          freq=self.microwave_frequency,
+                                          phase=0)
+        readout_element = self._get_laser_gate_element(length=readout_length, increment=0)
+        readout_delay_element = self._get_delay_gate_element()
+        wait_element = self._get_idle_element(length=self.wait_time, increment=0)
+
+        snv_ssr_block = PulseBlock(name=name)
+        snv_ssr_block.append(crc_element)
+        snv_ssr_block.append(crc_delay_element)
+        snv_ssr_block.append(init_element)
+        snv_ssr_block.append(init_delay_element)
+        snv_ssr_block.append(tau_element)
+        snv_ssr_block.append(mw_element)
+        snv_ssr_block.append(readout_element)
+        snv_ssr_block.append(readout_delay_element)
+
+        if reset_length > 0 and reset_channel:
+            snv_ssr_block.append(
+                self._get_trigger_element(length=reset_length, increment=0, channels=reset_channel)
+            )
+
+        snv_ssr_block.append(wait_element)
+        created_blocks.append(snv_ssr_block)
+
+        block_ensemble = PulseBlockEnsemble(name=name, rotating_frame=False)
+        block_ensemble.append((snv_ssr_block.name, num_of_points - 1))
+        self._add_trigger(created_blocks=created_blocks, block_ensemble=block_ensemble)
+
+        # Keep only readout pulses (index 2 of each CRC/init/readout triplet) for analysis.
+        laser_ignore_list = [idx for idx in range(3 * num_of_points) if idx % 3 != 2]
+
+        self._add_metadata_to_settings(
+            block_ensemble=block_ensemble,
+            created_blocks=created_blocks,
+            alternating=False,
+            laser_ignore_list=laser_ignore_list,
+            controlled_variable=tau_array,
+            units=('s', ''),
+            labels=('Tau', 'State'),
+            number_of_lasers=3 * num_of_points
+        )
+
+        created_ensembles.append(block_ensemble)
+        return created_blocks, created_ensembles, created_sequences
+
     def generate_ramsey(self, name='ramsey', tau_start=1.0e-6, tau_step=1.0e-6, num_of_points=50,
                         alternating=True):
         """

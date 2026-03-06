@@ -21,9 +21,9 @@ class STM32CRC(Base):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._serial = None
-        self._threshold = 1
-        self._kick = 150
-        self._interval = 2000
+        self._threshold = 150      # counts
+        self._kick = 2000          # microseconds (was lasertime)
+        self._interval = 500       # microseconds (was checkInterval)
         self._enabled = False
 
     def on_activate(self):

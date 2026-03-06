@@ -37,6 +37,7 @@ class PulseAnalyzerBase:
     """
     def __init__(self, pulsedmeasurementlogic):
         self.__pulsedmeasurementlogic = pulsedmeasurementlogic
+        self.last_analysis_result = dict()
 
     @property
     def is_gated(self):
@@ -90,6 +91,7 @@ class PulseAnalyzer(PulseAnalyzerBase):
         self._parameters = dict()
         # Currently selected analysis method
         self._current_analysis_method = None
+        self._last_analysis_result = dict()
 
         # import analysis modules from default namespace package
         # "qudi.logic.pulsed.pulsed_analysis_methods"
@@ -217,6 +219,10 @@ class PulseAnalyzer(PulseAnalyzerBase):
         settings_dict['method'] = self._current_analysis_method
         return settings_dict
 
+    @property
+    def last_analysis_result(self):
+        return self._last_analysis_result
+
     def analyse_laser_pulses(self, laser_data):
         """
         Wrapper method to call the currently selected analysis method with laser_data and the
@@ -230,9 +236,21 @@ class PulseAnalyzer(PulseAnalyzerBase):
                                                 data point.
         """
         analysis_method = self._analysis_methods[self._current_analysis_method]
+        analysis_owner = getattr(analysis_method, '__self__', None)
+        if analysis_owner is not None and hasattr(analysis_owner, 'last_analysis_result'):
+            analysis_owner.last_analysis_result = dict()
 
         kwargs = self._get_analysis_method_kwargs(analysis_method)
-        return analysis_method(laser_data=laser_data, **kwargs)
+        result = analysis_method(laser_data=laser_data, **kwargs)
+
+        if analysis_owner is not None and isinstance(
+            getattr(analysis_owner, 'last_analysis_result', None), dict
+        ):
+            self._last_analysis_result = dict(analysis_owner.last_analysis_result)
+        else:
+            self._last_analysis_result = dict()
+        self._last_analysis_result['method'] = self._current_analysis_method
+        return result
 
     def _get_analysis_method_kwargs(self, method):
         """

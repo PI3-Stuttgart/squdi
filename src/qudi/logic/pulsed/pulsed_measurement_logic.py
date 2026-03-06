@@ -192,6 +192,7 @@ class PulsedMeasurementLogic(LogicBase):
             timetagger_sum_channels: True
             #additional_extraction_path: # optional
             #additional_analysis_path:   # optional
+            #default_analysis_settings:  # optional
         connect:
             # one of these connectors can be used for counting:
             # fastcounter: 'fastcounter_timetagger'
@@ -209,6 +210,7 @@ class PulsedMeasurementLogic(LogicBase):
     # Optional additional paths to import from
     extraction_import_path = ConfigOption(name='additional_extraction_path', default=None)
     analysis_import_path = ConfigOption(name='additional_analysis_path', default=None)
+    _default_analysis_settings = ConfigOption(name='default_analysis_settings', default=None)
     # Optional file type descriptor for saving raw data to file.
     # todo: doesn't warn if checker not satisfied
     _default_data_storage_cls = ConfigOption(name='default_data_storage_type',
@@ -371,6 +373,7 @@ class PulsedMeasurementLogic(LogicBase):
         self.measurement_error = np.empty((2, 0), dtype=float)
         self.laser_data = np.zeros((10, 20), dtype='int64')
         self.raw_data = np.zeros((10, 20), dtype='int64')
+        self.analysis_result_data = dict()
 
         self._saved_raw_data = dict()  # temporary saved raw data
         self._recalled_raw_data_tag = None  # the currently recalled raw data dict key
@@ -408,6 +411,7 @@ class PulsedMeasurementLogic(LogicBase):
         # Create an instance of PulseExtractor
         self._pulseextractor = PulseExtractor(pulsedmeasurementlogic=self)
         self._pulseanalyzer = PulseAnalyzer(pulsedmeasurementlogic=self)
+        self._apply_default_analysis_settings()
 
         # QTimer must be created here instead of __init__ because otherwise the timer will not run
         # in this logic's thread but in the manager instead.
@@ -485,6 +489,24 @@ class PulsedMeasurementLogic(LogicBase):
         if self._counter_backend is None:
             raise RuntimeError('Counter backend has not been initialized yet.')
         return self._counter_backend
+
+    def _apply_default_analysis_settings(self):
+        settings = self._default_analysis_settings
+        if settings is None:
+            return
+        if not isinstance(settings, dict):
+            self.log.warning(
+                'Ignoring ConfigOption "default_analysis_settings" because it is not a dictionary.'
+            )
+            return
+
+        if not settings:
+            return
+
+        try:
+            self.set_analysis_settings(dict(settings))
+        except Exception:
+            self.log.exception('Unable to apply ConfigOption "default_analysis_settings".')
 
     @extraction_parameters.representer
     def __repr_extraction_parameters(self, value):
@@ -973,6 +995,10 @@ class PulsedMeasurementLogic(LogicBase):
     @property
     def extraction_settings(self):
         return self._pulseextractor.extraction_settings
+
+    @property
+    def last_analysis_result(self):
+        return self.analysis_result_data
 
     @extraction_settings.setter
     def extraction_settings(self, settings_dict):
@@ -1511,9 +1537,11 @@ class PulsedMeasurementLogic(LogicBase):
         if self.laser_data.any():
             tmp_signal, tmp_error = self._pulseanalyzer.analyse_laser_pulses(
                 self.laser_data)
+            self.analysis_result_data = dict(self._pulseanalyzer.last_analysis_result)
         else:
             tmp_signal = np.zeros(self.laser_data.shape[0])
             tmp_error = np.zeros(self.laser_data.shape[0])
+            self.analysis_result_data = dict()
         return tmp_signal, tmp_error
 
     def _get_raw_data(self):
@@ -1578,6 +1606,7 @@ class PulsedMeasurementLogic(LogicBase):
 
         self.measurement_error = np.zeros((signal_dim, len(self._controlled_variable)), dtype=float)
         self.measurement_error[0] = self._controlled_variable
+        self.analysis_result_data = dict()
 
         number_of_bins = int(self.__tagger_record_length / self.__tagger_binwidth)
         laser_length = number_of_bins if self.__tagger_gates > 0 else 500
@@ -1620,6 +1649,8 @@ class PulsedMeasurementLogic(LogicBase):
                     # todo: save sequence belonging to signal, not last uploaded one
                     'generation parameters'       : self.sampling_information.get('generation_parameters'),
                     'generation method parameters': self.generation_method_parameters}
+        if self.analysis_result_data:
+            metadata['analysis result'] = self.analysis_result_data
         if self._fit_result:
             export_dict = FitContainer.dict_result(self._fit_result)
             metadata['fit result'] = export_dict

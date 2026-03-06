@@ -51,6 +51,7 @@ class TTGui(GuiBase):
     sigSetTimeDiffRefRanges = QtCore.Signal(float, float)
     sigToggleDump = QtCore.Signal(bool, str, str)
     sigToggleGatedCounter = QtCore.Signal(object)
+    sigToggleSSR = QtCore.Signal(object)
 
     # --- Status Variables ---
     _counter_freq = StatusVar('counter_freq', default=50)
@@ -86,6 +87,7 @@ class TTGui(GuiBase):
         self._mw = None
         self._pw = None
         self._gated_counter_dock = None  # created programmatically if veto channel configured
+        self._ssr_dock = None  # created programmatically if time difference channels are configured
 
     def on_deactivate(self):
         """ Reverse steps of activation """
@@ -94,6 +96,9 @@ class TTGui(GuiBase):
         if self._gated_counter_dock is not None:
             self.sigToggleGatedCounter.disconnect()
             self._timetaggerlogic.sigGatedCounterDataChanged.disconnect(self.update_gated_counter_data)
+        if self._ssr_dock is not None:
+            self.sigToggleSSR.disconnect()
+            self._timetaggerlogic.sigSsrDataChanged.disconnect(self.update_ssr_data)
         self._fsd.close()
         self._fsd = None
         self._mw.close()
@@ -289,6 +294,10 @@ class TTGui(GuiBase):
             self._setup_gated_counter_dock()
         else:
             self._gated_counter_dock = None
+        if self._timetaggerlogic.ssr_available:
+            self._setup_ssr_dock()
+        else:
+            self._ssr_dock = None
     
     
 
@@ -360,11 +369,11 @@ class TTGui(GuiBase):
 
         # Extra gate closure spinbox (keeps gate closed after kick ends)
         self._gated_extra_gate_spinbox = ScienDSpinBox()
-        self._gated_extra_gate_spinbox.setSuffix(' µs')
-        self._gated_extra_gate_spinbox.setDecimals(3)
-        self._gated_extra_gate_spinbox.setMinimum(0)
-        self._gated_extra_gate_spinbox.setMaximum(10)
-        self._gated_extra_gate_spinbox.setValue(0.1)  # default: 400 mus (20% of 2 s kick)
+        self._gated_extra_gate_spinbox.setSuffix('s')
+        self._gated_extra_gate_spinbox.setDecimals(9)
+        self._gated_extra_gate_spinbox.setMinimum(-1)
+        self._gated_extra_gate_spinbox.setMaximum(1)
+        self._gated_extra_gate_spinbox.setValue(0.00001)  # default: 400 mus
         self._gated_extra_gate_spinbox.setToolTip(
             'Extra time the gate stays closed after the kick ends\n'
             '(covers laser turn-off transient). Re-toggle to apply.'
@@ -419,6 +428,184 @@ class TTGui(GuiBase):
             xa, ya = data['trace_avg']
             self._gated_curve_avg.setData(x=xa, y=ya)
         self._gated_count_label.setText('{:.2r}c/s'.format(ScaledFloat(data['sum'])))
+
+    def _setup_ssr_dock(self):
+        """Programmatically create the optional SSR dock widget."""
+        color = [pg.mkColor(c) for c in ['#115f9a', '#991f17', '#76c68f', '#ffb400']]
+        hw_constr = self._timetaggerlogic._constraints
+        timediff_channels = hw_constr['time_differences']['channels']
+
+        self._ssr_dock = QtWidgets.QDockWidget('SSR (CRC + Readout)', self._mw)
+        self._ssr_dock.setObjectName('ssr_dockWidget')
+        self._ssr_dock.setAllowedAreas(QtCore.Qt.AllDockWidgetAreas)
+        contents = QtWidgets.QWidget()
+        layout = QtWidgets.QGridLayout(contents)
+
+        self._ssr_raw_pw = pg.PlotWidget()
+        self._ssr_raw_pw.setLabel('bottom', 'Time', units='s')
+        self._ssr_raw_pw.setLabel('left', 'Summed Counts', units='counts')
+        self._ssr_raw_pw.setMouseEnabled(x=False, y=False)
+        self._ssr_raw_pw.setMenuEnabled(False)
+        self._ssr_raw_pw.hideButtons()
+        layout.addWidget(self._ssr_raw_pw, 0, 0)
+
+        self._ssr_hist_pw = pg.PlotWidget()
+        self._ssr_hist_pw.setLabel('bottom', 'Readout Counts', units='counts')
+        self._ssr_hist_pw.setLabel('left', 'Shots', units='#')
+        self._ssr_hist_pw.setMouseEnabled(x=False, y=False)
+        self._ssr_hist_pw.setMenuEnabled(False)
+        self._ssr_hist_pw.hideButtons()
+        layout.addWidget(self._ssr_hist_pw, 1, 0)
+
+        self._ssr_raw_curve = pg.PlotCurveItem(pen=pg.mkPen(color[2]), clipToView=True)
+        self._ssr_hist_curve = pg.PlotCurveItem(pen=pg.mkPen(color[3]), symbol='o',
+                                                symbolBrush=color[3], symbolSize=4, clipToView=True)
+        self._ssr_threshold_line = pg.InfiniteLine(angle=90, movable=False,
+                                                   pen=pg.mkPen(color[1], style=QtCore.Qt.DashLine))
+        self._ssr_raw_pw.addItem(self._ssr_raw_curve)
+        self._ssr_hist_pw.addItem(self._ssr_hist_curve)
+        self._ssr_hist_pw.addItem(self._ssr_threshold_line)
+
+        settings_grp = QtWidgets.QGroupBox('Settings')
+        settings_grp.setMaximumWidth(235)
+        settings_layout = QtWidgets.QFormLayout(settings_grp)
+
+        self._ssr_click_channel_combo = QtWidgets.QComboBox()
+        for ch in timediff_channels:
+            self._ssr_click_channel_combo.addItem(str(ch))
+        settings_layout.addRow('Click Ch.', self._ssr_click_channel_combo)
+
+        self._ssr_bin_width_spinbox = QtWidgets.QDoubleSpinBox()
+        self._ssr_bin_width_spinbox.setDecimals(0)
+        self._ssr_bin_width_spinbox.setMinimum(1)
+        self._ssr_bin_width_spinbox.setMaximum(1e9)
+        self._ssr_bin_width_spinbox.setSuffix(' ps')
+        self._ssr_bin_width_spinbox.setValue(self._time_diff_bin_width)
+        settings_layout.addRow('Bin Width', self._ssr_bin_width_spinbox)
+
+        self._ssr_record_length_spinbox = QtWidgets.QDoubleSpinBox()
+        self._ssr_record_length_spinbox.setDecimals(3)
+        self._ssr_record_length_spinbox.setMinimum(1e-3)
+        self._ssr_record_length_spinbox.setMaximum(1e9)
+        self._ssr_record_length_spinbox.setSuffix(' us')
+        self._ssr_record_length_spinbox.setValue(self._time_diff_record_length)
+        settings_layout.addRow('Record Length', self._ssr_record_length_spinbox)
+
+        self._ssr_num_hist_spinbox = QtWidgets.QSpinBox()
+        self._ssr_num_hist_spinbox.setMinimum(1)
+        self._ssr_num_hist_spinbox.setMaximum(1000000)
+        self._ssr_num_hist_spinbox.setValue(self._time_diff_num_histograms)
+        settings_layout.addRow('# Hist', self._ssr_num_hist_spinbox)
+
+        self._ssr_crc_start_spinbox = ScienDSpinBox()
+        self._ssr_crc_start_spinbox.setMinimum(0)
+        self._ssr_crc_start_spinbox.setMaximum(1e9)
+        self._ssr_crc_start_spinbox.setSuffix(' ns')
+        self._ssr_crc_start_spinbox.setValue(self._time_diff_start_ns)
+        settings_layout.addRow('CRC Start', self._ssr_crc_start_spinbox)
+
+        self._ssr_crc_stop_spinbox = ScienDSpinBox()
+        self._ssr_crc_stop_spinbox.setMinimum(0)
+        self._ssr_crc_stop_spinbox.setMaximum(1e9)
+        self._ssr_crc_stop_spinbox.setSuffix(' ns')
+        self._ssr_crc_stop_spinbox.setValue(self._time_diff_stop_ns)
+        settings_layout.addRow('CRC Stop', self._ssr_crc_stop_spinbox)
+
+        self._ssr_readout_start_spinbox = ScienDSpinBox()
+        self._ssr_readout_start_spinbox.setMinimum(0)
+        self._ssr_readout_start_spinbox.setMaximum(1e9)
+        self._ssr_readout_start_spinbox.setSuffix(' ns')
+        self._ssr_readout_start_spinbox.setValue(self._time_diff_ref_start_ns)
+        settings_layout.addRow('SSR Start', self._ssr_readout_start_spinbox)
+
+        self._ssr_readout_stop_spinbox = ScienDSpinBox()
+        self._ssr_readout_stop_spinbox.setMinimum(0)
+        self._ssr_readout_stop_spinbox.setMaximum(1e9)
+        self._ssr_readout_stop_spinbox.setSuffix(' ns')
+        self._ssr_readout_stop_spinbox.setValue(self._time_diff_ref_stop_ns)
+        settings_layout.addRow('SSR Stop', self._ssr_readout_stop_spinbox)
+
+        self._ssr_crc_threshold_spinbox = ScienDSpinBox()
+        self._ssr_crc_threshold_spinbox.setMinimum(0)
+        self._ssr_crc_threshold_spinbox.setMaximum(1e9)
+        self._ssr_crc_threshold_spinbox.setValue(1.0)
+        settings_layout.addRow('CRC Thres.', self._ssr_crc_threshold_spinbox)
+
+        self._ssr_readout_threshold_spinbox = ScienDSpinBox()
+        self._ssr_readout_threshold_spinbox.setMinimum(0)
+        self._ssr_readout_threshold_spinbox.setMaximum(1e9)
+        self._ssr_readout_threshold_spinbox.setValue(2.0)
+        settings_layout.addRow('SSR Thres.', self._ssr_readout_threshold_spinbox)
+
+        self._ssr_toggle_btn = QtWidgets.QPushButton('Toggle SSR')
+        self._ssr_toggle_btn.setCheckable(True)
+        settings_layout.addRow(self._ssr_toggle_btn)
+        layout.addWidget(settings_grp, 0, 1)
+
+        stats_frame = QtWidgets.QFrame()
+        stats_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        stats_frame.setMaximumWidth(235)
+        stats_layout = QtWidgets.QVBoxLayout(stats_frame)
+        self._ssr_status_label = QtWidgets.QLabel('Valid 0/0\nPass 0.0%\nBright 0.0%\nDark 0.0%')
+        self._ssr_status_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        stats_layout.addWidget(self._ssr_status_label)
+        layout.addWidget(stats_frame, 1, 1)
+
+        self._ssr_dock.setWidget(contents)
+        self._mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, self._ssr_dock)
+        self._mw.tabifyDockWidget(self._mw.time_diff_dockWidget, self._ssr_dock)
+
+        self.sigToggleSSR.connect(self._timetaggerlogic.configure_ssr, QtCore.Qt.QueuedConnection)
+        self._timetaggerlogic.sigSsrDataChanged.connect(self.update_ssr_data, QtCore.Qt.QueuedConnection)
+
+        self._ssr_click_channel_combo.currentTextChanged.connect(self.update_ssr)
+        self._ssr_toggle_btn.toggled.connect(self.update_ssr)
+        self._ssr_bin_width_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_record_length_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_num_hist_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_crc_start_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_crc_stop_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_readout_start_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_readout_stop_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_crc_threshold_spinbox.editingFinished.connect(self.update_ssr)
+        self._ssr_readout_threshold_spinbox.editingFinished.connect(self.update_ssr)
+        self.update_ssr()
+
+    def update_ssr(self):
+        """Emit signal to start/stop SSR monitor with current settings."""
+        click_ch = self._ssr_click_channel_combo.currentText()
+        if not click_ch:
+            return
+        signal_data = {
+            'ssr': (
+                self._ssr_bin_width_spinbox.value(),
+                self._ssr_record_length_spinbox.value(),
+                int(click_ch),
+                self._ssr_num_hist_spinbox.value(),
+                self._ssr_toggle_btn.isChecked(),
+                self._ssr_crc_start_spinbox.value(),
+                self._ssr_crc_stop_spinbox.value(),
+                self._ssr_readout_start_spinbox.value(),
+                self._ssr_readout_stop_spinbox.value(),
+                self._ssr_crc_threshold_spinbox.value(),
+                self._ssr_readout_threshold_spinbox.value()
+            )
+        }
+        self.sigToggleSSR.emit(signal_data)
+
+    def update_ssr_data(self, data):
+        """Update SSR raw trace, histogram and summary labels."""
+        raw_x, raw_y = data['raw_trace']
+        hist_x, hist_y = data['ssr_hist']
+        self._ssr_raw_curve.setData(x=raw_x, y=raw_y)
+        self._ssr_hist_curve.setData(x=hist_x, y=hist_y)
+        self._ssr_threshold_line.setValue(data['readout_threshold'])
+        self._ssr_status_label.setText(
+            f"Valid {data['valid_shots']}/{data['total_shots']}\n"
+            f"Pass {100.0 * data['crc_pass_rate']:.1f}%\n"
+            f"Bright {100.0 * data['bright_rate']:.1f}%\n"
+            f"Dark {100.0 * data['dark_rate']:.1f}%"
+        )
 
     def update_counter(self):
 
