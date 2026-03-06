@@ -846,6 +846,8 @@ class PulsedMeasurementGui(GuiBase):
     #                    Main window related methods                          #
     ###########################################################################
     def _activate_main_window_ui(self):
+        self._mw.setDockNestingEnabled(True)
+        self._mw.setTabPosition(QtCore.Qt.AllDockWidgetAreas, QtWidgets.QTabWidget.North)
         self._setup_toolbar()
         self.loaded_asset_updated(*self.pulsedmasterlogic().loaded_asset)
         return
@@ -888,6 +890,69 @@ class PulsedMeasurementGui(GuiBase):
         self._mw.save_tag_LineEdit = QtWidgets.QLineEdit()
         # self._mw.save_tag_LineEdit.setMaximumWidth(200)
         self._mw.save_ToolBar.addWidget(self._mw.save_tag_LineEdit)
+        return
+
+    def _create_plot_dock_widget(self, object_name, title, content_widget):
+        dock_widget = QtWidgets.QDockWidget(title, self._mw)
+        dock_widget.setObjectName(object_name)
+        dock_widget.setAllowedAreas(QtCore.Qt.AllDockWidgetAreas)
+        dock_widget.setFeatures(
+            QtWidgets.QDockWidget.DockWidgetMovable
+            | QtWidgets.QDockWidget.DockWidgetFloatable
+        )
+
+        container = QtWidgets.QWidget()
+        container_layout = QtWidgets.QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        container_layout.addWidget(content_widget)
+        dock_widget.setWidget(container)
+        return dock_widget
+
+    def _ensure_analysis_plot_docks(self):
+        if hasattr(self, '_analysis_trace_dockwidget'):
+            return
+
+        self._analysis_trace_dockwidget = self._create_plot_dock_widget(
+            object_name='pulsed_analysis_trace_dockwidget',
+            title='Analysis Trace',
+            content_widget=self._pa.first_plot_splitter
+        )
+        self._second_plot_dockwidget = self._create_plot_dock_widget(
+            object_name='pulsed_second_plot_dockwidget',
+            title='Fourier Transform',
+            content_widget=self._pa.second_plot_splitter
+        )
+
+        self._mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._analysis_trace_dockwidget)
+        self._mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._second_plot_dockwidget)
+        self._mw.tabifyDockWidget(self._analysis_trace_dockwidget, self._second_plot_dockwidget)
+        self._analysis_trace_dockwidget.raise_()
+
+        self._pa.verticalLayout_3.removeWidget(self._pa.groupBox_6)
+        self._pa.verticalLayout_3.removeWidget(self._pa.second_plot_GroupBox)
+        self._pa.groupBox_6.hide()
+        self._pa.second_plot_GroupBox.hide()
+        return
+
+    def _ensure_ssr_histogram_dock(self):
+        if not hasattr(self._pa, 'ssr_hist_PlotWidget') or hasattr(self, '_ssr_histogram_dockwidget'):
+            return
+
+        self._ssr_histogram_dockwidget = self._create_plot_dock_widget(
+            object_name='pulsed_ssr_histogram_dockwidget',
+            title='SSR Histogram',
+            content_widget=self._pa.ssr_hist_PlotWidget
+        )
+        self._mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._ssr_histogram_dockwidget)
+
+        if hasattr(self, '_second_plot_dockwidget'):
+            self._mw.tabifyDockWidget(self._second_plot_dockwidget, self._ssr_histogram_dockwidget)
+        elif hasattr(self, '_analysis_trace_dockwidget'):
+            self._mw.tabifyDockWidget(self._analysis_trace_dockwidget, self._ssr_histogram_dockwidget)
+
+        self._pa.horizontalLayout_3.removeWidget(self._pa.ssr_hist_groupBox)
+        self._pa.ssr_hist_groupBox.hide()
         return
 
     @QtCore.Slot(bool)
@@ -1330,6 +1395,10 @@ class PulsedMeasurementGui(GuiBase):
             self._pa.ssr_use_CheckBox.blockSignals(False)
         if hasattr(self._pa, 'ssr_output_LineEdit'):
             self._pa.ssr_output_LineEdit.setText(self._ssr_probability_label(output_state))
+        if hasattr(self, '_ssr_histogram_dockwidget'):
+            self._ssr_histogram_dockwidget.setVisible(enabled)
+        elif hasattr(self._pa, 'ssr_hist_groupBox'):
+            self._pa.ssr_hist_groupBox.setVisible(enabled)
 
         if hasattr(self, '_ssr_s'):
             self._ssr_s.use_ssr_CheckBox.blockSignals(True)
@@ -2928,6 +2997,7 @@ class PulsedMeasurementGui(GuiBase):
         window_width = self._mw.geometry().width()
         self._pa.first_plot_splitter.setSizes((window_width, window_width/3))
         self._pa.second_plot_splitter.setSizes((window_width, window_width / 3))
+        self._ensure_analysis_plot_docks()
 
         # set boundaries
         self._pa.ana_param_num_laser_pulse_SpinBox.setMinimum(1)
@@ -3040,6 +3110,7 @@ class PulsedMeasurementGui(GuiBase):
         self._pa.ssr_hist_threshold_line.hide()
         hist_layout.addWidget(self._pa.ssr_hist_PlotWidget)
         self._pa.horizontalLayout_3.insertWidget(3, self._pa.ssr_hist_groupBox)
+        self._ensure_ssr_histogram_dock()
 
         self._sync_ssr_settings_from_logic(self.pulsedmasterlogic().analysis_settings)
         self._update_ssr_statistics_display()
@@ -3491,8 +3562,16 @@ class PulsedMeasurementGui(GuiBase):
     @QtCore.Slot(str)
     def second_plot_changed(self, second_plot):
         """ This method handles the second plot"""
-        self._pa.second_plot_GroupBox.setVisible(second_plot != 'None')
-        self._pa.second_plot_GroupBox.setTitle(second_plot)
+        show_second_plot = second_plot != 'None'
+        self._pa.second_plot_GroupBox.setVisible(
+            show_second_plot and not hasattr(self, '_second_plot_dockwidget')
+        )
+        self._pa.second_plot_GroupBox.setTitle(second_plot if show_second_plot else 'Alternative Plot')
+        if hasattr(self, '_second_plot_dockwidget'):
+            self._second_plot_dockwidget.setVisible(show_second_plot)
+            self._second_plot_dockwidget.setWindowTitle(
+                second_plot if show_second_plot else 'Alternative Plot'
+            )
 
         if second_plot != self._pa.second_plot_ComboBox.currentText():
             self._pa.second_plot_ComboBox.blockSignals(True)

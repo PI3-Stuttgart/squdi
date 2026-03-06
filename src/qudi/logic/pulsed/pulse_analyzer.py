@@ -37,7 +37,7 @@ class PulseAnalyzerBase:
     """
     def __init__(self, pulsedmeasurementlogic):
         self.__pulsedmeasurementlogic = pulsedmeasurementlogic
-        self.last_analysis_result = dict()
+        self._last_analysis_result = dict()
 
     @property
     def is_gated(self):
@@ -58,6 +58,14 @@ class PulseAnalyzerBase:
     @property
     def log(self):
         return self.__pulsedmeasurementlogic.log
+
+    @property
+    def last_analysis_result(self):
+        return self._last_analysis_result
+
+    @last_analysis_result.setter
+    def last_analysis_result(self, value):
+        self._last_analysis_result = dict(value) if isinstance(value, dict) else dict()
 
 
 class PulseAnalyzer(PulseAnalyzerBase):
@@ -222,6 +230,10 @@ class PulseAnalyzer(PulseAnalyzerBase):
     @property
     def last_analysis_result(self):
         return self._last_analysis_result
+
+    @last_analysis_result.setter
+    def last_analysis_result(self, value):
+        self._last_analysis_result = dict(value) if isinstance(value, dict) else dict()
 
     def analyse_laser_pulses(self, laser_data):
         """
