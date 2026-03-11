@@ -15,6 +15,7 @@ from qudi.hardware.interfuse.switch_combiner_interfuse import (
     SwitchCombinerInterfuse as _DO,
 )
 from qudi.hardware.powermeter.thorlabs_powermeter import ThorlabsPowermeter as _PM
+from qudi.hardware.picoquant.ppg512 import PPG512 as _PPG
 import matplotlib.pyplot as plt
 from typing import Iterable, Mapping, Union, Optional, Tuple, Type, Dict
 from scipy.optimize import root_scalar
@@ -36,15 +37,24 @@ class AomPowerCalibration(LogicBase):
                     laser_do_channel: 'Laser_520'
                 AOM_620:
                     aom_do_channel: 'AOM_620'
+                AOM_620_pi:
+                    aom_do_channel: 'AOM_620_pi'
             save_path: "C:/Users/yy3/qudi/Data/Power_calibration/"
     """
 
-    AO: _AO = Connector(interface="ProcessSetpointInterface")
+    AO: _AO = Connector(interface="ProcessSetpointCombinerInterfuse")
     DO: _DO = Connector(interface="SwitchInterface")
     Powermeter: _PM = Connector(interface="ProcessValueInterface")
+    PPG: _PPG = Connector(interface="PPG512")
+
+    do: _DO
+    ao: _AO
+    powermeter: _PM
+    ppg: _PPG
+
     aoms: dict = ConfigOption(name="aoms", default=1, missing="nothing")
     save_path: str = ConfigOption(name="save_path", default="./", missing="nothing")
-
+    EOM_pulsing_on_fraction: float = 1 / 5
     SEC_POWERMETER_FLIP = 2
     VOLTAGE_STEPS = 50
     SEC_BEFORE_POWER_MEAS = 0.2
@@ -55,6 +65,7 @@ class AomPowerCalibration(LogicBase):
         self.do: _DO = self.DO()
         self.ao: _AO = self.AO()
         self.powermeter: _PM = self.Powermeter()
+        self.ppg: _PPG = self.PPG()
 
         # Load in latest calibration data
         for aom_channel in self.aoms.keys():
@@ -78,16 +89,18 @@ class AomPowerCalibration(LogicBase):
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(
-            self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.h5"
-        )
-        filename_plot = os.path.join(
-            self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.png"
-        )
+        filename = os.path.join(self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.h5")
+        filename_plot = os.path.join(self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.png")
         # Save the xr.Dataset directly as an HDF5 file
         self.aoms[aom_channel]["data"].to_netcdf(filename)
         self.aoms[aom_channel]["fit"].plot_fit()
         plt.savefig(filename_plot)
+
+        # Load in latest calibration data
+        for aom_channel in self.aoms.keys():
+            self.load_latest_calibration_data(aom_channel)
+        self._generate_convertion_list()
+
         self.log.info(f"Calibration data for {aom_channel} saved to {filename}")
 
     def load_latest_calibration_data(self, aom_channel: str) -> None:
@@ -98,21 +111,12 @@ class AomPowerCalibration(LogicBase):
             aom_channel (str): Name of the AOM channel.
         """
         # Search for the latest HDF5 file for the specific channel
-        files = [
-            file
-            for file in os.listdir(self.save_path)
-            if file.startswith(f"aom_{aom_channel}_calibration_")
-            and file.endswith(".h5")
-        ]
+        files = [file for file in os.listdir(self.save_path) if file.startswith(f"aom_{aom_channel}_calibration_") and file.endswith(".h5")]
         if not files:
-            self.log.warning(
-                f"No calibration files found for AOM channel {aom_channel}."
-            )
+            self.log.warning(f"No calibration files found for AOM channel {aom_channel}.")
             return
 
-        latest_file = max(
-            files, key=lambda f: os.path.getctime(os.path.join(self.save_path, f))
-        )
+        latest_file = max(files, key=lambda f: os.path.getctime(os.path.join(self.save_path, f)))
         file_path = os.path.join(self.save_path, latest_file)
 
         # Load the xr.Dataset directly from the HDF5 file
@@ -120,16 +124,12 @@ class AomPowerCalibration(LogicBase):
 
         # Update the aoms dictionary
         if aom_channel not in self.aoms:
-            self.log.warning(
-                f"Calibration file found of AOM ({aom_channel}) which is not defined in Qinu config!"
-            )
+            self.log.warning(f"Calibration file found of AOM ({aom_channel}) which is not defined in Qinu config!")
         else:
             self.aoms[aom_channel]["data"] = xr_data
             self.fit_powers(aom_channel)
 
-            self.log.info(
-                f"Loaded calibration data for {aom_channel} from {latest_file}"
-            )
+            self.log.info(f"Loaded calibration data for {aom_channel} from {latest_file}")
 
     def _generate_convertion_list(self) -> None:
         channels_w_conversion = []
@@ -154,9 +154,7 @@ class AomPowerCalibration(LogicBase):
             # Check if this low power is reachable with
             if "offset" in best_values.keys():
                 if best_values["offset"] > power:
-                    self.log.warning(
-                        "Set power is to low to reach with used AOM. Output voltage is set to 0."
-                    )
+                    self.log.warning("Set power is to low to reach with used AOM. Output voltage is set to 0.")
                     return 0
             elif power == 0:
                 return 0
@@ -170,8 +168,7 @@ class AomPowerCalibration(LogicBase):
                 voltage_to_power_difference,
                 bracket=[
                     self.ao.constraints.channel_limits[aom_channel][0],
-                    self.ao.constraints.channel_limits[aom_channel][1]
-                    + 0.1,  # TODO: This is a dirty workaround to avoid issues with max power
+                    self.ao.constraints.channel_limits[aom_channel][1] + 0.1,  # TODO: This is a dirty workaround to avoid issues with max power
                 ],
                 method="brentq",
             )
@@ -199,7 +196,7 @@ class AomPowerCalibration(LogicBase):
         self.aoms[aom_channel]["fit"] = fit
         # self.aoms[aom_channel]["data"].attrs["fit_res"] = fit.fit_data() # TODO: Fix this
 
-    def calibrate_power(self, aom_channel: str) -> None:
+    def calibrate_power(self, aom_channel: str, get_meas_data=False) -> None:
 
         aom_config: dict = self.aoms[aom_channel]
 
@@ -220,13 +217,22 @@ class AomPowerCalibration(LogicBase):
                 self.do.set_state(do_channel, "off")
         self.log.info("Step 2: All lasers off")
         # Activate laser and/or AOM which will be measured
+        print(f"aom_config: {aom_config}")
         if "laser_do_channel" in aom_config.keys():
             self.do.set_state(aom_config["laser_do_channel"], "on")
             self.log.info(f"Step 3: Activate {aom_config['laser_do_channel']}")
         if "aom_do_channel" in aom_config.keys():
             self.do.set_state(aom_config["aom_do_channel"], "on")
             self.log.info(f"Step 3: Activate {aom_config['aom_do_channel']}")
-
+        if "eom_do_channel" in aom_config.keys():
+            # Activates EOM (PPG) trigger of the QM if it is not the same as the AOM channel
+            # TODO: Might be vastly different in other setups. Fix this.
+            if aom_config["eom_do_channel"] != aom_config["aom_do_channel"]:
+                self.do.set_state(aom_config["eom_do_channel"], "on")
+                self.log.info(f"Step 3: Activate {aom_config['eom_do_channel']}")
+            # TODO: Absolute bullshit of code. Make this more universal.
+            self.log.info(f"Step 3.2: Write PPG waveform for EOM pulsing")
+            self.ppg.write_pulse(pulse_width=100 * self.EOM_pulsing_on_fraction, pulse_shape="square")
         # Define voltage sweep
         min_v, max_v = self.ao.constraints.channel_limits[aom_channel]
         voltages = np.linspace(min_v, max_v, self.VOLTAGE_STEPS)
@@ -247,7 +253,7 @@ class AomPowerCalibration(LogicBase):
                 data_vars=dict(
                     power=xr.Variable(
                         "power",
-                        np.array(powers),
+                        np.array(powers) if not "eom_do_channel" in aom_config.keys() else np.array(powers) / self.EOM_pulsing_on_fraction,
                         dict(units=r"W", long_name="Power"),
                     ),
                 ),
@@ -259,9 +265,12 @@ class AomPowerCalibration(LogicBase):
                     ),
                 ),
             )
+            if get_meas_data:
+                return xr_data
             self.aoms[aom_channel]["data"] = xr_data
 
             self.log.info("Step 6: Fit ans save measured data")
+            print("powers:", powers)
             self.fit_powers(aom_channel)
             self._generate_convertion_list()
             self.save_calibration_data(aom_channel)
@@ -293,27 +302,48 @@ class AOMPowerFit:
             self.init_guess_func = self.aom_power_init_guess_func
 
     @staticmethod
-    def aom_power(V, P_max, V_s, n, alpha, offset, init_guess_func=None):
+    def aom_power(V, P_max, V_s, n_num, n_den, alpha, offset, v0, init_guess_func=None):
         """
-        AOM power output model with additional saturation flexibility.
+        Asymmetric Hill-type saturation.
+        n_num: exponent on numerator (controls onset steepness)
+        n_den: exponent inside denominator (controls tail approach)
         """
-        return P_max * (V**n) / ((V**n + V_s**n) ** alpha) + offset
+        x = np.maximum(V - v0, 0.0)
+        return offset + P_max * (x**n_num) / ((x**n_den + V_s**n_den) ** alpha)
 
     @staticmethod
-    def aom_power_init_guess_func(V_data, P_data):
-        """"""
+    def aom_power_init_guess_func(V, P):
+        """
+        Initial guess dict for asymmetric AOM power model.
+        """
+        V, P = np.asarray(V, float), np.asarray(P, float)
+        ymin, ymax = P.min(), P.max()
+        Pmax0 = ymax - ymin
+        offset0 = ymin
 
-        P_max_guess = max(P_data)  # Max observed power
-        V_s_guess = V_data[np.argmax(P_data)] / 2  # Voltage at half power
-        n_guess = 2.0  # Start with quadratic behavior
-        alpha_guess = 1.0  # Default sharpness factor
-        offset_guess = min(P_data)  # Baseline offset
+        # threshold (≈2% above baseline)
+        thr = offset0 + 0.02 * Pmax0
+        idx_thr = np.argmax(P >= thr) if np.any(P >= thr) else 0
+        v0_0 = V[idx_thr]
+
+        # half-max point
+        half = offset0 + 0.5 * Pmax0
+        i_half = np.argmin(np.abs(P - half))
+        Vs0 = max(1e-9, V[i_half] - v0_0)
+
+        # slope heuristic for n
+        j0, j1 = max(0, i_half - 1), min(len(V) - 1, i_half + 1)
+        slope = (P[j1] - P[j0]) / max(1e-12, V[j1] - V[j0])
+        n0 = float(np.clip(4 * slope * Vs0 / max(Pmax0, 1e-12), 0.5, 6.0))
+
         return {
-            "P_max": P_max_guess,
-            "V_s": V_s_guess,
-            "n": n_guess,
-            "alpha": alpha_guess,
-            "offset": offset_guess,
+            "P_max": Pmax0,
+            "V_s": Vs0,
+            "n_num": n0,
+            "n_den": n0,
+            "alpha": 1.0,
+            "offset": {"value": offset0, "min": 0, "max": np.inf},
+            "v0": v0_0,
         }
 
     def get_initial_guesses(self):
@@ -348,8 +378,8 @@ class AOMPowerFit:
 
         # Plot
         plt.figure(figsize=(8, 6))
-        plt.plot(V_fit, P_fit, label="Fitted Curve", color="orange", linewidth=1)
-        plt.scatter(self.V_data, self.P_data, label="Measured Data", color="blue", s=5)
+        plt.plot(V_fit, P_fit * 1e3, label="Fitted Curve", color="orange", linewidth=1, zorder=1)
+        plt.scatter(self.V_data, self.P_data * 1e3, label="Measured Data", color="blue", s=30, zorder=3)
         plt.xlabel("Voltage [V]")
         plt.ylabel("Power [mW]")
         plt.title("Voltage to Power Calibration")

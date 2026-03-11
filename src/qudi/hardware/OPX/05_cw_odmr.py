@@ -10,7 +10,6 @@ This frequency can be used to update the NV intermediate frequency in the config
 Prerequisites:
     - Ensure calibration of the different delays in the system (calibrate_delays).
     - Update the different delays in the configuration
-
 Next steps before going to the next node:
     - Update the NV frequency, labeled as "NV_IF_freq", in the configuration.
 """
@@ -27,17 +26,20 @@ from configuration import *
 ###################
 
 # Frequency vector
-f_vec = np.arange(80 * u.MHz, 140 * u.MHz, 1 * u.MHz)
-n_avg = 200_000_000  # number of averages
-readout_len = long_meas_len_1  # Readout duration for this experiment
+f_vec = np.arange(0 * u.MHz, 200 * u.MHz, 1 * u.MHz)
+n_avg = 200_000  # number of averages
+readout_len = 1000 * u.us  # Readout duration for this experiment
+i_avg = 100
 
 with program() as cw_odmr:
     times = declare(int, size=100)  # QUA vector for storing the time-tags
     counts = declare(int)  # variable for number of counts
+    total_counts_point = declare(int)  # total counts per freq point
     counts_st = declare_stream()  # stream for counts
     counts_dark_st = declare_stream()  # stream for counts
     f = declare(int)  # frequencies
     n = declare(int)  # number of iterations
+    i = declare(int)  # number of avarage per freq point
     n_st = declare_stream()  # stream for number of iterations
 
     with for_(n, 0, n < n_avg, n + 1):
@@ -45,26 +47,30 @@ with program() as cw_odmr:
             # Update the frequency of the digital oscillator linked to the element "NV"
             update_frequency("NV", f)
             # align all elements before starting the sequence
-            align()
-            # Play the mw pulse...
-            play("cw" * amp(1), "NV", duration=readout_len * u.ns)
-            # ... and the laser pulse simultaneously (the laser pulse is delayed by 'laser_delay_1')
-            play("laser_ON", "Laser_520", duration=readout_len * u.ns)
-            wait(
-                1_000 * u.ns, "SPCM1"
-            )  # so readout don't catch the first part of spin reinitialization
-            # Measure and detect the photons on SPCM1
-            measure(
-                "long_readout",
-                "SPCM1",
-                None,
-                time_tagging.analog(times, readout_len, counts),
-            )
 
-            save(counts, counts_st)  # save counts on stream
+            with for_(i, 0, i < i_avg, i + 1):
+                align()
+                # Play the mw pulse...
+                play("cw" * amp(1), "NV", duration=readout_len / i_avg * u.ns)
+                # ... and the laser pulse simultaneously (the laser pulse is delayed by 'laser_delay_1')
+                play("pulse" * amp(1), "Laser_520", duration=readout_len / i_avg * u.ns)
+                # wait(1_000 * u.ns, "SPCM1")  # so readout don't catch the first part of spin reinitialization
+                # Measure and detect the photons on SPCM1
+                measure(
+                    "long_readout",
+                    "SPCM1",
+                    None,
+                    time_tagging.analog(times, readout_len / i_avg, counts),
+                )
+                assign(total_counts_point, total_counts_point + counts)
+
+            save(total_counts_point, counts_st)  # save counts on stream
+            assign(total_counts_point, 0)
 
             # Wait and align all elements before measuring the dark events
-            wait(wait_between_runs * u.ns)
+            # wait(wait_between_runs * u.ns)
+            wait(1 * u.ms)
+
             # align()  # align all elements
             # Play the mw pulse with zero amplitude...
             # play("cw" * amp(0), "NV", duration=readout_len * u.ns)
@@ -88,20 +94,20 @@ with program() as cw_odmr:
 #####################################
 #  Open Communication with the QOP  #
 #####################################
-qmm = QuantumMachinesManager(
-    host=qop_ip, cluster_name=cluster_name, octave=octave_config
-)
+qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name, octave=octave_config)
 
 #######################
 # Simulate or execute #
 #######################
-simulate = False
+simulate = True
 
 if simulate:
     # Simulates the QUA program for the specified duration
     simulation_config = SimulationConfig(duration=10_000)  # In clock cycles = 4ns
-    job = qmm.simulate(config, cw_odmr, simulation_config)
-    job.get_simulated_samples().con1.plot()
+    job_sim = qmm.simulate(config, cw_odmr, simulation_config)
+    waveform_report = job_sim.get_simulated_waveform_report()
+    samples = job_sim.get_simulated_samples()
+    waveform_report.create_plot(samples)
 else:
     # Open the quantum machine
     qm = qmm.open_qm(config)
@@ -123,7 +129,7 @@ else:
         # Plot data
         plt.cla()
         plt.plot(
-            (NV_LO_freq * 0 + f_vec) / u.MHz,
+            (NV_LO_freq + f_vec) / u.MHz,
             counts / 1000 / (readout_len * 1e-9),
             label="photon counts",
         )

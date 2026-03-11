@@ -37,7 +37,7 @@ octave_config = None
 
 # Frequencies
 NV_IF_freq = 108.2180 * u.MHz
-NV_LO_freq = 2.77 * u.GHz
+NV_LO_freq = 2.87 * u.GHz
 
 # Pulses lengths
 initialization_len_green = 3_000 * u.ns
@@ -71,12 +71,8 @@ rf_amp = 0.1
 rf_length = 1000
 
 # Readout parameters
-signal_threshold_1 = (
-    -1_000
-)  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
-signal_threshold_2 = (
-    -1_000
-)  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
+signal_threshold_1 = -1_000  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
+signal_threshold_2 = -1_000  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
 
 # PLE parameters
 ple_step_length_red = 1 * u.us
@@ -92,9 +88,13 @@ laser_power_delay_450 = 0 * u.ns
 
 LaserScanner_delay = 0 * u.ns
 # AOMs
-AOM_delay_520 = 0 * u.ns
+AOM_delay_520 = 120 * u.ns
 AOM_delay_575 = 0 * u.ns
 AOM_delay_620 = 0 * u.ns
+
+# AOM / EOM 620 pi path
+AOM_620_pi_delay = 110 * u.ns
+PPG_delay = 382 * u.ns
 
 AOM_power_delay_520 = 0 * u.ns
 AOM_power_delay_575 = 0 * u.ns
@@ -103,8 +103,11 @@ AOM_power_delay_620 = 0 * u.ns
 mw_delay = 0 * u.ns
 rf_delay = 0 * u.ns
 
+counter_delay = 600 * u.ns  # delay was 600 * u.ns changed it to test
+
 
 wait_between_runs = 1500
+
 
 config = {
     "version": 1,
@@ -137,16 +140,16 @@ config = {
                 },  # AOM Laser 620 nm (Orange)
             },
             "digital_outputs": {
-                1: {},  # indicator - TBD what is this...
-                2: {},  # Master - slave trigger RESERVED for SETUP#2.
+                1: {},  # MW switch
+                2: {},  # For now: trigger TT attodry # Master - slave trigger RESERVED for SETUP#2.
                 3: {},  # Gate Trigger - to the TT ...channel 5 on the TT.
                 4: {},  # Memory Trigger - to the TT ... channel 4 on the TT
-                5: {},  # PPG trigger RESERVED
+                5: {},  # PPG trigger
                 6: {},  # Laser 520 nm (Green)
                 7: {},  # Laser 450 nm (Blue)
                 8: {},  # AOM Laser 520 nm (Green)
                 9: {},  # AOM Laser 620 nm (Orange)
-                10: {"inverted": True},  # AOM Laser 620 nm (Orange) for EOM path
+                10: {},  # AOM Laser 620 nm (Orange) for EOM path
             },
             "analog_inputs": {
                 1: {"offset": 0, "gain_db": -3},  # SPCM1
@@ -163,6 +166,13 @@ config = {
                 "mixer": "mixer_NV",
             },
             "intermediate_frequency": NV_IF_freq,
+            "digitalInputs": {
+                "switch": {
+                    "port": ("con1", 1),
+                    "delay": 113 * u.ns,
+                    "buffer": 25 * u.ns,
+                },
+            },
             "operations": {
                 "cw": "const_pulse",
                 "x180": "x180_pulse",
@@ -195,9 +205,9 @@ config = {
         },
         "Gate_Trigger": {
             "digitalInputs": {
-                "marker": {
+                "trigger": {
                     "port": ("con1", 3),
-                    "delay": laser_delay_520,
+                    "delay": counter_delay,
                     "buffer": 0,
                 },
             },
@@ -207,9 +217,9 @@ config = {
         },
         "Memory_Trigger": {
             "digitalInputs": {
-                "marker": {
+                "trigger": {
                     "port": ("con1", 4),
-                    "delay": laser_delay_520,
+                    "delay": counter_delay,
                     "buffer": 0,
                 },
             },
@@ -217,22 +227,52 @@ config = {
                 "trigit": "laser_ON",
             },
         },
-        "Laser_520": {
+        "TT_attodry_trigger": {
             "digitalInputs": {
-                "marker": {
-                    "port": ("con1", 6),
-                    "delay": laser_delay_520,
+                "trigger": {
+                    "port": ("con1", 2),
+                    "delay": 0,
                     "buffer": 0,
                 },
             },
             "operations": {
-                "active": "laser_ON",
+                "trigit": "laser_ON",
+            },
+        },
+        "620_pi": {
+            "digitalInputs": {
+                "ppg": {
+                    "port": ("con1", 5),
+                    "delay": PPG_delay,  # 294
+                    "buffer": 0,
+                },
+                "AOM_620_pi": {"port": ("con1", 10), "delay": AOM_620_pi_delay, "buffer": 0 * u.ns},
+            },
+            "operations": {
+                "trigit": "TTL_only_digital",
+                "active": "TTL_only_digital",
+            },
+        },
+        "620_pi_w_power": {
+            "singleInput": {
+                "port": ("con1", 7),
+            },
+            "digitalInputs": {
+                "ppg": {
+                    "port": ("con1", 5),
+                    "delay": PPG_delay,  # 294
+                    "buffer": 0,
+                },
+                "AOM_620_pi": {"port": ("con1", 10), "delay": AOM_620_pi_delay, "buffer": 0 * u.ns},
+            },
+            "operations": {
+                "power": "AOM_power",
+                "active": "AOM_TTL",
+                "pulse": "AOM_pulse",
             },
         },
         "AOM_620": {
-            "multipleInputs": {
-                "inputs": {"input1": ("con1", 9), "input2": ("con1", 10)}
-            },
+            "multipleInputs": {"inputs": {"input1": ("con1", 9), "input2": ("con1", 10)}},
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 9),
@@ -246,30 +286,18 @@ config = {
                 "pulse": "AOM_pulse",
             },
         },
-        "AOM_620_pi": {
-            "singleInput": {
-                "port": ("con1", 7),
-            },
-            "digitalInputs": {
-                "marker": {
-                    "port": ("con1", 10),
-                    "delay": AOM_delay_620,
-                    "buffer": 0,
-                },
-            },
-            "operations": {
-                "power": "AOM_power",
-                "active": "AOM_TTL",
-                "pulse": "AOM_pulse",
-            },
-        },
-        "AOM_520": {
+        "Laser_520": {
             "singleInput": {
                 "port": ("con1", 8),
             },
             "digitalInputs": {
-                "marker": {
+                "AOM": {
                     "port": ("con1", 8),
+                    "delay": AOM_delay_520,
+                    "buffer": 0,
+                },
+                "Laser": {
+                    "port": ("con1", 6),
                     "delay": AOM_delay_520,
                     "buffer": 0,
                 },
@@ -340,11 +368,13 @@ config = {
             "operation": "control",
             "length": mw_len_NV,
             "waveforms": {"I": "cw_wf", "Q": "zero_wf"},
+            "digital_marker": "ON",
         },
         "x180_pulse": {
             "operation": "control",
             "length": x180_len_NV,
             "waveforms": {"I": "x180_wf", "Q": "zero_wf"},
+            "digital_marker": "ON",
         },
         "x90_pulse": {
             "operation": "control",
@@ -383,6 +413,11 @@ config = {
             "waveforms": {
                 "single": "zero_wf",
             },
+            "digital_marker": "ON",
+        },
+        "TTL_only_digital": {
+            "operation": "control",
+            "length": initialization_len_laser,
             "digital_marker": "ON",
         },
         "AOM_power": {

@@ -55,7 +55,7 @@ class Adwin_Scanning_Device(
     scanner_processes = []
 
     def on_activate(self):
-        print("I am here... Activate Adwin Galvo scanner .....")
+        self.log.info("Activate Adwin Galvo scanner")
         self.boot_adwin()
         self.start_adwin_processes(["sweeping_1D_interaptable.TB6"])
         self._current_position = np.array([0, 0, 0])  # TODO
@@ -74,10 +74,7 @@ class Adwin_Scanning_Device(
 
     def on_deactivate(self):
         """Stops all adwin process needed for the script"""
-        self.stop_adwin_processes(
-            ["sweeping_1D_interaptable.TB6"],
-            clear_processes = True
-        )
+        self.stop_adwin_processes(["sweeping_1D_interaptable.TB6"], clear_processes=True)
         self.reset()
 
     def get_constraints(self):
@@ -94,15 +91,10 @@ class Adwin_Scanning_Device(
         # self.stop_all()
 
     def stop_confocal_adwin_processes(self) -> AdwinStatus:
-        adwin_status: AdwinStatus = self.stop_adwin_processes(
-            ["sweeping_1D_interaptable.TB6"],
-            clear_processes = False
-        )
+        adwin_status: AdwinStatus = self.stop_adwin_processes(["sweeping_1D_interaptable.TB6"], clear_processes=False)
         return adwin_status
 
-    def move_absolute(
-        self, position, velocity=None, blocking=False
-    ):  # is it move_absolute?
+    def move_absolute(self, position, velocity=None, blocking=False):  # is it move_absolute?
 
         self._current_position = position
         x = position[0]
@@ -216,23 +208,15 @@ class Adwin_Scanning_Device(
             return -1
 
         if len(myrange) != 4:
-            self.log.error(
-                "Given range should have dimension 4, but has {0:d} instead."
-                "".format(len(myrange))
-            )
+            self.log.error("Given range should have dimension 4, but has {0:d} instead." "".format(len(myrange)))
             return -1
 
         for pos in myrange:
             if len(pos) != 2:
-                self.log.error(
-                    "Given range limit {1:d} should have dimension 2, but has {0:d} instead."
-                    "".format(len(pos), pos)
-                )
+                self.log.error("Given range limit {1:d} should have dimension 2, but has {0:d} instead." "".format(len(pos), pos))
                 return -1
             if pos[0] > pos[1]:
-                self.log.error(
-                    "Given range limit {0:d} has the wrong order.".format(pos)
-                )
+                self.log.error("Given range limit {0:d} has the wrong order.".format(pos))
                 return -1
 
         self._scanner_position_ranges = myrange
@@ -318,9 +302,7 @@ class Adwin_Scanning_Device(
 
     #### Already in linesweep
 
-    def set_up_clock(
-        self, clock_frequency=None, clock_channel=None, scanner=False, idle=False
-    ):
+    def set_up_clock(self, clock_frequency=None, clock_channel=None, scanner=False, idle=False):
         """Configures the hardware clock of the NiDAQ card to give the timing.
 
         @param float clock_frequency: if defined, this sets the frequency of
@@ -353,13 +335,12 @@ class Adwin_Scanning_Device(
         # The clock for the scanner is created on the same principle as it is
         # for the counter. Just to keep consistency, this function is a wrapper
         # around the set_up_clock.
-        return self.set_up_clock(
-            clock_frequency=clock_frequency, clock_channel=clock_channel, scanner=True
-        )
+        return self.set_up_clock(clock_frequency=clock_frequency, clock_channel=clock_channel, scanner=True)
 
     def get_target(self):
-        print("I have no idea")
+        # TODO
+        pass
 
     def get_scan_data(self):
-        print("not yet")
+        # TODO
         return None

@@ -35,19 +35,11 @@ class DLProTTPLEScanner(ScanningProbeInterface):
     _resolution_ranges = ConfigOption(name="resolution_ranges", missing="error")
     _input_channel_units = ConfigOption(name="input_channel_units", missing="error")
     _scan_units = ConfigOption(name="scan_units", missing="error")
-    _backwards_line_resolution = ConfigOption(
-        name="backwards_line_resolution", default=50
-    )
+    _backwards_line_resolution = ConfigOption(name="backwards_line_resolution", default=50)
     __max_move_velocity = ConfigOption(name="maximum_move_velocity", default=400e-6)
-    _ao_trigger_channel = ConfigOption(
-        name="ao_trigger_channel", missing="error"
-    )  # trigger from AO to timetagger
-    _ao_stop_channel = ConfigOption(
-        name="ao_stop_channel", default=None, missing="nothing"
-    )
-    _ao_remote_trigger_channel = ConfigOption(
-        name="ao_remote_trigger_channel", missing="nothing"
-    )  # trigger from AO to timetagger
+    _ao_trigger_channel = ConfigOption(name="ao_trigger_channel", missing="error")  # trigger from AO to timetagger
+    _ao_stop_channel = ConfigOption(name="ao_stop_channel", default=None, missing="nothing")
+    _ao_remote_trigger_channel = ConfigOption(name="ao_remote_trigger_channel", missing="nothing")  # trigger from AO to timetagger
     _threaded = True  # Interfuse is by default not threaded.
     _scanned_lines = 0
     _max_rollovers = 1
@@ -75,20 +67,14 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         self._scanner_distance_atol = 1e-9
 
         self._ao_trigger_channel = int(self._ao_trigger_channel.split("_")[-1])
-        self._ao_stop_channel = (
-            int(self._ao_stop_channel.split("_")[-1])
-            if self._ao_stop_channel
-            else self._ao_trigger_channel
-        )
+        self._ao_stop_channel = int(self._ao_stop_channel.split("_")[-1]) if self._ao_stop_channel else self._ao_trigger_channel
 
         self._thread_lock_cursor = Mutex()
         self._thread_lock_data = Mutex()
 
     def on_activate(self):
         assert (
-            set(self._position_ranges)
-            == set(self._frequency_ranges)
-            == set(self._resolution_ranges)
+            set(self._position_ranges) == set(self._frequency_ranges) == set(self._resolution_ranges)
         ), f"Channels in position ranges, frequency ranges and resolution ranges do not coincide"
 
         assert set(self._input_channel_units).union(self._position_ranges) == set(
@@ -99,9 +85,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
 
         self._sum_channels = [ch.lower() for ch in self._sum_channels]
         if len(self._sum_channels) > 1:
-            self._input_channel_units["sum"] = list(self._input_channel_units.values())[
-                1
-            ]
+            self._input_channel_units["sum"] = list(self._input_channel_units.values())[1]
 
         # Constraints
         axes = list()
@@ -121,11 +105,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             channels.append(ScannerChannel(name=channel, unit=unit, dtype=np.float64))
         # TODO:
         self.__active_channels = {}
-        self.__active_channels["di_channels"] = [
-            value.lower()
-            for key, value in self._channel_mapping.items()
-            if "APD" in key
-        ]
+        self.__active_channels["di_channels"] = [value.lower() for key, value in self._channel_mapping.items() if "APD" in key]
         self._constraints = ScanConstraints(
             axes=axes,
             channels=channels,
@@ -138,12 +118,8 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         self._toggle_ao_setpoint_channels(False)  # And free ao resources after that
         self._t_last_move = time.perf_counter()
         self.__t_last_follow = None
-        self.sigNextDataChunk.connect(
-            self._fetch_data_chunk, QtCore.Qt.QueuedConnection
-        )
-        self.sigStartScanner.connect(
-            lambda: self._triggered_ao().start_scan(), QtCore.Qt.QueuedConnection
-        )
+        self.sigNextDataChunk.connect(self._fetch_data_chunk, QtCore.Qt.QueuedConnection)
+        self.sigStartScanner.connect(lambda: self._triggered_ao().start_scan(), QtCore.Qt.QueuedConnection)
 
     def _toggle_ao_setpoint_channels(self, enable: bool) -> None:
         triggered_ao = self._triggered_ao()
@@ -153,11 +129,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
     @property
     def _ao_setpoint_channels_active(self) -> bool:
         mapped_channels = set(self._channel_mapping.values())
-        return all(
-            state
-            for ch, state in self._triggered_ao().activity_states.items()
-            if ch in mapped_channels
-        )
+        return all(state for ch, state in self._triggered_ao().activity_states.items() if ch in mapped_channels)
 
     def on_deactivate(self):
         """
@@ -196,36 +168,21 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         """
 
         if self.is_scan_running:
-            self.log.error(
-                "Unable to configure scan parameters while scan is running. "
-                "Stop scanning and try again."
-            )
+            self.log.error("Unable to configure scan parameters while scan is running. " "Stop scanning and try again.")
             return True, self.scan_settings
 
         axes = scan_settings.get("axes", self._current_scan_axes)
-        ranges = tuple(
-            (min(r), max(r))
-            for r in scan_settings.get("range", self._current_scan_ranges)
-        )
+        ranges = tuple((min(r), max(r)) for r in scan_settings.get("range", self._current_scan_ranges))
         resolution = scan_settings.get("resolution", self._current_scan_resolution)
         lines_to_scan = scan_settings.get("lines_to_scan", 1)
-        frequency = float(
-            scan_settings.get("frequency", self._current_scan_frequency)
-        )  # MHz/s
+        frequency = float(scan_settings.get("frequency", self._current_scan_frequency))  # MHz/s
         if self._backwards_line_resolution is None:
             self._backwards_line_resolution = int(resolution[0])
         else:
-            self._backwards_line_resolution = int(
-                scan_settings.get(
-                    "backward_resolution", self._backwards_line_resolution
-                )
-            )
+            self._backwards_line_resolution = int(scan_settings.get("backward_resolution", self._backwards_line_resolution))
 
         if not set(axes).issubset(self._position_ranges):
-            self.log.error(
-                "Unknown axes names encountered. Valid axes are: {0}"
-                "".format(set(self._position_ranges))
-            )
+            self.log.error("Unknown axes names encountered. Valid axes are: {0}" "".format(set(self._position_ranges)))
             return True, self.scan_settings
 
         if len(axes) != len(ranges) or len(axes) != len(resolution):
@@ -235,73 +192,48 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             for axis_constr in self._constraints.axes.values():
                 if ax == axis_constr.name:
                     break
-            if (
-                ranges[i][0] < axis_constr.min_value
-                or ranges[i][1] > axis_constr.max_value
-            ):
-                self.log.error(
-                    'Scan range out of bounds for axis "{0}". Maximum possible range'
-                    " is: {1}".format(ax, axis_constr.value_range)
-                )
+            if ranges[i][0] < axis_constr.min_value or ranges[i][1] > axis_constr.max_value:
+                self.log.error('Scan range out of bounds for axis "{0}". Maximum possible range' " is: {1}".format(ax, axis_constr.value_range))
                 return True, self.scan_settings
-            if (
-                resolution[i] < axis_constr.min_resolution
-                or resolution[i] > axis_constr.max_resolution
-            ):
-                self.log.error(
-                    'Scan resolution out of bounds for axis "{0}". Maximum possible '
-                    "range is: {1}".format(ax, axis_constr.resolution_range)
-                )
+            if resolution[i] < axis_constr.min_resolution or resolution[i] > axis_constr.max_resolution:
+                self.log.error('Scan resolution out of bounds for axis "{0}". Maximum possible ' "range is: {1}".format(ax, axis_constr.resolution_range))
                 return True, self.scan_settings
-            if (
-                self._backwards_line_resolution < axis_constr.min_resolution
-                or self._backwards_line_resolution > axis_constr.max_resolution
-            ):
+            if self._backwards_line_resolution < axis_constr.min_resolution or self._backwards_line_resolution > axis_constr.max_resolution:
                 self.log.error(
-                    'Backward scan resolution out of bounds for axis "{0}". Maximum possible '
-                    "range is: {1}".format(ax, axis_constr.resolution_range)
+                    'Backward scan resolution out of bounds for axis "{0}". Maximum possible ' "range is: {1}".format(ax, axis_constr.resolution_range)
                 )
                 return True, self.scan_settings
             if i == 0:
-                if (
-                    frequency < axis_constr.min_frequency
-                    or frequency > axis_constr.max_frequency
-                ):
+                if frequency < axis_constr.min_frequency or frequency > axis_constr.max_frequency:
                     self.log.error(
-                        'Scan frequency out of bounds for fast axis "{0}". Maximum '
-                        "possible range is: {1}"
-                        "".format(ax, axis_constr.frequency_range)
+                        'Scan frequency out of bounds for fast axis "{0}". Maximum ' "possible range is: {1}" "".format(ax, axis_constr.frequency_range)
                     )
                     return True, self.scan_settings
 
         with self._thread_lock_data:
-            try:
-                self._scan_data = ScanData(
-                    channels=tuple(self._constraints.channels.values()),
-                    scan_axes=tuple(self._constraints.axes[ax] for ax in axes),
-                    scan_range=ranges,
-                    scan_resolution=tuple(resolution),
-                    scan_frequency=frequency,
-                    position_feedback_axes=None,
-                )
-                self.raw_data_container = RawDataContainer(
-                    self._scan_data.channels,
-                    resolution[1] if self._scan_data.scan_dimension == 2 else 1,
-                    resolution[0],
-                    resolution[0],
-                )
-                # self._backwards_line_resolution)
-                # self.log.debug(f"New scanData created: {self._scan_data.data}")
+            # try:
+            self._scan_data = ScanData(
+                channels=tuple(self._constraints.channels.values()),
+                scan_axes=tuple(self._constraints.axes[ax] for ax in axes),
+                scan_range=ranges,
+                scan_resolution=tuple(resolution),
+                scan_frequency=frequency,
+                position_feedback_axes=None,
+            )
+            self.raw_data_container = RawDataContainer(
+                self._scan_data.channels,
+                resolution[1] if self._scan_data.scan_dimension == 2 else 1,
+                resolution[0],
+                resolution[0],
+            )
+            # self._backwards_line_resolution)
+            # self.log.debug(f"New scanData created: {self._scan_data.data}")
 
-            except:
-                self.log.exception("")
-                return True, self.scan_settings
+            # except Exception as e:
+            #     self.log.exception(e)
+            #     return True, self.scan_settings
 
-            channels_tt = [
-                int(ch.split("_")[-1])
-                for ch in self.__active_channels["di_channels"]
-                if "tt" == ch.split("_")[0]
-            ]
+            channels_tt = [int(ch.split("_")[-1]) for ch in self.__active_channels["di_channels"] if "tt" == ch.split("_")[0]]
             # remote_channels_tt = [int(ch[2:].split("_remote")[0]) for ch in self.__active_channels['di_channels'] if "tt" in ch and "remote" in ch]
             # Workaround for the old time tagger version at the praktikum
             # configure the time tagger
@@ -325,34 +257,37 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                 # )
 
             if self._timetagger_remote():
-                channels_tt_remote = [
-                    int(ch.split("_")[-1])
-                    for ch in self.__active_channels["di_channels"]
-                    if "ttR".lower() == ch.split("_")[0].lower()
-                ]
-                ao_remote_trigger_channel = int(
-                    self._ao_remote_trigger_channel.split("_")[-1]
-                )
+                channels_tt_remote = [int(ch.split("_")[-1]) for ch in self.__active_channels["di_channels"] if "ttR".lower() == ch.split("_")[0].lower()]
+                ao_remote_trigger_channel = int(self._ao_remote_trigger_channel.split("_")[-1])
+                print(ao_remote_trigger_channel)
                 for channel in channels_tt_remote:
-                    td_task = self._timetagger_remote().time_differences(
+                    cbm_task = self._timetagger_remote().count_between_markers(
                         click_channel=channel,
-                        start_channel=ao_remote_trigger_channel,
-                        next_channel=ao_remote_trigger_channel,
-                        binwidth=int(1e12 / frequency),
-                        n_bins=int(resolution[0]),
-                        n_histograms=lines_to_scan,
+                        begin_channel=ao_remote_trigger_channel,
+                        end_channel=-ao_remote_trigger_channel,
+                        n_values=int(resolution[0] * lines_to_scan),
                     )
-                    td_task.setMaxCounts(self._max_rollovers)
-                    self._time_differences_tasks.append(td_task)
+                    self._cbm_tasks.append(cbm_task)
 
-                    self._histogram_tasks.append(
-                        self._timetagger_remote().histogram(
-                            channel=channel,
-                            trigger_channel=ao_remote_trigger_channel,
-                            bin_width=int(1e12 / frequency),
-                            number_of_bins=int(resolution[0]),
-                        )
-                    )
+                    # td_task = self._timetagger_remote().time_differences(
+                    #     click_channel=channel,
+                    #     start_channel=ao_remote_trigger_channel,
+                    #     next_channel=ao_remote_trigger_channel,
+                    #     binwidth=int(1e12 / frequency),
+                    #     n_bins=int(resolution[0]),
+                    #     n_histograms=lines_to_scan,
+                    # )
+                    # td_task.setMaxCounts(self._max_rollovers)
+                    # self._time_differences_tasks.append(td_task)
+
+                    # self._histogram_tasks.append(
+                    #     self._timetagger_remote().histogram(
+                    #         channel=channel,
+                    #         trigger_channel=ao_remote_trigger_channel,
+                    #         bin_width=int(1e12 / frequency),
+                    #         number_of_bins=int(resolution[0]),
+                    #     )
+                    # )
 
             volts = self._position_to_voltage("a", ranges)
             voltage_start = volts[0][0]
@@ -407,10 +342,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                 in_range_flag, _ = in_range(pos, *constr.axes[axis].value_range)
                 if not in_range_flag:
                     position[axis] = float(constr.axes[axis].clip_value(position[axis]))
-                    self.log.warning(
-                        f"Position {pos} out of range {constr.axes[axis].value_range} "
-                        f"for axis {axis}. Value clipped to {position[axis]}"
-                    )
+                    self.log.warning(f"Position {pos} out of range {constr.axes[axis].value_range} " f"for axis {axis}. Value clipped to {position[axis]}")
                 # TODO Adapt interface to use "in_range"?
                 self._target_pos[axis] = position[axis]
 
@@ -431,9 +363,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         try:
             t_start = time.perf_counter()
             while self.is_move_running:
-                self.log.debug(
-                    f"Waiting for move done: {self.is_move_running}, {1e3*(time.perf_counter()-t_start)} ms"
-                )
+                self.log.debug(f"Waiting for move done: {self.is_move_running}, {1e3*(time.perf_counter()-t_start)} ms")
                 QGuiApplication.processEvents()
                 time.sleep(self._min_step_interval)
 
@@ -482,11 +412,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
             return pos
 
     def _get_mapped_setpoints(self):
-        ao_channels = [
-            channel
-            for key, channel in self._channel_mapping.items()
-            if channel in self._triggered_ao().setpoints.keys()
-        ]
+        ao_channels = [channel for key, channel in self._channel_mapping.items() if channel in self._triggered_ao().setpoints.keys()]
         print({key: self._triggered_ao().setpoints[key] for key in ao_channels})
         return {key: self._triggered_ao().setpoints[key] for key in ao_channels}
 
@@ -494,9 +420,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
 
         try:
             if self.thread() is not QtCore.QThread.currentThread():
-                QtCore.QMetaObject.invokeMethod(
-                    self, "_start_scan", QtCore.Qt.BlockingQueuedConnection
-                )
+                QtCore.QMetaObject.invokeMethod(self, "_start_scan", QtCore.Qt.BlockingQueuedConnection)
             else:
                 self._start_scan()
 
@@ -515,14 +439,10 @@ class DLProTTPLEScanner(ScanningProbeInterface):
 
         if self._scan_data is None:
             # todo: raising would be better, but from this delegated thread exceptions get lost
-            self.log.error(
-                "Scan Data is None. Scan settings need to be configured before starting"
-            )
+            self.log.error("Scan Data is None. Scan settings need to be configured before starting")
 
         if self.is_scan_running:
-            self.log.error(
-                "Cannot start a scan while scanning probe is already running"
-            )
+            self.log.error("Cannot start a scan while scanning probe is already running")
 
         with self._thread_lock_data:
             self._scan_data.new_scan()
@@ -533,17 +453,21 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         # todo: scanning_probe_logic exits when scanner not locked right away
         # should rather ignore/wait until real hw timed scanning starts
 
-        first_scan_position = {
-            ax: pos[0]
-            for ax, pos in zip(self.scan_settings["axes"], self.scan_settings["range"])
-        }
-        self._move_to_and_start_scan(first_scan_position)
-        print("hello_tet")
+        first_scan_position = {ax: pos[0] for ax, pos in zip(self.scan_settings["axes"], self.scan_settings["range"])}
+        # self._move_to_and_start_scan(first_scan_position)
+        self._dont_move_and_start_scan()
         self.module_state.lock()
 
     def _move_to_and_start_scan(self, position):
         self.move_absolute(position)
         self._start_scan_after_cursor = True
+        self.log.info("Starting scan...")
+        self.sigStartScanner.emit()
+        self.sigNextDataChunk.emit()
+
+    def _dont_move_and_start_scan(self):
+        self._start_scan_after_cursor = True
+        self.log.info("Starting scan...")
         self.sigStartScanner.emit()
         self.sigNextDataChunk.emit()
 
@@ -555,9 +479,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
 
         # self.log.debug("Stopping scan")
         if self.thread() is not QtCore.QThread.currentThread():
-            QtCore.QMetaObject.invokeMethod(
-                self, "_stop_scan", QtCore.Qt.BlockingQueuedConnection
-            )
+            QtCore.QMetaObject.invokeMethod(self, "_stop_scan", QtCore.Qt.BlockingQueuedConnection)
         else:
             self._stop_scan()
 
@@ -567,14 +489,12 @@ class DLProTTPLEScanner(ScanningProbeInterface):
     def _stop_scan(self):
 
         # self.log.debug("Stopping scan...")
-        self._start_scan_after_cursor = (
-            False  # Ensure Scan HW is not started after movement
-        )
+        self._start_scan_after_cursor = False  # Ensure Scan HW is not started after movement
 
         # self.log.debug("Module unlocked")
         self._triggered_ao().stop_scan()
         self.module_state.unlock()
-        self.move_absolute(self._stored_target_pos)
+        # self.move_absolute(self._stored_target_pos)
         self._stored_target_pos = dict()
 
     def get_scan_data(self):
@@ -585,9 +505,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         """
 
         if self._scan_data is None:
-            raise RuntimeError(
-                'ScanData is not yet configured, please call "configure_scan" first'
-            )
+            raise RuntimeError('ScanData is not yet configured, please call "configure_scan" first')
         try:
             with self._thread_lock_data:
                 return self._scan_data.copy()
@@ -726,33 +644,17 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                     idx = self._current_lines_to_scan - 1
                 data_cbm_forward[di_channel] = cbm_data * self.sample_rate
                 data_hist_forward[di_channel] = cbm_data[idx, :] * self.sample_rate
-            reverse_routing = {
-                val.lower(): key for key, val in self._channel_mapping.items()
-            }
+            reverse_routing = {val.lower(): key for key, val in self._channel_mapping.items()}
 
-            new_data_forward = {
-                reverse_routing[key]: samples
-                for key, samples in data_hist_forward.items()
-            }
-            new_data_cum_forward = {
-                reverse_routing[key]: samples
-                for key, samples in data_cbm_forward.items()
-            }
+            new_data_forward = {reverse_routing[key]: samples for key, samples in data_hist_forward.items()}
+            new_data_cum_forward = {reverse_routing[key]: samples for key, samples in data_cbm_forward.items()}
             if len(self._sum_channels) > 1:
                 new_data_forward["sum"] = np.sum(
-                    [
-                        samples
-                        for key, samples in data_hist_forward.items()
-                        if key in self._sum_channels
-                    ],
+                    [samples for key, samples in data_hist_forward.items() if key in self._sum_channels],
                     axis=0,
                 )
                 new_data_cum_forward["sum"] = np.sum(
-                    [
-                        samples
-                        for key, samples in data_cbm_forward.items()
-                        if key in self._sum_channels
-                    ],
+                    [samples for key, samples in data_cbm_forward.items() if key in self._sum_channels],
                     axis=0,
                 )
 
@@ -761,14 +663,20 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                 self._scan_data.data = new_data_forward
                 self._scan_data.accumulated = new_data_cum_forward
 
+                OPX_counts = self._triggered_ao().get_opx_counts()
+                if OPX_counts is not None:
+                    print(f"OPX Counts: {OPX_counts}", end="\r\r", flush=True)
+
+                # if self._triggered_ao().is_scan_processing():
+                #    print("Scan processing...")
+                #    print(self._triggered_ao().get_counts())
+
                 if self._check_scan_end_reached():
                     if self._scan_data.accumulated is None:
                         self._scan_data.accumulated = self._scan_data.data
                     else:
                         self._scan_data.accumulated = {
-                            channel: np.vstack(
-                                (self._scan_data.accumulated[channel], data_i)
-                            )
+                            channel: np.vstack((self._scan_data.accumulated[channel], data_i))
                             for channel, data_i in self._scan_data.data.items()
                             if len(data_i) > 0
                         }
@@ -798,9 +706,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
         slope = np.diff(voltage_range) / np.diff(position_range)
         intercept = voltage_range[1] - position_range[1] * slope
 
-        converted = np.clip(
-            positions * slope + intercept, min(voltage_range), max(voltage_range)
-        )
+        converted = np.clip(positions * slope + intercept, min(voltage_range), max(voltage_range))
 
         try:
             # In case of single value, use just this value
@@ -832,9 +738,7 @@ class DLProTTPLEScanner(ScanningProbeInterface):
                       for corresponding axis (keys)
         """
 
-        reverse_routing = {
-            val.lower(): key for key, val in self._channel_mapping.items()
-        }
+        reverse_routing = {val.lower(): key for key, val in self._channel_mapping.items()}
 
         # TODO check voltages given correctly checking?
         positions_data = dict()
@@ -901,9 +805,7 @@ class RawDataContainer:
         self.forward_line_resolution = forward_line_resolution
         self.backwards_line_resolution = backwards_line_resolution
         self.frame_aquired = False
-        self.frame_size = number_of_scan_lines * (
-            forward_line_resolution + backwards_line_resolution
-        )
+        self.frame_size = number_of_scan_lines * (forward_line_resolution + backwards_line_resolution)
         self._raw = {key: np.full(self.frame_size, np.nan) for key in channel_keys}
 
     def fill_container(self, samples_dict):
@@ -925,9 +827,7 @@ class RawDataContainer:
                     self.number_of_scan_lines,
                     self.forward_line_resolution + self.backwards_line_resolution,
                 )
-                reshaped_2d_dict[key] = reshaped_arr[
-                    :, : self.forward_line_resolution
-                ].T
+                reshaped_2d_dict[key] = reshaped_arr[:, : self.forward_line_resolution].T
             elif self.number_of_scan_lines == 1:
                 reshaped_2d_dict[key] = self._raw[key][: self.forward_line_resolution]
         return reshaped_2d_dict
@@ -940,9 +840,7 @@ class RawDataContainer:
                     self.number_of_scan_lines,
                     self.forward_line_resolution + self.backwards_line_resolution,
                 )
-                reshaped_2d_dict[key] = reshaped_arr[
-                    :, self.forward_line_resolution :
-                ].T
+                reshaped_2d_dict[key] = reshaped_arr[:, self.forward_line_resolution :].T
             elif self.number_of_scan_lines == 1:
                 reshaped_2d_dict[key] = self._raw[key][self.forward_line_resolution :]
 

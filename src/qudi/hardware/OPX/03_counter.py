@@ -35,11 +35,7 @@ with program() as counter:
         # Loop over the chunks to measure for the total integration time
         with for_(n, 0, n < n_count, n + 1):
             # Play the laser pulse...
-            play(
-                pulse="active",
-                element="Laser_520",
-                duration=single_integration_time * u.ns,
-            )
+            play("pulse", "AOM_520", duration=single_integration_time)
             # ... while measuring the events from the SPC
             measure(
                 "readout",
@@ -59,9 +55,7 @@ with program() as counter:
 #####################################
 #  Open Communication with the QOP  #
 #####################################
-qmm = QuantumMachinesManager(
-    host=qop_ip, cluster_name=cluster_name, octave=octave_config
-)
+qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name, octave=octave_config)
 
 #######################
 # Simulate or execute #
@@ -70,9 +64,7 @@ simulate = False
 
 if simulate:
     simulation_duration = 100000
-    simulation_config = SimulationConfig(
-        duration=simulation_duration
-    )  # In clock cycles = 4ns
+    simulation_config = SimulationConfig(duration=simulation_duration)  # In clock cycles = 4ns
     job_sim = qmm.simulate(config, counter, simulation_config)
     samples = job_sim.get_simulated_samples()
     # get the waveform report object

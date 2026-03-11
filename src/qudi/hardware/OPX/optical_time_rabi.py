@@ -29,6 +29,7 @@ from configuration import *
 
 t_vec = np.arange(4, int(2000 / 4), 2)  # Pulse durations in clock cycles (4ns)
 n_avg = 500_000_000  # Number of averaging loops
+n_before_repump = 100
 
 with program() as time_rabi:
     counts = declare(int)  # variable for number of counts
@@ -40,23 +41,28 @@ with program() as time_rabi:
     n_st = declare_stream()  # stream to save iterations
 
     # Spin initialization
-    # play("laser_ON", "AOM_green")
-    # wait(wait_for_initialization * u.ns, "AOM_green")
+    play("laser_ON", "AOM_green")
+    wait(wait_for_initialization * u.ns, "AOM_green")
 
-    # Time Rabi sweep
+    with infinite_loop_():
+        with _for(n, 0, n < n_before_repump, n + 1):
+            play("trigit", "Gate_Trigger")
+            play("")
+
+    # optical ime Rabi sweep
     with for_(n, 0, n < n_avg, n + 1):
         with for_(*from_array(t, t_vec)):
             # Play the Rabi pulse with varying durations
-            play("cw" * amp(1), "NV", duration=100 * u.ns)
+            play("x180" * amp(1), "NV", duration=t)
             align()  # Play the laser pulse after the mw pulse
-            # wait(250 * u.ns, "AOM_green")
-            # play("laser_ON", "AOM_green")
+            wait(250 * u.ns, "AOM_green")
+            play("laser_ON", "AOM_green")
             # Measure and detect the photons on SPCM1
             measure("readout", "SPCM1", None, time_tagging.analog(times, meas_len_1, counts))
             save(counts, counts_st)  # save counts
 
             # Wait and align all elements before measuring the dark events
-            wait(1000 * u.ns)
+            wait(wait_between_runs * u.ns)
             # align()
 
             # Play the Rabi pulse with zero amplitude

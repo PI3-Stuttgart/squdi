@@ -90,16 +90,10 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
     # config options
     _timetagger = Connector(name="tt", interface="TT")
 
-    _timetagger_remote = Connector(
-        name="tt_remote", interface="TT", optional=True
-    )  # we dont have any yet.
-    _device_name = ConfigOption(
-        name="device_name", default="adwin11", missing="warn"
-    )  # Here the name is properly send to the BTL
+    _timetagger_remote = Connector(name="tt_remote", interface="TT", optional=True)  # we dont have any yet.
+    _device_name = ConfigOption(name="device_name", default="adwin11", missing="warn")  # Here the name is properly send to the BTL
     ### HERE THE ADWIN IS CONNECTING...
-    _adwin = Connector(
-        name="adwin", interface="Adwin_Scanning_Device", optional=True
-    )  ##connection to the adwin_Scanner holder.
+    _adwin = Connector(name="adwin", interface="Adwin_Scanning_Device", optional=True)  ##connection to the adwin_Scanner holder.
     _rw_timeout = ConfigOption("read_write_timeout", default=10, missing="nothing")
 
     # Finite Sampling #TODO What are the frame size hardware limits?
@@ -119,31 +113,21 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         missing="nothing",
     )
 
-    _physical_sample_clock_output = ConfigOption(
-        name="sample_clock_output", default=None
-    )
+    _physical_sample_clock_output = ConfigOption(name="sample_clock_output", default=None)
 
     _tt_adwin_clock_input = ConfigOption(name="tt_adwin_clock_input", default=None)
 
-    _tt_falling_edge_clock_input = ConfigOption(
-        name="tt_falling_edge_clock_input", default=None
-    )
+    _tt_falling_edge_clock_input = ConfigOption(name="tt_falling_edge_clock_input", default=None)
 
-    _tt_remote_ni_clock_input = ConfigOption(
-        name="tt_remote_ni_clock_input", default=None
-    )
+    _tt_remote_ni_clock_input = ConfigOption(name="tt_remote_ni_clock_input", default=None)
 
-    _tt_remote_falling_edge_clock_input = ConfigOption(
-        name="tt_remote_falling_edge_clock_input", default=None
-    )
+    _tt_remote_falling_edge_clock_input = ConfigOption(name="tt_remote_falling_edge_clock_input", default=None)
 
     _sum_channels = ConfigOption(name="sum_channels", default=[], missing="nothing")
 
     _adc_voltage_ranges = ConfigOption(
         name="adc_voltage_ranges",
-        default={
-            "ai{}".format(channel_index): [-10, 10] for channel_index in range(0, 10)
-        },  # TODO max 10 some what arbitrary
+        default={"ai{}".format(channel_index): [-10, 10] for channel_index in range(0, 10)},  # TODO max 10 some what arbitrary
         missing="nothing",
     )
 
@@ -202,9 +186,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         self.__all_analog_out_terminals = tuple()
 
         # currently active channels
-        self.__active_channels = dict(
-            di_channels=frozenset(), ai_channels=frozenset(), ao_channels=frozenset()
-        )
+        self.__active_channels = dict(di_channels=frozenset(), ai_channels=frozenset(), ao_channels=frozenset())
 
         # Stored hardware constraints
         self._constraints = None
@@ -217,27 +199,18 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         """
 
         ## This is some stuff for the ADWIN terminals, everythni is only within the python code here.
-        self._input_channel_units = {
-            self._extract_terminal(key): value
-            for key, value in self._input_channel_units.items()
-        }
-        self._output_channel_units = {
-            self._extract_terminal(key): value
-            for key, value in self._output_channel_units.items()
-        }
+        self._input_channel_units = {self._extract_terminal(key): value for key, value in self._input_channel_units.items()}
+        self._output_channel_units = {self._extract_terminal(key): value for key, value in self._output_channel_units.items()}
 
         # Check if device is connected and set device to use
         self._tt = self._timetagger()  # PASST
 
-        dev_names = [
-            "adwin11"
-        ]  ##ni.system.System().devices.device_names ## Have no NIDAQ.
+        dev_names = ["adwin11"]  ##ni.system.System().devices.device_names ## Have no NIDAQ.
         # TODO check here for multiple adwin systems?
 
         if self._device_name.lower() not in set(dev.lower() for dev in dev_names):
             raise ValueError(
-                f'Device name "{self._device_name}" not found in list of connected devices: '
-                f"{dev_names}\nActivation of AdwinFiniteSamplingIO failed!"
+                f'Device name "{self._device_name}" not found in list of connected devices: ' f"{dev_names}\nActivation of AdwinFiniteSamplingIO failed!"
             )
         for dev in dev_names:
             if dev.lower() == self._device_name.lower():
@@ -258,29 +231,18 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         # self.__all_counters = tuple(
         #     self._extract_terminal(ctr) for ctr in self._adwin_scanning_device.co_physical_chans.channel_names if
         #     'ctr' in ctr.lower())
-        self.__all_digital_terminals = tuple(
-            self._extract_terminal(term)
-            for term in self._adwin_scanning_device._digital_outputs.keys()
-            if "d" in term
-        )
+        self.__all_digital_terminals = tuple(self._extract_terminal(term) for term in self._adwin_scanning_device._digital_outputs.keys() if "d" in term)
         # self.__all_analog_in_terminals = tuple(
         #     self._extract_terminal(term) for term in self._adwin_scanning_device.ai_physical_chans.channel_names)
-        self.__all_analog_out_terminals = tuple(
-            self._extract_terminal(term)
-            for term in self._adwin_scanning_device._analog_outputs.keys()
-        )
+        self.__all_analog_out_terminals = tuple(self._extract_terminal(term) for term in self._adwin_scanning_device._analog_outputs.keys())
 
         # Get digital input terminals from _input_channel_units of the Time Tagger
         # The input channels are assumed to be time tagger exclusively
 
         # This is not the case for ADWIN per se, but if multiple inputs will be given, the src will not be starting with the 'tt'
-        digital_sources = tuple(
-            src for src in self._input_channel_units if "tt" in src
-        )  #!FIX check maybe regex out tt
+        digital_sources = tuple(src for src in self._input_channel_units if "tt" in src)  #!FIX check maybe regex out tt
 
-        analog_sources = tuple(
-            src for src in self._input_channel_units if "ai" in src
-        )  # We have none for now.
+        analog_sources = tuple(src for src in self._input_channel_units if "ai" in src)  # We have none for now.
 
         # Get analog input channels from _input_channel_units
         if analog_sources:
@@ -302,9 +264,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         if analog_outputs:
             source_set = set(analog_outputs)
-            invalid_sources = source_set.difference(
-                set(self.__all_analog_out_terminals)
-            )
+            invalid_sources = source_set.difference(set(self.__all_analog_out_terminals))
             if invalid_sources:
                 self.log.error(
                     "Invalid analog source channels encountered. Following sources will "
@@ -320,38 +280,24 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         #!TODO FIX with the TimeTagger can be more inputs
 
         if len(analog_sources) > 16:
-            raise ValueError(
-                "Too many analog channels specified. Maximum number of analog channels is 16."
-            )
+            raise ValueError("Too many analog channels specified. Maximum number of analog channels is 16.")
 
         # If there are any invalid inputs or outputs specified, raise an error
-        defined_channel_set = set.union(
-            set(self._input_channel_units), set(self._output_channel_units)
-        )
-        detected_channel_set = set.union(
-            set(analog_sources), set(digital_sources), set(analog_outputs)
-        )
+        defined_channel_set = set.union(set(self._input_channel_units), set(self._output_channel_units))
+        detected_channel_set = set.union(set(analog_sources), set(digital_sources), set(analog_outputs))
         invalid_channels = set.difference(defined_channel_set, detected_channel_set)
 
         if invalid_channels:
-            raise ValueError(
-                f'The channels "{", ".join(invalid_channels)}", specified in the config, were not recognized.'
-            )
+            raise ValueError(f'The channels "{", ".join(invalid_channels)}", specified in the config, were not recognized.')
 
         self._sum_channels = [ch.lower() for ch in self._sum_channels]
         if len(self._sum_channels) > 1:
-            self._input_channel_units["sum"] = self._input_channel_units[
-                self._sum_channels[0]
-            ]
+            self._input_channel_units["sum"] = self._input_channel_units[self._sum_channels[0]]
 
         # Check Physical clock output if specified
         if self._physical_sample_clock_output is not None:
-            self._physical_sample_clock_output = self._extract_terminal(
-                self._physical_sample_clock_output
-            )
-            assert (
-                self._physical_sample_clock_output in self.__all_digital_terminals
-            ), f"Physical sample clock terminal specified in config is invalid"
+            self._physical_sample_clock_output = self._extract_terminal(self._physical_sample_clock_output)
+            assert self._physical_sample_clock_output in self.__all_digital_terminals, f"Physical sample clock terminal specified in config is invalid"
 
         # Get correct sampling frequency limits based on config specified channels
         # if analog_sources and len(analog_sources) > 1:  # Probably "Slowest" case
@@ -374,25 +320,17 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             ),
         )
 
-        output_voltage_ranges = {
-            self._extract_terminal(key): value
-            for key, value in self._output_voltage_ranges.items()
-        }
+        output_voltage_ranges = {self._extract_terminal(key): value for key, value in self._output_voltage_ranges.items()}
 
         input_limits = dict()
 
         if digital_sources:
-            input_limits.update(
-                {key: [0, int(1e8)] for key in digital_sources}
-            )  # TODO Real HW constraint?
+            input_limits.update({key: [0, int(1e8)] for key in digital_sources})  # TODO Real HW constraint?
         if len(self._sum_channels) > 1:
             input_limits["sum"] = [0, int(1e8)]
 
         if analog_sources:
-            adc_voltage_ranges = {
-                self._extract_terminal(key): value
-                for key, value in self._adc_voltage_ranges.items()
-            }
+            adc_voltage_ranges = {self._extract_terminal(key): value for key, value in self._adc_voltage_ranges.items()}
 
             input_limits.update(adc_voltage_ranges)
 
@@ -410,9 +348,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             input_channel_limits=input_limits,
         )
 
-        assert self._constraints.output_mode_supported(
-            self._default_output_mode
-        ), f'Config output "{self._default_output_mode}" mode not supported'
+        assert self._constraints.output_mode_supported(self._default_output_mode), f'Config output "{self._default_output_mode}" mode not supported'
 
         self.__output_mode = self._default_output_mode
         self.__frame_size = 0
@@ -439,9 +375,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         @return (frozenset, frozenset): active input channels, active output channels
         """
         return (
-            self.__active_channels["di_channels"].union(
-                self.__active_channels["ai_channels"]
-            ),
+            self.__active_channels["di_channels"].union(self.__active_channels["ai_channels"]),
             self.__active_channels["ao_channels"],
         )
 
@@ -453,48 +387,32 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         @param iterable(str) output_channels: Iterable of output channel names to set active
         """
 
-        assert hasattr(input_channels, "__iter__") and not isinstance(
-            input_channels, str
-        ), f"Given input channels {input_channels} are not iterable"
+        assert hasattr(input_channels, "__iter__") and not isinstance(input_channels, str), f"Given input channels {input_channels} are not iterable"
 
-        assert hasattr(output_channels, "__iter__") and not isinstance(
-            output_channels, str
-        ), f"Given output channels {output_channels} are not iterable"
+        assert hasattr(output_channels, "__iter__") and not isinstance(output_channels, str), f"Given output channels {output_channels} are not iterable"
 
-        assert (
-            not self.is_running
-        ), "Unable to change active channels while IO is running. New settings ignored."
+        assert not self.is_running, "Unable to change active channels while IO is running. New settings ignored."
 
-        input_channels = tuple(
-            self._extract_terminal(channel) for channel in input_channels
-        )
-        output_channels = tuple(
-            self._extract_terminal(channel) for channel in output_channels
+        input_channels = tuple(self._extract_terminal(channel) for channel in input_channels)
+        output_channels = tuple(self._extract_terminal(channel) for channel in output_channels)
+
+        assert set(input_channels).issubset(set(self._constraints.input_channel_names)), (
+            f'Trying to set invalid input channels "' f'{set(input_channels).difference(set(self._constraints.input_channel_names))}" not defined in config '
         )
 
-        assert set(input_channels).issubset(
-            set(self._constraints.input_channel_names)
-        ), (
-            f'Trying to set invalid input channels "'
-            f'{set(input_channels).difference(set(self._constraints.input_channel_names))}" not defined in config '
+        assert set(output_channels).issubset(set(self._constraints.output_channel_names)), (
+            f'Trying to set invalid input channels "' f'{set(output_channels).difference(set(self._constraints.output_channel_names))}" not defined in config '
         )
 
-        assert set(output_channels).issubset(
-            set(self._constraints.output_channel_names)
-        ), (
-            f'Trying to set invalid input channels "'
-            f'{set(output_channels).difference(set(self._constraints.output_channel_names))}" not defined in config '
-        )
-
-        di_channels, ai_channels = self._extract_ai_di_from_input_channels(
-            input_channels
-        )
+        di_channels, ai_channels = self._extract_ai_di_from_input_channels(input_channels)
 
         with self._thread_lock:
             (
                 self.__active_channels["di_channels"],
                 self.__active_channels["ai_channels"],
-            ) = frozenset(di_channels), frozenset(ai_channels)
+            ) = frozenset(
+                di_channels
+            ), frozenset(ai_channels)
 
             self.__active_channels["ao_channels"] = frozenset(output_channels)
 
@@ -511,9 +429,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         @param float rate: The sample rate to set
         """
-        assert (
-            not self.is_running
-        ), "Unable to set sample rate while IO is running. New settings ignored."
+        assert not self.is_running, "Unable to set sample rate while IO is running. New settings ignored."
         in_range_flag, rate_val = self._constraints.sample_rate_in_range(rate)
         min_val, max_val = self._constraints.sample_rate_limits
         if not in_range_flag:
@@ -530,12 +446,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         @param SamplingOutputMode mode: The output mode to set as SamplingOutputMode Enum
         """
-        assert (
-            not self.is_running
-        ), "Unable to set output mode while IO is running. New settings ignored."
-        assert self._constraints.output_mode_supported(
-            mode
-        ), f"Output mode {mode} not supported"
+        assert not self.is_running, "Unable to set output mode while IO is running. New settings ignored."
+        assert self._constraints.output_mode_supported(mode), f"Output mode {mode} not supported"
         # TODO: in case of assertion error, set output mode to SamplingOutputMode.INVALID?
         with self._thread_lock:
             self.__output_mode = mode
@@ -559,16 +471,12 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             return self._number_of_pending_samples
 
         if self._ai_task_handle is None and self._di_task_handles is not None:
-            #data = self._timetagger_cbm_tasks[0].getData()
-            return (
-                self.frame_size
-            )  # self._di_task_handles[0].in_stream.avail_samp_per_chan
+            # data = self._timetagger_cbm_tasks[0].getData()
+            return self.frame_size  # self._di_task_handles[0].in_stream.avail_samp_per_chan
         elif self._ai_task_handle is not None and self._di_task_handles is None:
             return self._ai_task_handle.in_stream.avail_samp_per_chan
         else:
-            return min(
-                self._ai_task_handle.in_stream.avail_samp_per_chan, self.frame_size
-            )
+            return min(self._ai_task_handle.in_stream.avail_samp_per_chan, self.frame_size)
 
     @property
     def frame_size(self):
@@ -580,9 +488,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
     def _set_frame_size(self, size):
         samples_per_channel = int(round(size))  # TODO Warn if not integer
-        assert self._constraints.frame_size_in_range(samples_per_channel)[
-            0
-        ], f'Frame size "{size}" is out of range'
+        assert self._constraints.frame_size_in_range(samples_per_channel)[0], f'Frame size "{size}" is out of range'
         assert not self.is_running, f"Module is running. Cannot set frame size"
 
         with self._thread_lock:
@@ -603,10 +509,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         @param dict data: The frame data (values) to be set for all active output channels (keys)
         """
-        assert data is None or isinstance(data, dict), (
-            f"Wrong arguments passed to set_frame_data,"
-            f"expected dict and got {type(data)}"
-        )
+        assert data is None or isinstance(data, dict), f"Wrong arguments passed to set_frame_data," f"expected dict and got {type(data)}"
 
         assert not self.is_running, f"IO is running. Can not set frame data"
 
@@ -615,68 +518,34 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             # assure dict keys are striped from device name and are lower case
             data = {self._extract_terminal(ch): value for ch, value in data.items()}
             # Check for invalid keys
-            assert not set(data).difference(
-                active_output_channels_set
-            ), f"Invalid keys in data {*set(data).difference(active_output_channels_set),} "
+            assert not set(data).difference(active_output_channels_set), f"Invalid keys in data {*set(data).difference(active_output_channels_set),} "
             # Check if all active channels are in data
-            assert set(data) == active_output_channels_set, (
-                f"Keys of data {*data,} do not match active"
-                f"channels {*active_output_channels_set,}"
-            )
+            assert set(data) == active_output_channels_set, f"Keys of data {*data,} do not match active" f"channels {*active_output_channels_set,}"
 
             # set frame size
             if self.output_mode == SamplingOutputMode.JUMP_LIST:
                 frame_size = len(next(iter(data.values())))
-                assert all(
-                    isinstance(d, np.ndarray) and len(d.shape) == 1
-                    for d in data.values()
-                ), f"Data values are no 1D numpy.ndarrays"
-                assert all(
-                    len(d) == frame_size for d in data.values()
-                ), f"Length of data values not the same"
+                assert all(isinstance(d, np.ndarray) and len(d.shape) == 1 for d in data.values()), f"Data values are no 1D numpy.ndarrays"
+                assert all(len(d) == frame_size for d in data.values()), f"Length of data values not the same"
 
                 for output_channel in data:
                     assert not np.any(
-                        (
-                            min(data[output_channel])
-                            < min(
-                                self.constraints.output_channel_limits[output_channel]
-                            )
-                        )
-                        | (
-                            max(data[output_channel])
-                            > max(
-                                self.constraints.output_channel_limits[output_channel]
-                            )
-                        )
+                        (min(data[output_channel]) < min(self.constraints.output_channel_limits[output_channel]))
+                        | (max(data[output_channel]) > max(self.constraints.output_channel_limits[output_channel]))
                     ), f"Output channel {output_channel} value out of constraints range"
 
             elif self.output_mode == SamplingOutputMode.EQUIDISTANT_SWEEP:
                 assert all(
                     len(tup) == 3 and isinstance(tup, tuple) for tup in data.values()
                 ), f"EQUIDISTANT_SWEEP output mode requires value tuples of length 3 for each output channel"
-                assert all(
-                    isinstance(tup[-1], int) for tup in data.values()
-                ), f"Linspace number of points not integer"
+                assert all(isinstance(tup[-1], int) for tup in data.values()), f"Linspace number of points not integer"
 
-                assert (
-                    len(set(tup[-1] for tup in data.values())) == 1
-                ), "Linspace lengths are different"
+                assert len(set(tup[-1] for tup in data.values())) == 1, "Linspace lengths are different"
 
                 for output_channel in data:
                     assert not np.any(
-                        (
-                            min(data[output_channel][:-1])
-                            < min(
-                                self.constraints.output_channel_limits[output_channel]
-                            )
-                        )
-                        | (
-                            max(data[output_channel][:-1])
-                            > max(
-                                self.constraints.output_channel_limits[output_channel]
-                            )
-                        )
+                        (min(data[output_channel][:-1]) < min(self.constraints.output_channel_limits[output_channel]))
+                        | (max(data[output_channel][:-1]) > max(self.constraints.output_channel_limits[output_channel]))
                     ), f"Output channel {output_channel} value out of constraints range"
                 frame_size = next(iter(data.values()))[-1]
             else:
@@ -687,13 +556,9 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             # set frame buffer
             if data is not None:
                 if self.output_mode == SamplingOutputMode.JUMP_LIST:
-                    self.__frame_buffer = {
-                        output_ch: jump_list for output_ch, jump_list in data.items()
-                    }
+                    self.__frame_buffer = {output_ch: jump_list for output_ch, jump_list in data.items()}
                 elif self.output_mode == SamplingOutputMode.EQUIDISTANT_SWEEP:
-                    self.__frame_buffer = {
-                        output_ch: np.linspace(*tup) for output_ch, tup in data.items()
-                    }
+                    self.__frame_buffer = {output_ch: np.linspace(*tup) for output_ch, tup in data.items()}
             if data is None:
                 self._set_frame_size(0)  # Sets frame buffer to None
 
@@ -702,15 +567,11 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         Must return immediately and not wait for the frame to finish.
         Must raise exception if frame output can not be started.
         """
-        assert self._constraints.sample_rate_in_range(self.sample_rate)[
-            0
-        ], f"Cannot start frame as sample rate {self.sample_rate:.2g}Hz not valid"
+        assert self._constraints.sample_rate_in_range(self.sample_rate)[0], f"Cannot start frame as sample rate {self.sample_rate:.2g}Hz not valid"
         assert self.frame_size != 0, f"No frame data set, can not start buffered frame"
         assert not self.is_running, f"Frame IO already running. Can not start"
 
-        assert self.active_channels[1] == set(
-            self.__frame_buffer
-        ), f"Channels in active channels and frame buffer do not coincide"
+        assert self.active_channels[1] == set(self.__frame_buffer), f"Channels in active channels and frame buffer do not coincide"
 
         self.module_state.lock()
         with self._thread_lock:
@@ -722,9 +583,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
                 self.terminate_all_tasks()
                 self.module_state.unlock()
-                raise NiInitError(
-                    "Sample clock initialization failed; all tasks terminated"
-                )
+                raise NiInitError("Sample clock initialization failed; all tasks terminated")
 
             # TT
 
@@ -738,22 +597,16 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
                 self.terminate_all_tasks()
                 self.module_state.unlock()
-                raise NiInitError(
-                    "Analog in task initialization failed; all tasks terminated"
-                )
+                raise NiInitError("Analog in task initialization failed; all tasks terminated")
 
             # DONE - dummy.
             if self._init_analog_out_task_adwin() < 0:
 
                 self.terminate_all_tasks()
                 self.module_state.unlock()
-                raise NiInitError(
-                    "Analog out task initialization failed; all tasks terminated"
-                )
+                raise NiInitError("Analog out task initialization failed; all tasks terminated")
 
-            output_data = np.ndarray(
-                (len(self.active_channels[1]), self.frame_size)
-            )  # basically a scan line size..
+            output_data = np.ndarray((len(self.active_channels[1]), self.frame_size))  # basically a scan line size..
             output_data[0] = self.__frame_buffer["ao1"]
             output_data[1] = self.__frame_buffer["ao2"]
             output_data[2] = self.__frame_buffer["ao3"]
@@ -761,7 +614,6 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
             # for num, output_channel in enumerate(self.active_channels[1]):
             #    output_data[num] = self.__frame_buffer[output_channel]
-
 
             # not doing anything right now
             status = self._adwin_scanning_device.configure_scan(line_path=output_data)
@@ -866,17 +718,15 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 self.terminate_all_tasks()  # nidaqmx raises a warning when frame is stopped before all samples acq.
             self.module_state.unlock()
 
-    
     def check_if_scan_finished(self) -> None:
-        """Checks wheater tt collection is finished. Additionally checks, if the scann didn't 
-            finsihed because a trigger was missed, 
-            by checking that the timetagger is couinting a lot in one of the last bins.
+        """Checks wheater tt collection is finished. Additionally checks, if the scann didn't
+        finsihed because a trigger was missed,
+        by checking that the timetagger is couinting a lot in one of the last bins.
 
         """
-        print(self._timetagger_cbm_tasks[0].getData())
-        for num, _ in enumerate(
-            self.__active_channels["di_channels"]):
-                        
+        # print(self._timetagger_cbm_tasks[0].getData())
+        for num, _ in enumerate(self.__active_channels["di_channels"]):
+
             scanner_ready_temp = self._timetagger_cbm_tasks[num].ready()
             if scanner_ready_temp == False:
                 tt_data = self._timetagger_cbm_tasks[num].getData()
@@ -887,11 +737,10 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                     scanner_ready_temp = False
                 else:
                     # Check if the last number is 10 times larger than the mean of the rest
-                    scanner_ready_temp =  tt_data_wo_zeros[-1] >= 100 * np.mean(tt_data_wo_zeros[:-1])
-                    print(scanner_ready_temp) 
-            self._scanner_ready = scanner_ready_temp             
-            
-    
+                    scanner_ready_temp = tt_data_wo_zeros[-1] >= 100 * np.mean(tt_data_wo_zeros[:-1])
+                    # print(scanner_ready_temp)
+            self._scanner_ready = scanner_ready_temp
+
     def get_buffered_samples(self, number_of_samples=None):
         """Returns a chunk of the current data frame for all active input channels read from the
         input frame buffer.
@@ -922,34 +771,23 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
 
         with self._thread_lock:
             if number_of_samples is not None:
-                assert isinstance(
-                    number_of_samples, (int, np.integer)
-                ), f"Number of requested samples not integer"
+                assert isinstance(number_of_samples, (int, np.integer)), f"Number of requested samples not integer"
 
-            samples_to_read = (
-                number_of_samples
-                if number_of_samples is not None
-                else self.samples_in_buffer
-            )
+            samples_to_read = number_of_samples if number_of_samples is not None else self.samples_in_buffer
             pre_stop = not self.is_running
 
             # if not samples_to_read <= self._number_of_pending_samples:
-            
+
             if samples_to_read > 0 and self.is_running:
                 request_time = time.time()
                 # if number_of_samples > self.samples_in_buffer:
                 #     self.log.debug(f'Waiting for samples to become available since requested {number_of_samples} are more then '
                 #                    f'the {self.samples_in_buffer} in the buffer')
                 while samples_to_read > self.samples_in_buffer:
-                    if (
-                        time.time() - request_time
-                        < 1.1 * self.frame_size / self.sample_rate
-                    ):  # TODO Is this timeout ok?
+                    if time.time() - request_time < 1.1 * self.frame_size / self.sample_rate:  # TODO Is this timeout ok?
                         time.sleep(0.05)
                     else:
-                        raise TimeoutError(
-                            f"Acquiring {samples_to_read} samples took longer then the whole frame"
-                        )
+                        raise TimeoutError(f"Acquiring {samples_to_read} samples took longer then the whole frame")
 
             data = dict()
 
@@ -960,43 +798,28 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 # When the IO was stopped with samples in buffer, return the ones in
                 if number_of_samples is None:
                     data = self.__unread_samples_buffer.copy()
-                    self.__unread_samples_buffer = dict.fromkeys(
-                        self.active_channels[0], np.array([])
-                    )
+                    self.__unread_samples_buffer = dict.fromkeys(self.active_channels[0], np.array([]))
                     self._number_of_pending_samples = 0
                     return data
                 else:
                     for key in self.__unread_samples_buffer:
                         data[key] = self.__unread_samples_buffer[key][:samples_to_read]
                     self._number_of_pending_samples -= samples_to_read
-                    self.__unread_samples_buffer = {
-                        key: arr[samples_to_read:]
-                        for (key, arr) in self.__unread_samples_buffer.items()
-                    }
+                    self.__unread_samples_buffer = {key: arr[samples_to_read:] for (key, arr) in self.__unread_samples_buffer.items()}
                     return data
             else:
                 if self._timetagger_cbm_tasks:
-                    di_data = np.zeros(
-                        len(self.__active_channels["di_channels"]) * samples_to_read
-                    )
-                    
-                    di_data = di_data.reshape(
-                        len(self.__active_channels["di_channels"]), samples_to_read
-                    )
-                    for num, di_channel in enumerate(
-                        self.__active_channels["di_channels"]
-                    ):
+                    di_data = np.zeros(len(self.__active_channels["di_channels"]) * samples_to_read)
+
+                    di_data = di_data.reshape(len(self.__active_channels["di_channels"]), samples_to_read)
+                    for num, di_channel in enumerate(self.__active_channels["di_channels"]):
                         data_cbm = self._timetagger_cbm_tasks[num].getData()
                         di_data[num] = data_cbm
-                        data[di_channel] = (
-                            di_data[num] * self.sample_rate
-                        )  # To go to c/s # TODO What if unit not c/s
+                        data[di_channel] = di_data[num] * self.sample_rate  # To go to c/s # TODO What if unit not c/s
                     self.check_if_scan_finished()
-                    
+
                 if self._ai_reader is not None:
-                    data_buffer = np.zeros(
-                        samples_to_read * len(self.__active_channels["ai_channels"])
-                    )
+                    data_buffer = np.zeros(samples_to_read * len(self.__active_channels["ai_channels"]))
                     # self.log.debug(f'Buff shape {data_buffer.shape} and len {len(data_buffer)}')
                     read_samples = self._ai_reader.read_many_sample(
                         data_buffer,
@@ -1005,12 +828,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                     )
                     if read_samples != samples_to_read:
                         return data
-                    for num, ai_channel in enumerate(
-                        self.__active_channels["ai_channels"]
-                    ):
-                        data[ai_channel] = data_buffer[
-                            num * samples_to_read : (num + 1) * samples_to_read
-                        ]
+                    for num, ai_channel in enumerate(self.__active_channels["ai_channels"]):
+                        data[ai_channel] = data_buffer[num * samples_to_read : (num + 1) * samples_to_read]
 
                 self._number_of_pending_samples -= samples_to_read
 
@@ -1073,11 +892,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         @return int: error code (0:OK, -1:error)
         """
 
-        channels_tt = [
-            int(ch.split("_")[-1])
-            for ch in self.__active_channels["di_channels"]
-            if "tt" == ch.split("_")[0]
-        ]
+        channels_tt = [int(ch.split("_")[-1]) for ch in self.__active_channels["di_channels"] if "tt" == ch.split("_")[0]]
 
         clock_tt = int(self._tt_adwin_clock_input.split("_")[-1])
 
@@ -1100,16 +915,10 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         ## IT probably doesnt neet to be started, just waits already all the counts after creation.
 
         if self._timetagger_remote():
-            channels_tt_remote = [
-                int(ch.split("_")[-1])
-                for ch in self.__active_channels["di_channels"]
-                if "ttR".lower() == ch.split("_")[0]
-            ]
+            channels_tt_remote = [int(ch.split("_")[-1]) for ch in self.__active_channels["di_channels"] if "ttR".lower() == ch.split("_")[0]]
             clock_tt_remote = int(self._tt_remote_ni_clock_input.split("_")[-1])
             if self._tt_remote_falling_edge_clock_input:
-                clock_fall_tt_remote = int(
-                    self._tt_remote_falling_edge_clock_input.split("_")[-1]
-                )
+                clock_fall_tt_remote = int(self._tt_remote_falling_edge_clock_input.split("_")[-1])
             else:
                 clock_fall_tt_remote = -clock_tt_remote
 
@@ -1122,10 +931,8 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                         n_values=self.frame_size,
                     )
                 )
-                
-        for num, _ in enumerate(
-                self.__active_channels["di_channels"]
-                    ):
+
+        for num, _ in enumerate(self.__active_channels["di_channels"]):
             self._timetagger_cbm_tasks[num].getData()
         return 0
 
@@ -1172,10 +979,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                         np.linspace(current_pos[0], crosshair_pos[0], rs),
                         np.linspace(current_pos[1], crosshair_pos[1], rs),
                         np.linspace(current_pos[2], crosshair_pos[2], rs),
-                        np.ones(npointsshape)
-                        * current_pos[
-                            3
-                        ],  # no idea what _current_a does, just copied from below
+                        np.ones(npointsshape) * current_pos[3],  # no idea what _current_a does, just copied from below
                     ]
                 )
             return_line_counts = self._adwin_scanning_device.scan_line(return_line)
@@ -1217,9 +1021,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 if n_ch <= 3:
                     start_line = np.vstack([lsx, lsy, lsz][0:n_ch])
                 else:
-                    start_line = np.vstack(
-                        [lsx, lsy, lsz, np.ones(lsx.shape) * current_pos[3]]
-                    )
+                    start_line = np.vstack([lsx, lsy, lsz, np.ones(lsx.shape) * current_pos[3]])
                 # move to the start position of the scan, counts are thrown away
                 start_line_counts = self._adwin_scanning_device.scan_line(start_line)
                 if np.any(start_line_counts == -1):
@@ -1278,20 +1080,16 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                         return_line = np.vstack(
                             [
                                 self._return_XL,
-                                image[self._scan_counter, 0, 1]
-                                * np.ones(self._return_XL.shape),
-                                image[self._scan_counter, 0, 2]
-                                * np.ones(self._return_XL.shape),
+                                image[self._scan_counter, 0, 1] * np.ones(self._return_XL.shape),
+                                image[self._scan_counter, 0, 2] * np.ones(self._return_XL.shape),
                             ][0:n_ch]
                         )
                     else:
                         return_line = np.vstack(
                             [
                                 self._return_XL,
-                                image[self._scan_counter, 0, 1]
-                                * np.ones(self._return_XL.shape),
-                                image[self._scan_counter, 0, 2]
-                                * np.ones(self._return_XL.shape),
+                                image[self._scan_counter, 0, 1] * np.ones(self._return_XL.shape),
+                                image[self._scan_counter, 0, 2] * np.ones(self._return_XL.shape),
                                 np.ones(self._return_XL.shape) * current_pos[3],
                             ]
                         )
@@ -1315,31 +1113,24 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                                 np.linspace(current_pos[0], crosshair_pos[0], npoints),
                                 np.linspace(current_pos[1], crosshair_pos[1], npoints),
                                 np.linspace(current_pos[2], crosshair_pos[2], npoints),
-                                np.ones(npointsshape)
-                                * current_pos[
-                                    3
-                                ],  # no idea what _current_a does, just copied from above
+                                np.ones(npointsshape) * current_pos[3],  # no idea what _current_a does, just copied from above
                             ]
                         )
             else:
                 if n_ch <= 3:
                     return_line = np.vstack(
                         [
-                            image[self._scan_counter, 0, 1]
-                            * np.ones(self._return_YL.shape),
+                            image[self._scan_counter, 0, 1] * np.ones(self._return_YL.shape),
                             self._return_YL,
-                            image[self._scan_counter, 0, 2]
-                            * np.ones(self._return_YL.shape),
+                            image[self._scan_counter, 0, 2] * np.ones(self._return_YL.shape),
                         ][0:n_ch]
                     )
                 else:
                     return_line = np.vstack(
                         [
-                            image[self._scan_counter, 0, 1]
-                            * np.ones(self._return_YL.shape),
+                            image[self._scan_counter, 0, 1] * np.ones(self._return_YL.shape),
                             self._return_YL,
-                            image[self._scan_counter, 0, 2]
-                            * np.ones(self._return_YL.shape),
+                            image[self._scan_counter, 0, 2] * np.ones(self._return_YL.shape),
                             np.ones(self._return_YL.shape) * current_pos[3],
                         ]
                     )
@@ -1400,9 +1191,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             self.module_state.unlock()
             return -1
 
-        clock_status = self._adwin_scanning_device.set_up_scanner_clock(
-            clock_frequency=self._clock_frequency
-        )
+        clock_status = self._adwin_scanning_device.set_up_scanner_clock(clock_frequency=self._clock_frequency)
 
         if clock_status < 0:
             self._adwin_scanning_device.module_state.unlock()
@@ -1430,9 +1219,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         self.module_state.lock()
         self._adwin_scanning_device.module_state.lock()
 
-        clock_status = self._adwin_scanning_device.set_up_scanner_clock(
-            clock_frequency=self._clock_frequency
-        )
+        clock_status = self._adwin_scanning_device.set_up_scanner_clock(clock_frequency=self._clock_frequency)
 
         if clock_status < 0:
             self._adwin_scanning_device.module_state.unlock()
@@ -1466,9 +1253,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
             self.log.error("No output channels defined. Can initialize output task")
             return -1
 
-        clock_channel = "/{0}InternalOutput".format(
-            self._clk_task_handle.channel_names[0]
-        )
+        clock_channel = "/{0}InternalOutput".format(self._clk_task_handle.channel_names[0])
         sample_freq = float(self._clk_task_handle.co_channels.all.co_pulse_freq)
 
         # Set up analog input task
@@ -1477,9 +1262,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         try:
             ao_task = ni.Task(task_name)
         except ni.DaqError:
-            self.log.exception(
-                'Unable to create analog-in task with name "{0}".'.format(task_name)
-            )
+            self.log.exception('Unable to create analog-in task with name "{0}".'.format(task_name))
             self.terminate_all_tasks()
             return -1
 
@@ -1499,9 +1282,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 samps_per_chan=self.frame_size,
             )
         except ni.DaqError:
-            self.log.exception(
-                "Something went wrong while configuring the analog-in task."
-            )
+            self.log.exception("Something went wrong while configuring the analog-in task.")
             try:
                 del ao_task
             except NameError:
@@ -1537,9 +1318,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 del ao_task
             except NameError:
                 self.log.exception("Some weird namespace voodoo happened here...")
-            self.log.exception(
-                "Something went wrong while setting up the analog input reader."
-            )
+            self.log.exception("Something went wrong while setting up the analog input reader.")
             self.terminate_all_tasks()
             return -1
 
@@ -1557,9 +1336,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         input_limits = dict()
 
         if digital_sources:
-            input_limits.update(
-                {self._extract_terminal(key): [0, int(1e8)] for key in digital_sources}
-            )  # TODO Real HW constraint?
+            input_limits.update({self._extract_terminal(key): [0, int(1e8)] for key in digital_sources})  # TODO Real HW constraint?
 
         sample_rate_limits = (
             self._adwin_scanning_device.ao_min_rate,
@@ -1621,9 +1398,7 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
                 # TODO stop the processes... Doing nothing now...
 
             except Exception as e:
-                self.log.exception(
-                    "Error while trying to terminate digital counter task." + e
-                )
+                self.log.exception("Error while trying to terminate digital counter task." + e)
                 err = -1
             finally:
                 pass
@@ -1655,16 +1430,10 @@ class AdwinSamplingIO(FiniteSamplingIOInterface):
         """
         input_channels = tuple(self._extract_terminal(src) for src in input_channels)
 
-        di_channels = tuple(
-            channel
-            for channel in input_channels
-            if ("pfi" in channel) or ("tt" in channel)
-        )
+        di_channels = tuple(channel for channel in input_channels if ("pfi" in channel) or ("tt" in channel))
         ai_channels = tuple(channel for channel in input_channels if "ai" in channel)
 
-        assert (
-            di_channels or ai_channels
-        ), f"No channels could be extracted from {*input_channels,}"
+        assert di_channels or ai_channels, f"No channels could be extracted from {*input_channels,}"
 
         return tuple(di_channels), tuple(ai_channels)
 

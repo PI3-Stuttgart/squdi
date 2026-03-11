@@ -64,17 +64,11 @@ class PLEScanGui(GuiBase):
 
     # declare connectors
     _scanning_logic = Connector(name="scannerlogic", interface="PLEScannerLogic")
-    _optimize_logic = Connector(
-        name="optimizerlogic", interface="PLEOptimizeScannerLogic"
-    )
+    _optimize_logic = Connector(name="optimizerlogic", interface="PLEOptimizeScannerLogic")
     _data_logic = Connector(name="data_logic", interface="PleDataLogic")
     _microwave_logic = Connector(name="microwave", interface="OdmrLogic", optional=True)
-    _repump_logic = Connector(
-        name="repump", interface="RepumpInterfuseLogic", optional=True
-    )
-    _controller_logic = Connector(
-        name="controller", interface="ControllerInterfuseLogic", optional=True
-    )
+    _repump_logic = Connector(name="repump", interface="RepumpInterfuseLogic", optional=True)
+    _controller_logic = Connector(name="controller", interface="ControllerInterfuseLogic", optional=True)
 
     # status vars
     _window_state = StatusVar(name="window_state", default=None)
@@ -108,7 +102,16 @@ class PLEScanGui(GuiBase):
         self._scanning_logic._scan_id = self.module_uuid
         self.scan_axis = self._scanning_logic._scan_axis
         self.axis = self._scanning_logic.scanner_axes[self.scan_axis]
-        channel = self._scanning_logic.scanner_channels[self._scanning_logic._channel]
+
+        # channel = self._scanning_logic.scanner_channels[self._scanning_logic._channel]
+
+        channels = self._scanning_logic.scanner_channels
+
+        if self._scanning_logic._channel not in channels:
+            self.log.warning(f"Invalid channel '{self._scanning_logic._channel}', " f"falling back to '{next(iter(channels))}'")
+            self._scanning_logic._channel = next(iter(channels))
+
+        channel = channels[self._scanning_logic._channel]
 
         self._mw = PLEScanMainWindow(self.axis, channel)
 
@@ -116,72 +119,34 @@ class PLEScanGui(GuiBase):
         # self._mw.show()
         self.scan_state_updated(self._scanning_logic.module_state() != "idle")
         # Connect signals
-        self.sigScannerTargetChanged.connect(
-            self._scanning_logic.set_target_position, QtCore.Qt.QueuedConnection
-        )
-        self._scanning_logic.sigScannerTargetChanged.connect(
-            self.scanner_target_updated, QtCore.Qt.QueuedConnection
-        )
-        self.sigScanSettingsChanged.connect(
-            self._scanning_logic.set_scan_settings, QtCore.Qt.QueuedConnection
-        )
-        self._scanning_logic.sigUpdateAccumulated.connect(
-            self._update_accumulated_scan, QtCore.Qt.QueuedConnection
-        )
-        self._scanning_logic.sigToggleScan.connect(
-            self._scanning_logic.toggle_scan, QtCore.Qt.QueuedConnection
-        )
-        self._mw.actionToggle_scan.triggered.connect(
-            self.toggle_scan, QtCore.Qt.QueuedConnection
-        )
-        self._scanning_logic.sigRepeatScan.connect(
-            self.scan_repeated, QtCore.Qt.QueuedConnection
-        )
+        self.sigScannerTargetChanged.connect(self._scanning_logic.set_target_position, QtCore.Qt.QueuedConnection)
+        self._scanning_logic.sigScannerTargetChanged.connect(self.scanner_target_updated, QtCore.Qt.QueuedConnection)
+        self.sigScanSettingsChanged.connect(self._scanning_logic.set_scan_settings, QtCore.Qt.QueuedConnection)
+        self._scanning_logic.sigUpdateAccumulated.connect(self._update_accumulated_scan, QtCore.Qt.QueuedConnection)
+        self._scanning_logic.sigToggleScan.connect(self._scanning_logic.toggle_scan, QtCore.Qt.QueuedConnection)
+        self._mw.actionToggle_scan.triggered.connect(self.toggle_scan, QtCore.Qt.QueuedConnection)
+        self._scanning_logic.sigRepeatScan.connect(self.scan_repeated, QtCore.Qt.QueuedConnection)
 
-        self._scanning_logic.sigScanStateChanged.connect(
-            self.scan_state_updated, QtCore.Qt.QueuedConnection
-        )
+        self._scanning_logic.sigScanStateChanged.connect(self.scan_state_updated, QtCore.Qt.QueuedConnection)
         # self._scanning_logic.sigScannerTargetChanged.connect(
         #    self.scanner_target_updated, QtCore.Qt.QueuedConnection
         # )
-        self._scanning_logic.sigScanSettingsChanged.connect(
-            self.scanner_settings_updated, QtCore.Qt.QueuedConnection
-        )
-        self.sigToggleOptimize.connect(
-            self._optimize_logic().toggle_optimize, QtCore.Qt.QueuedConnection
-        )
-        self.sigOptimizerSettingsChanged.connect(
-            self._optimize_logic().set_optimize_settings, QtCore.Qt.QueuedConnection
-        )
+        self._scanning_logic.sigScanSettingsChanged.connect(self.scanner_settings_updated, QtCore.Qt.QueuedConnection)
+        self.sigToggleOptimize.connect(self._optimize_logic().toggle_optimize, QtCore.Qt.QueuedConnection)
+        self.sigOptimizerSettingsChanged.connect(self._optimize_logic().set_optimize_settings, QtCore.Qt.QueuedConnection)
 
-        self._mw.action_optimize_position.triggered[bool].connect(
-            self.toggle_optimize, QtCore.Qt.QueuedConnection
-        )
+        self._mw.action_optimize_position.triggered[bool].connect(self.toggle_optimize, QtCore.Qt.QueuedConnection)
         # self._mw.ple_widget.target_point.sigPositionChanged.connect(self.sliders_values_are_changing)
         # self._mw.ple_widget.selected_region.sigRegionChanged.connect(self.sliders_values_are_changing)
         # self._mw.ple_averaged_widget.selected_region.sigRegionChanged.connect(self.sliders_values_are_changing_averaged_data)
-        self._optimize_logic().sigOptimizeStateChanged.connect(
-            self.optimize_state_updated, QtCore.Qt.QueuedConnection
-        )
-        self._mw.ple_widget.target_point.sigPositionChanged.connect(
-            self.sliders_values_are_changing
-        )  # set_scanner_target_position
-        self._mw.ple_widget.target_point.sigPositionChangeFinished.connect(
-            self.set_scanner_target_position
-        )
-        self._mw.ple_widget.selected_region.sigRegionChangeFinished.connect(
-            self.region_value_changed
-        )
+        self._optimize_logic().sigOptimizeStateChanged.connect(self.optimize_state_updated, QtCore.Qt.QueuedConnection)
+        self._mw.ple_widget.target_point.sigPositionChanged.connect(self.sliders_values_are_changing)  # set_scanner_target_position
+        self._mw.ple_widget.target_point.sigPositionChangeFinished.connect(self.set_scanner_target_position)
+        self._mw.ple_widget.selected_region.sigRegionChangeFinished.connect(self.region_value_changed)
 
-        self._mw.ple_averaged_widget.target_point.sigPositionChanged.connect(
-            self.sliders_values_are_changing_averaged_data
-        )
-        self._mw.ple_averaged_widget.selected_region.sigRegionChangeFinished.connect(
-            self.region_value_changed_averaged_data
-        )
-        self._mw.ple_averaged_widget.target_point.sigPositionChangeFinished.connect(
-            self.set_scanner_target_position
-        )
+        self._mw.ple_averaged_widget.target_point.sigPositionChanged.connect(self.sliders_values_are_changing_averaged_data)
+        self._mw.ple_averaged_widget.selected_region.sigRegionChangeFinished.connect(self.region_value_changed_averaged_data)
+        self._mw.ple_averaged_widget.target_point.sigPositionChangeFinished.connect(self.set_scanner_target_position)
 
         # x_range = settings['range'][self.scan_axis]
         # dec_places = decimal_places = np.abs(int(f'{x_range[0]:e}'.split('e')[-1])) + 3
@@ -200,41 +165,25 @@ class PLEScanGui(GuiBase):
         self._repump_logic = self._repump_logic()
         if self._repump_logic is not None:
 
-            self._scanning_logic.sigRepeatScan.connect(
-                self._repump_logic.repump_before_scan, QtCore.Qt.QueuedConnection
-            )
+            self._scanning_logic.sigRepeatScan.connect(self._repump_logic.repump_before_scan, QtCore.Qt.QueuedConnection)
 
             self._mw.add_dock_widget("Pulsed")
-            self._mw.Pulsed_widget.sig_pulser_params_updated.connect(
-                self._repump_logic.pulser_updated, QtCore.Qt.QueuedConnection
-            )
-            self._repump_logic.sigGuiParamsUpdated.connect(
-                self._mw.Pulsed_widget.update_gui, QtCore.Qt.QueuedConnection
-            )
-            self._mw.Pulsed_widget.sig_prescan_repump.connect(
-                self.setup_repump_before_scan
-            )
+            self._mw.Pulsed_widget.sig_pulser_params_updated.connect(self._repump_logic.pulser_updated, QtCore.Qt.QueuedConnection)
+            self._repump_logic.sigGuiParamsUpdated.connect(self._mw.Pulsed_widget.update_gui, QtCore.Qt.QueuedConnection)
+            self._mw.Pulsed_widget.sig_prescan_repump.connect(self.setup_repump_before_scan)
             self._repump_logic.sigGuiParamsUpdated.emit(self._repump_logic.parameters)
 
         self._controller_logic = self._controller_logic()
         if self._controller_logic is not None:
 
             self._mw.add_dock_widget("Controller")
-            self._mw.Controller_widget.sig_controller_params_updated.connect(
-                self._controller_logic.params_updated, QtCore.Qt.QueuedConnection
-            )
-            self._controller_logic.sigGuiParamsUpdated.connect(
-                self._mw.Controller_widget.update_gui, QtCore.Qt.QueuedConnection
-            )
-            self._controller_logic.sigGuiParamsUpdated.emit(
-                self._controller_logic.parameters
-            )
+            self._mw.Controller_widget.sig_controller_params_updated.connect(self._controller_logic.params_updated, QtCore.Qt.QueuedConnection)
+            self._controller_logic.sigGuiParamsUpdated.connect(self._mw.Controller_widget.update_gui, QtCore.Qt.QueuedConnection)
+            self._controller_logic.sigGuiParamsUpdated.emit(self._controller_logic.parameters)
 
         # PLE tracking
         self._mw.actionTrackPLE.triggered.connect(
-            lambda: self._optimize_logic().toggle_ple_tracking(
-                self._mw.actionTrackPLE.isChecked()
-            ),
+            lambda: self._optimize_logic().toggle_ple_tracking(self._mw.actionTrackPLE.isChecked()),
             QtCore.Qt.QueuedConnection,
         )
         self.scanner_target_updated()
@@ -254,9 +203,7 @@ class PLEScanGui(GuiBase):
         self.setup_fit_widget()
         self.__connect_fit_control_signals()
 
-        self.sigSaveScan.connect(
-            self._data_logic().save_scan, QtCore.Qt.QueuedConnection
-        )
+        self.sigSaveScan.connect(self._data_logic().save_scan, QtCore.Qt.QueuedConnection)
         self.sigSaveFinished.connect(self._save_dialog.hide, QtCore.Qt.QueuedConnection)
         self._data_logic().sigSaveStateChanged.connect(self._track_save_status)
 
@@ -264,25 +211,17 @@ class PLEScanGui(GuiBase):
             lambda x: self._save_dialog.show() if x else self._save_dialog.hide(),
             QtCore.Qt.DirectConnection,
         )
-        self.save_path_widget.currPathLabel.setText(
-            "Default" if self._save_folderpath is None else self._save_folderpath
-        )
+        self.save_path_widget.currPathLabel.setText("Default" if self._save_folderpath is None else self._save_folderpath)
         self.save_path_widget.DailyPathCheckBox.clicked.connect(
-            lambda: self.save_path_widget.newPathCheckBox.setEnabled(
-                not self.save_path_widget.DailyPathCheckBox.isChecked()
-            )
+            lambda: self.save_path_widget.newPathCheckBox.setEnabled(not self.save_path_widget.DailyPathCheckBox.isChecked())
         )
 
         if self._save_folderpath is None:
             self.save_path_widget.DailyPathCheckBox.setChecked(True)
             self.save_path_widget.DailyPathCheckBox.clicked.emit()
 
-        self._mw.action_Save.triggered.connect(
-            lambda x: self.save_scan_data(scan_axes=None)
-        )
-        self._mw.actionSave.triggered.connect(
-            lambda x: self.save_scan_data(scan_axes=None)
-        )
+        self._mw.action_Save.triggered.connect(lambda x: self.save_scan_data(scan_axes=None))
+        self._mw.actionSave.triggered.connect(lambda x: self.save_scan_data(scan_axes=None))
         self._restore_window_geometry(self._mw)
         # self.load_view()
 
@@ -292,9 +231,7 @@ class PLEScanGui(GuiBase):
         """
         # Connect signals
         self.sigScannerTargetChanged.disconnect()
-        self._scanning_logic.sigScannerTargetChanged.disconnect(
-            self.scanner_target_updated
-        )
+        self._scanning_logic.sigScannerTargetChanged.disconnect(self.scanner_target_updated)
 
         self.sigScanSettingsChanged.disconnect()
         self._scanning_logic.sigUpdateAccumulated.disconnect()
@@ -302,9 +239,7 @@ class PLEScanGui(GuiBase):
         self._mw.actionToggle_scan.triggered.disconnect()
         self._scanning_logic.sigRepeatScan.disconnect()
         self._scanning_logic.sigScanStateChanged.disconnect(self.scan_state_updated)
-        self._scanning_logic.sigScanSettingsChanged.disconnect(
-            self.scanner_settings_updated
-        )
+        self._scanning_logic.sigScanSettingsChanged.disconnect(self.scanner_settings_updated)
 
         self.sigToggleOptimize.disconnect()
         self.sigOptimizerSettingsChanged.disconnect()
@@ -351,16 +286,12 @@ class PLEScanGui(GuiBase):
         )
 
         # Connect MainWindow actions
-        self._mw.action_optimizer_settings.triggered.connect(
-            lambda x: self._osd.exec_()
-        )
+        self._mw.action_optimizer_settings.triggered.connect(lambda x: self._osd.exec_())
 
         # Connect the action of the settings window with the code:
         self._osd.accepted.connect(self.change_optimizer_settings)
         self._osd.rejected.connect(self.update_optimizer_settings)
-        self._osd.button_box.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(
-            self.change_optimizer_settings
-        )
+        self._osd.button_box.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(self.change_optimizer_settings)
         # pull in data
         self.update_optimizer_settings()
         return
@@ -379,17 +310,13 @@ class PLEScanGui(GuiBase):
         # Connect the action of the settings dialog with the GUI module:
         self._psd.accepted.connect(self.apply_scanner_settings)
         self._psd.rejected.connect(self.restore_scanner_settings)
-        self._psd.button_box.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(
-            self.apply_scanner_settings
-        )
+        self._psd.button_box.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(self.apply_scanner_settings)
 
     @QtCore.Slot()
     def apply_scanner_settings(self):
         """ToDo: Document"""
         # ToDo: Implement backwards scanning functionality
-        forward_freq = {
-            ax: freq[0] for ax, freq in self._psd.settings_widget.frequency.items()
-        }
+        forward_freq = {ax: freq[0] for ax, freq in self._psd.settings_widget.frequency.items()}
         self.sigScanSettingsChanged.emit({"frequency": forward_freq})
 
         shift = {ax: shift for ax, shift in self._psd.settings_widget.shift.items()}
@@ -412,15 +339,10 @@ class PLEScanGui(GuiBase):
 
         # Adjust optimizer settings
         if "scan_sequence" in settings:
-            new_settings = self._optimize_logic().check_sanity_optimizer_settings(
-                settings
-            )
+            new_settings = self._optimize_logic().check_sanity_optimizer_settings(settings)
             if settings["scan_sequence"] != new_settings["scan_sequence"]:
                 new_seq = new_settings["scan_sequence"]
-                self.log.warning(
-                    f"Tried to update gui with illegal optimizer sequence= {settings['scan_sequence']}."
-                    f" Defaulted optimizer to= {new_seq}"
-                )
+                self.log.warning(f"Tried to update gui with illegal optimizer sequence= {settings['scan_sequence']}." f" Defaulted optimizer to= {new_seq}")
                 self._optimize_logic().scan_sequence = new_seq
             settings = new_settings
 
@@ -452,9 +374,7 @@ class PLEScanGui(GuiBase):
                         text=y_axis,
                         units=axes_constr[y_axis].unit,
                     )
-                    self.optimizer_dockwidget.set_image(
-                        None, axs=seq_step, extent=((-0.5, 0.5), (-0.5, 0.5))
-                    )
+                    self.optimizer_dockwidget.set_image(None, axs=seq_step, extent=((-0.5, 0.5), (-0.5, 0.5)))
 
                 # Adjust 1D plot y-axis label
                 if "data_channel" in settings and len(seq_step) == 1:
@@ -474,21 +394,11 @@ class PLEScanGui(GuiBase):
 
         mw_constraints = self._microwave_logic.microwave_constraints
         self._mw.Microwave_widget.set_constraints(mw_constraints)
-        self._mw.Microwave_widget.sig_microwave_params_updated.connect(
-            self._microwave_logic.set_cw_parameters
-        )
-        self._mw.Microwave_widget.sig_microwave_enabled.connect(
-            self._microwave_logic.toggle_cw_output
-        )
-        self._microwave_logic.sigCwParametersUpdated.connect(
-            self._mw.Microwave_widget.update_params
-        )
-        self._microwave_logic.sigCwStateUpdated.connect(
-            self._mw.Microwave_widget.enable_microwave
-        )
-        self._microwave_logic.sigCwParametersUpdated.emit(
-            self._microwave_logic.cw_parameters
-        )
+        self._mw.Microwave_widget.sig_microwave_params_updated.connect(self._microwave_logic.set_cw_parameters)
+        self._mw.Microwave_widget.sig_microwave_enabled.connect(self._microwave_logic.toggle_cw_output)
+        self._microwave_logic.sigCwParametersUpdated.connect(self._mw.Microwave_widget.update_params)
+        self._microwave_logic.sigCwStateUpdated.connect(self._mw.Microwave_widget.enable_microwave)
+        self._microwave_logic.sigCwParametersUpdated.emit(self._microwave_logic.cw_parameters)
 
     def _init_static_widgets(self):
         self.optimizer_dockwidget = OptimizerDockWidget(
@@ -524,20 +434,12 @@ class PLEScanGui(GuiBase):
             self.sigSaveFinished.emit()
 
     def setup_fit_widget(self):
-        self._fit_dockwidget = PleFitDockWidget(
-            parent=self._mw, fit_container=self._scanning_logic._fit_container
-        )
-        self._fit_config_dialog = FitConfigurationDialog(
-            parent=self._mw, fit_config_model=self._scanning_logic._fit_config_model
-        )
-        self._mw.action_show_fit_settings.triggered.connect(
-            self._fit_config_dialog.show
-        )
+        self._fit_dockwidget = PleFitDockWidget(parent=self._mw, fit_container=self._scanning_logic._fit_container)
+        self._fit_config_dialog = FitConfigurationDialog(parent=self._mw, fit_config_model=self._scanning_logic._fit_config_model)
+        self._mw.action_show_fit_settings.triggered.connect(self._fit_config_dialog.show)
         self._mw.addDockWidget(QtCore.Qt.TopDockWidgetArea, self._fit_dockwidget)
         self.sigDoFit.connect(self._scanning_logic.do_fit, QtCore.Qt.QueuedConnection)
-        self._scanning_logic.sigFitUpdated.connect(
-            self._update_fit_result, QtCore.Qt.QueuedConnection
-        )
+        self._scanning_logic.sigFitUpdated.connect(self._update_fit_result, QtCore.Qt.QueuedConnection)
 
     def __connect_fit_control_signals(self):
         self._fit_dockwidget.fit_widget.sigDoFit.connect(self._fit_clicked)
@@ -556,9 +458,7 @@ class PLEScanGui(GuiBase):
         # self.optimizer_dockwidget.
 
     def _fit_clicked(self, fit_config):
-        channel = self._scanning_logic.scanner_channels[
-            self._scanning_logic._channel
-        ]  # self._scan_control_dockwidget.selected_channel
+        channel = self._scanning_logic.scanner_channels[self._scanning_logic._channel]  # self._scan_control_dockwidget.selected_channel
         # range_index = #self._scan_control_dockwidget.selected_range
         self.sigDoFit.emit(fit_config, channel, self._fit_averaged)
 
@@ -580,9 +480,7 @@ class PLEScanGui(GuiBase):
                     self._mw.ple_averaged_widget.set_fit_data(None, None)
                 else:
                     self._fit_dockwidget.fit_widget.update_fit_result(*fit_cfg_result)
-                    self._mw.ple_averaged_widget.set_fit_data(
-                        *fit_cfg_result[1].high_res_best_fit
-                    )
+                    self._mw.ple_averaged_widget.set_fit_data(*fit_cfg_result[1].high_res_best_fit)
 
     @QtCore.Slot(bool)
     def toggle_optimize(self, enabled):
@@ -607,43 +505,28 @@ class PLEScanGui(GuiBase):
         self._mw.startDoubleSpinBox.editingFinished.connect(new_scan_range)
         self._mw.stopDoubleSpinBox.editingFinished.connect(new_scan_range)
         self._mw.frequencyDoubleSpinBox.editingFinished.connect(
-            lambda: self.sigScanSettingsChanged.emit(
-                {"frequency": {self.scan_axis: self._mw.frequencyDoubleSpinBox.value()}}
-            )
+            lambda: self.sigScanSettingsChanged.emit({"frequency": {self.scan_axis: self._mw.frequencyDoubleSpinBox.value()}})
         )
         self._mw.resolutionDoubleSpinBox.editingFinished.connect(
-            lambda: self.sigScanSettingsChanged.emit(
-                {
-                    "resolution": {
-                        self.scan_axis: self._mw.resolutionDoubleSpinBox.value()
-                    }
-                }
-            )
+            lambda: self.sigScanSettingsChanged.emit({"resolution": {self.scan_axis: self._mw.resolutionDoubleSpinBox.value()}})
         )
-        self._mw.actionFull_range.triggered.connect(
-            self._scanning_logic.set_full_scan_ranges, QtCore.Qt.QueuedConnection
-        )
+        self._mw.actionFull_range.triggered.connect(self._scanning_logic.set_full_scan_ranges, QtCore.Qt.QueuedConnection)
         # !ValueError: all the input array dimensions for the concatenation axis must match exactly, but along dimension 1, the array at index 0 has size 50 and the array at index 1 has size 100
         self._mw.number_of_repeats_SpinBox.editingFinished.connect(
-            lambda: self._scanning_logic.update_number_of_repeats(
-                self._mw.number_of_repeats_SpinBox.value()
-            )
+            lambda: self._scanning_logic.update_number_of_repeats(self._mw.number_of_repeats_SpinBox.value())
         )
 
         self._mw.constDoubleSpinBox.valueChanged.connect(self.const_changed)
 
-        self._mw.constDoubleSpinBox.editingFinished.connect(
-            self.set_scanner_target_position
-        )
+        self._mw.constDoubleSpinBox.editingFinished.connect(self.set_scanner_target_position)
 
     def toggle_scan(self):
 
         self._mw.elapsed_lines_DisplayWidget.display(self._scanning_logic._repeated)
-        self._mw.constDoubleSpinBox.setValue(self._mw.startDoubleSpinBox.value())
-        self._mw.constDoubleSpinBox.editingFinished.emit()
-        self._scanning_logic.sigToggleScan.emit(
-            self._mw.actionToggle_scan.isChecked(), [self.scan_axis], self.module_uuid
-        )
+        if not self._mw.actionToggle_scan.isChecked():
+            self._mw.constDoubleSpinBox.setValue(self._mw.startDoubleSpinBox.value())
+            self._mw.constDoubleSpinBox.editingFinished.emit()
+        self._scanning_logic.sigToggleScan.emit(self._mw.actionToggle_scan.isChecked(), [self.scan_axis], self.module_uuid)
 
     def show(self):
         """Make window visible and put it above all other windows."""
@@ -723,9 +606,7 @@ class PLEScanGui(GuiBase):
         # ToDo: Implement backwards scanning functionality
 
         if "resolution" in settings:
-            self._mw.resolutionDoubleSpinBox.setValue(
-                settings["resolution"][self.scan_axis]
-            )
+            self._mw.resolutionDoubleSpinBox.setValue(settings["resolution"][self.scan_axis])
         if "range" in settings:
             x_range = settings["range"][self.scan_axis]
 
@@ -736,37 +617,25 @@ class PLEScanGui(GuiBase):
             # self._mw.startDoubleSpinBox.update_value()
 
             y_range = (0, self._scanning_logic._number_of_repeats)
-            self._mw.matrix_widget.set_plot_range(
-                x_range=x_range
-            )  # , y_range = y_range)
+            self._mw.matrix_widget.set_plot_range(x_range=x_range)  # , y_range = y_range)
 
             self._mw.ple_widget.selected_region.setRegion(x_range)
-            self._mw.ple_widget.target_point.setValue(
-                self._scanning_logic.scanner_target[self._scanning_logic._scan_axis]
-            )
+            self._mw.ple_widget.target_point.setValue(self._scanning_logic.scanner_target[self._scanning_logic._scan_axis])
             self._mw.ple_widget.plot_widget.setRange(xRange=x_range)
 
             self._mw.ple_averaged_widget.selected_region.setRegion(x_range)
-            self._mw.ple_averaged_widget.target_point.setValue(
-                self._scanning_logic.scanner_target[self._scanning_logic._scan_axis]
-            )
+            self._mw.ple_averaged_widget.target_point.setValue(self._scanning_logic.scanner_target[self._scanning_logic._scan_axis])
             self._mw.ple_averaged_widget.plot_widget.setRange(xRange=x_range)
 
         if "frequency" in settings:
-            self._mw.frequencyDoubleSpinBox.setValue(
-                settings["frequency"][self.scan_axis]
-            )
+            self._mw.frequencyDoubleSpinBox.setValue(settings["frequency"][self.scan_axis])
 
         self._scanning_logic.reset_accumulated()
-        self._mw.number_of_repeats_SpinBox.setValue(
-            self._scanning_logic._number_of_repeats
-        )
+        self._mw.number_of_repeats_SpinBox.setValue(self._scanning_logic._number_of_repeats)
 
     @QtCore.Slot(bool, tuple)
     def scan_repeated(self, start, scan_axes):
-        self._mw.elapsed_lines_DisplayWidget.display(
-            self._scanning_logic.display_repeated
-        )
+        self._mw.elapsed_lines_DisplayWidget.display(self._scanning_logic.display_repeated)
 
     def set_scanner_target_position(self):
         """
@@ -842,9 +711,7 @@ class PLEScanGui(GuiBase):
                 elif scan_data.scan_dimension == 1:
                     x_ax = scan_data.scan_axes[0]
                     self.optimizer_dockwidget.set_plot_data(
-                        x=np.linspace(
-                            *scan_data.scan_range[0], scan_data.scan_resolution[0]
-                        ),
+                        x=np.linspace(*scan_data.scan_range[0], scan_data.scan_resolution[0]),
                         y=scan_data.data[channel],
                         axs=scan_data.scan_axes,
                     )
@@ -864,13 +731,9 @@ class PLEScanGui(GuiBase):
                 self._update_scan_data(scan_data)
             self.scan_data = scan_data
         if not self._optimizer_state["is_running"]:
-            self._toggle_enable_actions(
-                not is_running, exclude_action=self._mw.action_optimize_position
-            )
+            self._toggle_enable_actions(not is_running, exclude_action=self._mw.action_optimize_position)
         else:
-            self._toggle_enable_actions(
-                not is_running, exclude_action=self._mw.action_optimize_position
-            )
+            self._toggle_enable_actions(not is_running, exclude_action=self._mw.action_optimize_position)
         # self._toggle_enable_scan_crosshairs(not is_running)
         # self.scanner_settings_toggle_gui_lock(is_running)
 
@@ -892,9 +755,7 @@ class PLEScanGui(GuiBase):
         _is_optimizer_valid_2d = not is_running
 
         # self._toggle_enable_scan_buttons(not is_running)
-        self._toggle_enable_actions(
-            not is_running, exclude_action=self._mw.actionToggle_scan
-        )
+        self._toggle_enable_actions(not is_running, exclude_action=self._mw.actionToggle_scan)
         # self._toggle_enable_scan_crosshairs(not is_running)
         self._mw.action_optimize_position.setChecked(is_running)
         # self.scanner_settings_toggle_gui_lock(is_running)
@@ -907,49 +768,30 @@ class PLEScanGui(GuiBase):
             scan_axs = list(optimal_position.keys())
             if len(optimal_position) == 2:
                 _is_optimizer_valid_2d = True
-                self.optimizer_dockwidget.set_2d_position(
-                    tuple(optimal_position.values()), scan_axs
-                )
+                self.optimizer_dockwidget.set_2d_position(tuple(optimal_position.values()), scan_axs)
 
             elif len(optimal_position) == 1:
                 _is_optimizer_valid_1d = True
-                self.optimizer_dockwidget.set_1d_position(
-                    next(iter(optimal_position.values())), scan_axs
-                )
+                self.optimizer_dockwidget.set_1d_position(next(iter(optimal_position.values())), scan_axs)
 
                 # FIX!! not general AT ALL
-                self._mw.ple_widget.target_point.setValue(
-                    optimal_position[self._scanning_logic._scan_axis]
-                )
-                self._mw.ple_averaged_widget.target_point.setValue(
-                    optimal_position[self._scanning_logic._scan_axis]
-                )
-                self._mw.constDoubleSpinBox.setValue(
-                    optimal_position[self._scanning_logic._scan_axis]
-                )
+                self._mw.ple_widget.target_point.setValue(optimal_position[self._scanning_logic._scan_axis])
+                self._mw.ple_averaged_widget.target_point.setValue(optimal_position[self._scanning_logic._scan_axis])
+                self._mw.constDoubleSpinBox.setValue(optimal_position[self._scanning_logic._scan_axis])
 
-        if (
-            fit_data is not None
-            and np.any("full_fit_res" in fit_data)
-            and np.any("fit_data" in fit_data)
-            and isinstance(optimal_position, dict)
-        ):
+        if fit_data is not None and np.any("full_fit_res" in fit_data) and np.any("fit_data" in fit_data) and isinstance(optimal_position, dict):
             data = fit_data["fit_data"]
             fit_res = fit_data["full_fit_res"]
             if data.ndim == 1:
                 self.optimizer_dockwidget.set_fit_data(scan_axs, y=data)
                 sig_z = fit_res.params["sigma"].value
-                self.optimizer_dockwidget.set_1d_position(
-                    next(iter(optimal_position.values())), scan_axs, sigma=sig_z
-                )
+                self.optimizer_dockwidget.set_1d_position(next(iter(optimal_position.values())), scan_axs, sigma=sig_z)
             elif data.ndim == 2:
                 sig_x, sig_y = (
                     fit_res.params["sigma_x"].value,
                     fit_res.params["sigma_y"].value,
                 )
-                self.optimizer_dockwidget.set_2d_position(
-                    tuple(optimal_position.values()), scan_axs, sigma=[sig_x, sig_y]
-                )
+                self.optimizer_dockwidget.set_2d_position(tuple(optimal_position.values()), scan_axs, sigma=[sig_x, sig_y])
 
         # Hide crosshair and 1d marker when scanning
         if len(scan_axs) == 2:
@@ -976,13 +818,9 @@ class PLEScanGui(GuiBase):
                 data_new = data[~np.all(data == 0, axis=1)]
                 if data_new.size > 1:
                     last_row = data_new[-1, :]
-                    mask = np.ones_like(
-                        data_new, dtype=bool
-                    )  # Initialize a full True mask
+                    mask = np.ones_like(data_new, dtype=bool)  # Initialize a full True mask
                     mask[-1, :] = last_row != 0
-                    averaged_data[channel] = np.sum(mask * data_new, axis=0) / np.sum(
-                        mask, axis=0
-                    )
+                    averaged_data[channel] = np.sum(mask * data_new, axis=0) / np.sum(mask, axis=0)
                 else:
                     averaged_data[channel] = data.mean(axis=0)
             self._mw.ple_averaged_widget.set_scan_data(averaged_data, scan_data)
@@ -1002,13 +840,8 @@ class PLEScanGui(GuiBase):
         """
 
         name_tag = self.save_path_widget.saveTagLineEdit.text()
-        if (
-            self.save_path_widget.newPathCheckBox.isChecked()
-            and self.save_path_widget.newPathCheckBox.isEnabled()
-        ):
-            new_path = QtWidgets.QFileDialog.getExistingDirectory(
-                self._mw, "Select Folder"
-            )
+        if self.save_path_widget.newPathCheckBox.isChecked() and self.save_path_widget.newPathCheckBox.isEnabled():
+            new_path = QtWidgets.QFileDialog.getExistingDirectory(self._mw, "Select Folder")
             if new_path:
                 self._save_folderpath = new_path
                 self.save_path_widget.currPathLabel.setText(self._save_folderpath)

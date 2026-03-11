@@ -35,16 +35,18 @@ from qudi.util.mutex import Mutex
 
 import qudi.hardware.wavemeter.high_finesse_constants as high_finesse_constants
 from qudi.hardware.wavemeter.high_finesse_wrapper import load_dll, setup_dll, MIN_VERSION
+
 if TYPE_CHECKING:
     from qudi.hardware.wavemeter.high_finesse_wavemeter import HighFinesseWavemeter
 
 
-THREAD_NAME_WATCHDOG = 'wavemeter_callback_error_watchdog'
+THREAD_NAME_WATCHDOG = "wavemeter_callback_error_watchdog"
 
 
 class Watchdog(QObject):
     """A watchdog that can take care of errors in the callback function and checks for other changes."""
-    def __init__(self, proxy: 'HighFinesseProxy', watch_interval: float):
+
+    def __init__(self, proxy: "HighFinesseProxy", watch_interval: float):
         super().__init__()
         self._proxy = proxy
         self.log = get_logger(__name__)
@@ -55,7 +57,7 @@ class Watchdog(QObject):
         while not self._stop:
             if self._proxy.error_in_callback:
                 self.handle_error()
-            if self._proxy.module_state() == 'locked':
+            if self._proxy.module_state() == "locked":
                 self.check_for_channel_activation_change()
             time.sleep(self._watch_interval)
 
@@ -65,11 +67,11 @@ class Watchdog(QObject):
     def check_for_channel_activation_change(self) -> None:
         actual_active_channels = set(self._proxy.get_active_channels())
         if self._proxy.get_connected_channels() != actual_active_channels:
-            self.log.warning('Channel was deactivated or activated through GUI.')
+            self.log.warning("Channel was deactivated or activated through GUI.")
             self._proxy.stop_everything()
 
     def handle_error(self) -> None:
-        self.log.warning('Error in callback function.')
+        self.log.warning("Error in callback function.")
         self._proxy.stop_everything()
         self._proxy.error_in_callback = False
 
@@ -85,7 +87,7 @@ class HighFinesseProxy(Base):
             watchdog_interval: 1.0  # how often the watchdog checks for errors/changes in s
     """
 
-    _watchdog_interval: float = ConfigOption(name='watchdog_interval', default=1.0)
+    _watchdog_interval: float = ConfigOption(name="watchdog_interval", default=1.0)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -98,37 +100,35 @@ class HighFinesseProxy(Base):
         self.error_in_callback: bool = False
         self._wm_has_switch: bool = False
 
-        self._connected_instream_modules: Dict['HighFinesseWavemeter', Set[int]] = {}
+        self._connected_instream_modules: Dict["HighFinesseWavemeter", Set[int]] = {}
 
     def on_activate(self) -> None:
         if self._check_for_second_instance():
-            raise RuntimeError('There is already a running proxy instance. '
-                               'Did you configure more than a single instance of this proxy?')
+            raise RuntimeError("There is already a running proxy instance. " "Did you configure more than a single instance of this proxy?")
 
         # load and prepare the wavemeter DLL
         try:
             self._wavemeter_dll = load_dll()
         except FileNotFoundError as e:
-            raise ValueError('There is no wavemeter installed on this computer.\n'
-                             'Please install a High Finesse wavemeter and try again.') from e
+            raise ValueError("There is no wavemeter installed on this computer.\n" "Please install a High Finesse wavemeter and try again.") from e
         else:
             v = [self._wavemeter_dll.GetWLMVersion(i) for i in range(4)]
             if v[0] == high_finesse_constants.GetFrequencyError.ErrWlmMissing.value:
-                raise RuntimeError('The wavemeter application is not active. '
-                                   'Start the wavemeter application before activating the qudi module.')
+                raise RuntimeError("The wavemeter application is not active. " "Start the wavemeter application before activating the qudi module.")
 
-            self.log.info(f'Successfully loaded wavemeter DLL of WS{v[0]} {v[1]},'
-                          f' software revision {v[2]}, compilation number {v[3]}.')
+            self.log.info(f"Successfully loaded wavemeter DLL of WS{v[0]} {v[1]}," f" software revision {v[2]}, compilation number {v[3]}.")
 
         software_rev = v[2]
         if software_rev < MIN_VERSION:
-            self.log.warning(f'The wavemeter DLL software revision {software_rev} is older than the lowest revision '
-                             f'tested to be working with the wrapper ({MIN_VERSION}). '
-                             f'Setting up the wavemeter DLL might fail.')
+            self.log.warning(
+                f"The wavemeter DLL software revision {software_rev} is older than the lowest revision "
+                f"tested to be working with the wrapper ({MIN_VERSION}). "
+                f"Setting up the wavemeter DLL might fail."
+            )
         try:
             setup_dll(self._wavemeter_dll)
         except AttributeError:
-            self.log.warning('One or more function is not available. The wavemeter version is likely outdated.')
+            self.log.warning("One or more function is not available. The wavemeter version is likely outdated.")
 
         # try to activate the multi-channel switch and check if switch is present
         self._wavemeter_dll.SetSwitcherMode(True)
@@ -144,7 +144,7 @@ class HighFinesseProxy(Base):
         self._tear_down_watchdog()
         del self._wavemeter_dll
 
-    def connect_instreamer(self, module: 'HighFinesseWavemeter', channels: List[int]):
+    def connect_instreamer(self, module: "HighFinesseWavemeter", channels: List[int]):
         """
         Connect an instreamer module to the proxy.
         The proxy will start to put new samples into the instreamer buffer.
@@ -161,10 +161,10 @@ class HighFinesseProxy(Base):
                 self._start_measurement()
                 self._start_callback()
         else:
-            self.log.warning('Instream module is already connected.')
+            self.log.warning("Instream module is already connected.")
 
-    def disconnect_instreamer(self, module: 'HighFinesseWavemeter'):
-        """ Disconnect an instreamer module from the proxy. """
+    def disconnect_instreamer(self, module: "HighFinesseWavemeter"):
+        """Disconnect an instreamer module from the proxy."""
         if module in self._connected_instream_modules:
             channels_disconnecting_instreamer = self._connected_instream_modules[module]
             with self._lock:
@@ -173,10 +173,10 @@ class HighFinesseProxy(Base):
                     self._stop_callback()
                 else:
                     # deactivate channels that are not connected by other instreamers
-                    for ch in (channels_disconnecting_instreamer - self.get_connected_channels()):
+                    for ch in channels_disconnecting_instreamer - self.get_connected_channels():
                         self._deactivate_channel(ch)
         else:
-            self.log.warning('Instream module is not connected and can therefore not be disconnected.')
+            self.log.warning("Instream module is not connected and can therefore not be disconnected.")
 
     def sample_rate(self) -> float:
         """
@@ -197,11 +197,10 @@ class HighFinesseProxy(Base):
         return 1e3 / turnaround_time_ms
 
     def set_exposure_time(self, ch: int, exp_time: float) -> None:
-        """ Set the exposure time for a specific switch channel. """
+        """Set the exposure time for a specific switch channel."""
         err = self._wavemeter_dll.SetExposureNum(ch, 1, exp_time)
         if err:
-            raise RuntimeError(f'Wavemeter error while setting exposure time of channel {ch}: '
-                               f'{high_finesse_constants.ResultError(err)}')
+            raise RuntimeError(f"Wavemeter error while setting exposure time of channel {ch}: " f"{high_finesse_constants.ResultError(err)}")
 
     def get_active_channels(self) -> List[int]:
         """
@@ -231,7 +230,7 @@ class HighFinesseProxy(Base):
 
     def stop_everything(self) -> None:
         """Meant to be called from watchdog."""
-        self.log.warning('Stopping all streams.')
+        self.log.warning("Stopping all streams.")
         streamers = list(self._connected_instream_modules).copy()
         self._stop_callback()
         self._connected_instream_modules = {}
@@ -246,37 +245,34 @@ class HighFinesseProxy(Base):
         return THREAD_NAME_WATCHDOG in self._thread_manager.thread_names
 
     def _activate_channel(self, ch: int) -> None:
-        """ Activate a channel on the multi-channel switch. """
+        """Activate a channel on the multi-channel switch."""
         if not self._wm_has_switch:
             if ch == 1:
                 return
             else:
-                raise RuntimeError(f'Cannot activate channel {ch}: wavemeter does not have a multi-channel switch.')
+                raise RuntimeError(f"Cannot activate channel {ch}: wavemeter does not have a multi-channel switch.")
 
         err = self._wavemeter_dll.SetSwitcherSignalStates(ch, 1, 1)
         if err:
-            raise RuntimeError(
-                f'Wavemeter error while activating channel {ch}: {high_finesse_constants.ResultError(err)}'
-            )
+            raise RuntimeError(f"Wavemeter error while activating channel {ch}: {high_finesse_constants.ResultError(err)}")
 
     def _deactivate_channel(self, ch: int) -> None:
-        """ Deactivate a channel on the multi-channel switch. """
+        """Deactivate a channel on the multi-channel switch."""
         if not self._wm_has_switch:
             if ch == 1:
                 return
             else:
-                raise RuntimeError(f'Cannot deactivate channel {ch}: wavemeter does not have a multi-channel switch.')
+                raise RuntimeError(f"Cannot deactivate channel {ch}: wavemeter does not have a multi-channel switch.")
 
         err = self._wavemeter_dll.SetSwitcherSignalStates(ch, 0, 0)
         if err:
-            raise RuntimeError(f'Wavemeter error while deactivating channel {ch}: '
-                               f'{high_finesse_constants.ResultError(err)}')
+            raise RuntimeError(f"Wavemeter error while deactivating channel {ch}: " f"{high_finesse_constants.ResultError(err)}")
 
     def _activate_only_connected_channels(self) -> None:
         """Activate all channels active on a connected instreamer and disable all others."""
         connected_channels = self.get_connected_channels()
         if not connected_channels:
-            raise RuntimeError('Cannot deactivate all channels.')
+            raise RuntimeError("Cannot deactivate all channels.")
 
         for ch in connected_channels:
             self._activate_channel(ch)
@@ -289,36 +285,44 @@ class HighFinesseProxy(Base):
             self._wavemeter_dll.SetSwitcherMode(True)
         err = self._wavemeter_dll.Operation(high_finesse_constants.cCtrlStartMeasurement)
         if err:
-            raise RuntimeError(f'Wavemeter error while starting measurement: {high_finesse_constants.ResultError(err)}')
+            raise RuntimeError(f"Wavemeter error while starting measurement: {high_finesse_constants.ResultError(err)}")
 
-#### Implementing slowly options to trigger the lock
+    def get_laser_piezo_voltage(self, ch: int) -> float:
+        return self._wavemeter_dll.GetDeviationSignal(ch)
+
+    def set_laser_piezo_voltage(self, voltage: float) -> None:
+        err = self._wavemeter_dll.SetDeviationSignal(voltage)
+        if err:
+            raise RuntimeError(f"Could not set laser piezo voltage: {high_finesse_constants.ResultError(err)}")
+
+    #### Implementing slowly options to trigger the lock
     def toggle_locking(self, state: bool) -> None:
         err = self._wavemeter_dll.SetDeviationMode(state)
         if err:
-            raise RuntimeError(f'Could not start or stop locking: {high_finesse_constants.ResultError(err)}')
+            raise RuntimeError(f"Could not start or stop locking: {high_finesse_constants.ResultError(err)}")
 
     def set_reference_wavelength(self, wavelength: float) -> None:
         # TODO: The unit is the unit selected in the software and not always wavelegnth in nm!!!
-        print(str(wavelength).replace('.', ',').encode(encoding="utf-8"))
-        buffer_wavelength = ctypes.create_string_buffer(str(wavelength).replace('.', ',').encode(encoding="utf-8"))
-        err = self._wavemeter_dll.SetPIDCourse(buffer_wavelength) # nm
+        print(str(wavelength).replace(".", ",").encode(encoding="utf-8"))
+        buffer_wavelength = ctypes.create_string_buffer(str(wavelength).replace(".", ",").encode(encoding="utf-8"))
+        err = self._wavemeter_dll.SetPIDCourse(buffer_wavelength)  # nm
         err2 = self._wavemeter_dll.SetDeviationReference(wavelength)
         if err:
-            raise RuntimeError(f'Could not set reference wavelength: {high_finesse_constants.ResultError(err)}')
+            raise RuntimeError(f"Could not set reference wavelength: {high_finesse_constants.ResultError(err)}")
         if err2:
-            raise RuntimeError(f'Could not set reference wavelength: {high_finesse_constants.ResultError(err2)}')
-    
+            raise RuntimeError(f"Could not set reference wavelength: {high_finesse_constants.ResultError(err2)}")
 
-    def get_reference_wavelength(self, offset= 0) -> float:
+    def get_reference_wavelength(self, offset=0) -> float:
         # doesn't work (or I'm, which is more likly, stupid). Returns always wrong value and doesnt react to changes
         # TODO: The unit is the unit selected in the software and not always wavelegnth in nm!!!
         buffer = ctypes.create_string_buffer(50)
-        err = self._wavemeter_dll.GetPIDCourse(buffer) # nm     
+        err = self._wavemeter_dll.GetPIDCourse(buffer)  # nm
         if err:
-            raise RuntimeError(f'Could not get reference wavelength: {high_finesse_constants.ResultError(err)}')
-        
-        return float(buffer.value.decode('utf-8').replace(',','.'))
-####
+            raise RuntimeError(f"Could not get reference wavelength: {high_finesse_constants.ResultError(err)}")
+
+        return float(buffer.value.decode("utf-8").replace(",", "."))
+
+    ####
 
     def _set_up_watchdog(self) -> None:
         self._watchdog_thread = self._thread_manager.get_new_thread(THREAD_NAME_WATCHDOG)
@@ -333,28 +337,29 @@ class HighFinesseProxy(Base):
         del self._watchdog
 
     def _start_callback(self) -> None:
-        """ Start the callback procedure. """
+        """Start the callback procedure."""
         self._callback_function = self._get_callback_function()
         self._wavemeter_dll.Instantiate(
             high_finesse_constants.cInstNotification,  # long ReasonForCall
             high_finesse_constants.cNotifyInstallCallbackEx,  # long Mode
             cast(self._callback_function, POINTER(c_long)),  # long P1: function
-            0  # long P2: callback thread priority, 0 = standard
+            0,  # long P2: callback thread priority, 0 = standard
         )
         self.module_state.lock()
-        self.log.debug('Started callback procedure.')
+        self.log.debug("Started callback procedure.")
 
     def _stop_callback(self) -> None:
-        """ Stop the callback procedure. """
+        """Stop the callback procedure."""
         self._wavemeter_dll.Instantiate(
             high_finesse_constants.cInstNotification,  # long ReasonForCall
             high_finesse_constants.cNotifyRemoveCallback,  # long mode
             cast(self._callback_function, POINTER(c_long)),
             # long P1: function
-            0)  # long P2: callback thread priority, 0 = standard
+            0,
+        )  # long P2: callback thread priority, 0 = standard
         self._callback_function = None
         self.module_state.unlock()
-        self.log.debug('Stopped callback procedure.')
+        self.log.debug("Stopped callback procedure.")
 
     def _get_callback_function(self) -> WINFUNCTYPE:
         """
@@ -362,6 +367,7 @@ class HighFinesseProxy(Base):
         is available or any of the wavelength meter's states changes.
         :return: callback function
         """
+
         def handle_callback(version, mode: int, intval: int, dblval: float, res1) -> int:
             """
             Function called upon wavelength meter state change or if a new measurement result is available.
@@ -381,15 +387,15 @@ class HighFinesseProxy(Base):
             """
             # check if an evil user messed with the manufacturer GUI
             if mode == high_finesse_constants.cmiOperation and intval == high_finesse_constants.cStop:
-                self.log.warning('Wavemeter acquisition was stopped during stream.')
+                self.log.warning("Wavemeter acquisition was stopped during stream.")
                 self.error_in_callback = True
                 return 0
             elif mode == high_finesse_constants.cmiSwitcherMode:
-                self.log.warning('Wavemeter switcher mode was changed during stream.')
+                self.log.warning("Wavemeter switcher mode was changed during stream.")
                 self.error_in_callback = True
                 return 0
             elif mode == high_finesse_constants.cmiPulseMode:
-                self.log.warning('Wavemeter pulse mode was changed during stream.')
+                self.log.warning("Wavemeter pulse mode was changed during stream.")
                 self.error_in_callback = True
                 return 0
 

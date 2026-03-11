@@ -76,9 +76,7 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
         self._constraints = ProcessControlConstraints(
             setpoint_channels=self._ao_channel_config.keys(),
             units={ch: "V" for ch in self._ao_channel_config},
-            limits={
-                ch: config["limits"] for ch, config in self._ao_channel_config.items()
-            },
+            limits={ch: config["limits"] for ch, config in self._ao_channel_config.items()},
             dtypes={ch: float for ch in self._ao_channel_config},
         )
         self.get_laser_state()
@@ -258,10 +256,7 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
         value = float(value)
 
         if not self.constraints.channel_value_in_range(channel, value)[0]:
-            raise ValueError(
-                f'Setpoint {value} for channel "{channel}" out of allowed '
-                f"value bounds {self.constraints.channel_limits[channel]}"
-            )
+            raise ValueError(f'Setpoint {value} for channel "{channel}" out of allowed ' f"value bounds {self.constraints.channel_limits[channel]}")
         self.dlc.laser1.wide_scan.value_set.set(value)
 
     @connect_laser
@@ -271,15 +266,15 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
 
     @connect_laser
     def set_pc_voltage(self, voltage):
-        return self.dlc.laser1.pc.voltage_set.set(voltage)
+        return self.dlc.laser1.dl.pc.voltage_set.set(voltage)
 
     @connect_laser
     def get_pc_voltage_set(self):
-        return self.dlc.laser1.pc.voltage_set.get()
+        return self.dlc.laser1.dl.pc.voltage_set.get()
 
     @connect_laser
     def get_pc_voltage_act(self):
-        return self.dlc.laser1.pc.voltage_act.get()
+        return self.dlc.laser1.dl.pc.voltage_act.get()
 
     @connect_laser
     def set_scan_parameters(
@@ -292,9 +287,7 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
         voltages in Volts
         sweep in seconds
         """
-        self.dlc.laser1.wide_scan.scan_begin.set(
-            voltage_start - self.detune_for_trigger
-        )  # fix the 0.01
+        self.dlc.laser1.wide_scan.scan_begin.set(voltage_start - self.detune_for_trigger)  # fix the 0.01
         self.dlc.laser1.wide_scan.trigger.output_threshold.set(voltage_start)
 
         self.dlc.laser1.wide_scan.scan_end.set(voltage_stop)
@@ -333,9 +326,7 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
     @property
     @connect_laser
     def ao_channel(self):
-        return get_key_by_value(
-            self.channel_mapping, self.dlc.laser1.wide_scan.output_channel.get()
-        )
+        return get_key_by_value(self.channel_mapping, self.dlc.laser1.wide_scan.output_channel.get())
 
     @ao_channel.setter
     @connect_laser

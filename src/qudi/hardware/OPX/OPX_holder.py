@@ -1,4 +1,5 @@
 import json
+
 from qm import SimulationConfig, LoopbackInterface
 from qm.grpc.qua import QuaProgramArrayVarRefExpression, QuaProgramVarRefExpression
 from qm.qua import *
@@ -9,19 +10,24 @@ from qm.qua._expressions import QuaVariable
 
 # from configuration import *
 import importlib
+import sys
 from typing import Dict, Tuple, Any, Union
-
+import time
 import qm.exceptions
 from qualang_tools.control_panel import ManualOutputControl
 import qm
 from qudi.core.configoption import ConfigOption
 from qudi.util.mutex import RecursiveMutex
 from qudi.core.module import Base
-from qudi.hardware.OPX.configuration import *
+
+# from qudi.hardware.OPX.configuration import *
+
+config_module = importlib.import_module("qudi.hardware.OPX.configuration")
+globals().update({name: getattr(config_module, name) for name in dir(config_module) if not name.startswith("_")})
 
 
 # class OPXmanual(Base):
-#   ### TODO manualoutputcontrol.
+# TODO manualoutputcontrol.
 
 
 class OPX(Base):  # hardware, awg,
@@ -32,9 +38,7 @@ class OPX(Base):  # hardware, awg,
         options:
     """
 
-    _qm_config_file = ConfigOption(
-        name="qm_config_file", default="configuration", missing="nothing"
-    )
+    _qm_config_file = ConfigOption(name="qm_config_file", default="configuration", missing="nothing")
 
     _configuration: Any
     _qm_manual_output_control = None
@@ -54,10 +58,11 @@ class OPX(Base):  # hardware, awg,
     def on_activate(self) -> None:
         """Loads QM config and establishs connection to OPX+"""
         # import QuantumMachines configuration python file
-        self._configuration = importlib.import_module(
-            f"qudi.hardware.OPX.{self._qm_config_file}"
-        )
+        self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
+        globals().update({name: getattr(self._configuration, name) for name in dir(self._configuration) if not name.startswith("_")})
+
         # Establish connection to OPX+
+
         self._connect_to_OPX()
 
     def _volt2amp(self, voltage: float) -> float:
@@ -77,58 +82,55 @@ class OPX(Base):  # hardware, awg,
         self.run_cw_mode()
 
     def run_cw_mode(self) -> None:
-        curr_do: list = [
-            key for key, value in self.cw_do_states.items() if value == "on"
-        ]
-        curr_ao = {
-            key: value for key, value in self.cw_ao_values.items() if value != 0.0
-        }
-        dict_curr_do = {
-            key: (value == "on") for key, value in self.cw_do_states.items()
-        }
+        """Runs a continuous wave program on the OPX that sets the digital and analog outputs as specified in the dictionaries."""
+
+        ls_curr_do: list = [key for key, value in self.cw_do_states.items() if value == "on"]
+        dict_curr_ao = {key: value for key, value in self.cw_ao_values.items() if value != 0.0}
         # check if any output should be set, if not stop the current qm program
-        if not curr_do and not curr_ao:
+        if not ls_curr_do and not dict_curr_ao:
             if self.cw_job:
                 self.cw_job.halt()
         else:
             duration = 1 * u.us
-
             with program() as cw_program:
                 with infinite_loop_():
 
-                    for ao, power in curr_ao.items():
+                    for ao, power in dict_curr_ao.items():
                         # checks if same element also uses digital output
-                        pulse = "pulse" if ao in curr_do else "power"
+                        pulse = "pulse" if ao in ls_curr_do else "power"
                         play(
                             pulse * amp(self._volt2amp(power)),
                             ao,
                             duration=duration,
                         )
-                    for do in curr_do:
-                        if not do in curr_ao.keys():
+                    for do in ls_curr_do:
+                        if not do in dict_curr_ao.keys():
                             play("active", do, duration=duration)
 
             # self.simulate(cw_program, plot=True)
-            print(self._volt2amp(self.cw_ao_values["LaserScanner_red"]))
-            self.cw_job = self.qm.execute(cw_program)
+            try:
+                self.cw_job = self.qm.execute(cw_program)
+            except BaseException:
+                self._connect_to_OPX()
+                self.cw_job = self.qm.execute(cw_program)
 
     def stop_cw_mode(self):
-        pass
+        self.cw_job.halt()
 
     @property
     def qm(self):
         return self._qm
 
-    def simulate(self, sequence, save_path=None, plot=False, duration=1_000):
+    def simulate(self, sequence, save_path=None, plot=False, duration=10_000):
         """
         :param sequence: program() of the opx to simulate
         :return: opens a plotly html window with the sequence.
         """
+        t0 = time.time()
+
         self.log.info("simulate")
         simulation_config = SimulationConfig(duration=duration)  # In clock cycles = 4ns
-        job_sim = self.qmm.simulate(
-            self._configuration.config, sequence, simulation_config
-        )
+        job_sim = self.qmm.simulate(self._configuration.config, sequence, simulation_config)
         # Simulate blocks python until the simulation is done
         # job_sim.get_simulated_samples().con1
         # job_sim.get_simulated_samples().con1.plot()
@@ -136,15 +138,16 @@ class OPX(Base):  # hardware, awg,
         # get DAC and digital samples (optional).
         samples = job_sim.get_simulated_samples()
         # get the waveform report object
+
         waveform_report = job_sim.get_simulated_waveform_report()
         waveform_dict = waveform_report.to_dict()
         if not save_path is None:
             with open(os.path.join(save_path, "awg_file.json"), "w") as fp:
                 json.dump(waveform_dict, fp)
         if plot:
-            waveform_report.create_plot(
-                samples, plot=plot, save_path="./" if save_path is None else save_path
-            )
+            waveform_report.create_plot(samples, plot=plot, save_path="./" if save_path is None else save_path)
+        t1 = time.time()
+        print("simulation", t1 - t0)
 
     def _connect_to_OPX(self) -> None:
         try:
@@ -156,9 +159,7 @@ class OPX(Base):  # hardware, awg,
             self._qm = self.qmm.open_qm(config=self._configuration.config)
 
         except qm.exceptions.OpenQmException:
-            self.log.warning(
-                "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
-            )
+            self.log.warning("Could not connect to OPX with keeping previous connections. Previouse connections disconnected.")
             pass  # do nothing for now...
 
     @property
@@ -168,7 +169,13 @@ class OPX(Base):  # hardware, awg,
 
     def stop_awgs(self):
         """Stop all the tasks of the OPX..."""
-        pass
+        # TODO: implement stopping all awgs
+
+    def update_config(self):
+        if self._configuration in sys.modules:
+            del sys.modules[self._configuration]
+        self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
+        globals().update({name: getattr(self._configuration, name) for name in dir(self._configuration) if not name.startswith("_")})
 
     @property
     def name(self) -> str:

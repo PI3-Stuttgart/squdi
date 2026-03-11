@@ -111,11 +111,7 @@ class AOGui(GuiBase):
         self._power_calibration_dialog = CalibrateWaitDialog(self._mw)
 
         self.sigShowPowerCalibrationDialog.connect(
-            lambda x: (
-                self._power_calibration_dialog.show()
-                if x
-                else self._power_calibration_dialog.hide()
-            ),
+            lambda x: (self._power_calibration_dialog.show() if x else self._power_calibration_dialog.hide()),
             QtCore.Qt.DirectConnection,
         )
 
@@ -127,23 +123,15 @@ class AOGui(GuiBase):
         self.calibration_worker.finished.connect(self._calibration_measurement_finished)
         self.calibration_thread.start()
 
-        self.sigSetpointChanged.connect(
-            self.aologic().set_setpoint, QtCore.Qt.QueuedConnection
-        )
+        self.sigSetpointChanged.connect(self.aologic().set_setpoint, QtCore.Qt.QueuedConnection)
         # self.sigCalibratePower.connect(
         #     self.power_conversion().calibrate_power,
         #     QtCore.Qt.QueuedConnection,
         # )
 
-        self._mw.action_periodic_state_check.toggled.connect(
-            self.aologic().toggle_watchdog, QtCore.Qt.QueuedConnection
-        )
-        self.aologic().sigWatchdogToggled.connect(
-            self._watchdog_updated, QtCore.Qt.QueuedConnection
-        )
-        self.aologic().sigSetpointsChanged.connect(
-            self._sliders_updated, QtCore.Qt.QueuedConnection
-        )
+        self._mw.action_periodic_state_check.toggled.connect(self.aologic().toggle_watchdog, QtCore.Qt.QueuedConnection)
+        self.aologic().sigWatchdogToggled.connect(self._watchdog_updated, QtCore.Qt.QueuedConnection)
+        self.aologic().sigSetpointsChanged.connect(self._sliders_updated, QtCore.Qt.QueuedConnection)
 
         self._restore_window_geometry(self._mw)
         self._watchdog_updated(self.aologic().watchdog_active)
@@ -164,7 +152,7 @@ class AOGui(GuiBase):
         self.calibration_thread.terminate()
 
         self._save_window_geometry(self._mw)
-        self._delete_switches()
+        # self._delete_switches()
         self._mw.close()
 
     def show(self):
@@ -175,9 +163,7 @@ class AOGui(GuiBase):
         """Dynamically build the gui"""
         self._widgets = dict()
         channels: tuple[str, ...] = self.aologic().constraints.setpoint_channels
-        channels = tuple(
-            channel for channel in channels if channel not in self._ignore_aos
-        )
+        channels = tuple(channel for channel in channels if channel not in self._ignore_aos)
 
         # for remove_channel in self._ignore_aos:
         #    channels.pop(remove_channel, None)
@@ -199,29 +185,21 @@ class AOGui(GuiBase):
 
             # Add Button for Power measurement, if this is defined for the current channel
             if channel in self.power_conversion().channels_w_power_measurement:
-                power_meas_button: QtWidgets.QPushButton = (
-                    self._get_power_measurement_button()
-                )
+                power_meas_button: QtWidgets.QPushButton = self._get_power_measurement_button()
                 self._widgets[channel] = (label, slider_w_spinbox, power_meas_button)
-                self._mw.main_layout.addWidget(
-                    power_meas_button, grid_pos[0], grid_pos[1] + 2
-                )
+                self._mw.main_layout.addWidget(power_meas_button, grid_pos[0], grid_pos[1] + 2)
                 power_meas_button.clicked.connect(self.__get_power_meas_func(channel))
             else:
                 self._widgets[channel] = (label, slider_w_spinbox)
 
             self._mw.main_layout.addWidget(label, grid_pos[0], grid_pos[1])
-            self._mw.main_layout.addWidget(
-                slider_w_spinbox, grid_pos[0], grid_pos[1] + 1
-            )
+            self._mw.main_layout.addWidget(slider_w_spinbox, grid_pos[0], grid_pos[1] + 1)
 
             self._mw.main_layout.setColumnStretch(grid_pos[1], 0)
             self._mw.main_layout.setColumnStretch(grid_pos[1] + 1, 1)
 
             # Connect the correct function to update the analog output of a defined channel
-            slider_w_spinbox.sigValueChanged.connect(
-                self.__get_setpoint_update_func(channel)
-            )
+            slider_w_spinbox.sigValueChanged.connect(self.__get_setpoint_update_func(channel))
 
     def _get_power_measurement_button(self) -> QtWidgets.QPushButton:
         power_meas_button = QtWidgets.QPushButton("Calibrate Power")
@@ -245,9 +223,7 @@ class AOGui(GuiBase):
         font.setPointSize(11)
         label.setFont(font)
         label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        label.setSizePolicy(
-            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred
-        )
+        label.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
         return label
 
     def _delete_sliders(self):
@@ -301,7 +277,7 @@ class AOGui(GuiBase):
 
     def _power_calib_func(self, channel):
         self.sigShowPowerCalibrationDialog.emit(True)
-        self.sigCalibratePower.emit(channel, self.power_conversion().calibrate_power)
+        self.sigCalibratePower.emit(channel, self.aologic().calibrate_power)
 
     def _calibration_measurement_finished(self, channel):
         print(f"Calibration finished for {channel}")
@@ -387,9 +363,7 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
         self.spin_box.setSuffix(unit)
         self.spin_box.setRange(*value_range)
         self.spin_box.dynamic_precision = False
-        self.spin_box.setSizePolicy(
-            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred
-        )
+        self.spin_box.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
         self.spin_box.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
 
         layout = QtWidgets.QHBoxLayout(self)
@@ -424,9 +398,7 @@ class QSliderWithSpinBox(QtWidgets.QWidget):
         """Convert the slider's integer value to a float."""
         min_value, max_value = self.value_range
         float_range = max_value - min_value
-        return round(
-            (value / self.num_slider_points) * float_range + min_value, round_digit
-        )
+        return round((value / self.num_slider_points) * float_range + min_value, round_digit)
 
     def float_to_slider_value(self, value: float) -> int:
         """Convert a float value to the slider's integer scale."""

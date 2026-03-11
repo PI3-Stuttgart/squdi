@@ -7,7 +7,7 @@ This is a moku of MCAS basic functions for program to have some object oriented 
 """
 
 
-class MultiChSeq():
+class MultiChSeq:
 
     def __init__(self, name, awg):
         self._name = name
@@ -36,6 +36,7 @@ class MultiChSeq():
         :return:
         """
         return self._qm
+
     @property
     def qmm(self):
         """
@@ -43,6 +44,7 @@ class MultiChSeq():
         :return:
         """
         return self._qmm
+
     def initialize(self):
         """
         Runs the programm and stops it.
@@ -70,6 +72,8 @@ class MultiChSeq():
         """
         Some debug infor regarding the sequence in a form of a json.
         """
+
+        t0 = time.time()
         simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
         job_sim = self.qmm.simulate(self._config.config, self.program, simulation_config)
         # Simulate blocks python until the simulation is done
@@ -81,6 +85,8 @@ class MultiChSeq():
         # get the waveform report object
         waveform_report = job_sim.get_simulated_waveform_report()
         waveform_dict = waveform_report.to_dict()
+        t1 = time.time()
+        print("OPX_debug_info time:", t1 - t0)
         return waveform_dict
 
     def stop(self):

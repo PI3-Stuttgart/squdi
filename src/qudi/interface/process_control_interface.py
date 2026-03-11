@@ -63,12 +63,8 @@ class ProcessControlConstraints:
         if process_channels is None:
             process_channels = tuple()
 
-        self._setpoint_channels = (
-            tuple() if setpoint_channels is None else tuple(setpoint_channels)
-        )
-        self._process_channels = (
-            tuple() if process_channels is None else tuple(process_channels)
-        )
+        self._setpoint_channels = tuple() if setpoint_channels is None else tuple(setpoint_channels)
+        self._process_channels = tuple() if process_channels is None else tuple(process_channels)
 
         all_channels = set(self._setpoint_channels)
         all_channels.update(self._process_channels)
@@ -81,9 +77,7 @@ class ProcessControlConstraints:
         assert all(t in (int, float) for t in dtypes.values())
 
         self._channel_units = {ch: units.get(ch, "") for ch in all_channels}
-        self._channel_limits = {
-            ch: limits.get(ch, (-np.inf, np.inf)) for ch in all_channels
-        }
+        self._channel_limits = {ch: limits.get(ch, (-np.inf, np.inf)) for ch in all_channels}
         self._channel_dtypes = {ch: dtypes.get(ch, float) for ch in all_channels}
 
     @property
@@ -209,9 +203,7 @@ class ProcessValueInterface(_ProcessControlInterfaceBase):
         """Read-Only property returning a snapshot of current process values (values) for all
         channels (keys).
         """
-        return {
-            ch: self.get_process_value(ch) for ch in self.constraints.process_channels
-        }
+        return {ch: self.get_process_value(ch) for ch in self.constraints.process_channels}
 
 
 class ProcessControlInterface(ProcessSetpointInterface, ProcessValueInterface):

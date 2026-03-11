@@ -10,6 +10,7 @@ import imp
 from queue import Queue
 from PySide2.QtCore import Signal as pyqtSignal
 from qudi.logic.qudip_enhanced import *
+from qudi.logic import magnetlogic
 
 # FIXME
 from PySide2.QtCore import QTimer
@@ -75,11 +76,7 @@ class ScriptQueueList(collections.abc.MutableSequence):
 
     def check(self, val):
         if not isinstance(val, self.oktypes):
-            raise TypeError(
-                "list item {} is not allowed, as it can not be found in {}".format(
-                    val, self.oktypes
-                )
-            )
+            raise TypeError("list item {} is not allowed, as it can not be found in {}".format(val, self.oktypes))
 
     # def check_duplicate(self, v):
     #     duplicates = [item.name for item in self.list if item.name == v.name]
@@ -126,20 +123,22 @@ class queue_logic(GenericLogic):
     # declare connections
     mcas_holder = Connector(interface="McasDictHolderInterface")
     opx_holder = Connector(interface="OPX")
-    transition_tracker = Connector(
-        interface="TransitionTracker"
-    )  # Should be a name of the class
+    transition_tracker = Connector(interface="TransitionTracker")  # Should be a name of the class
     confocal = Connector(interface="ScanningProbeLogic")
     gated_counter = Connector("GatedCounter")  # Should be name of the class.
     optimizer = Connector("ScanningOptimizeLogic")
     fastcounter = Connector(interface="TT")
     PLE_logic = Connector(interface="PLEOptimizeScannerLogic")  # only for refocuses...
+    magnet_logic = Connector(interface="MagnetLogic")  ## Adding magnet logic to the queue
     # odmr_logic= Connector("ODMRLogic_holder")
     # currentmeasurementlogic= Connector("CurrentMeasurementLogic")
     # biaslogic= Connector("BiasLogic")
     # poimanagerlogic = Connector('PoiManagerLogic')
     # powerstabilization_logic = Connector("PowerStabilizationLogic")
     counterlogic1 = Connector(interface="TimeTaggerLogic")
+    Wavemeter = Connector(interface="HighFinesseWavemeter")
+    dlc_pro_620 = Connector(interface="DlProLaser")
+    power_conversion = Connector(interface="AomPowerCalibration")
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
     update_queue_list = pyqtSignal(collections.OrderedDict)
@@ -174,18 +173,23 @@ class queue_logic(GenericLogic):
         self._gated_counter: GatedCounter = self.gated_counter()
         self._optimizer = self.optimizer()
         self._PLE_logic = self.PLE_logic()
+        self._magnet_logic: MagnetLogic = self.magnet_logic()
         # self._ODMR_logic = self.odmr_logic()
         # self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic() ### : is important for clicking through.
         # self._biaslogic:BiasLogic = self.biaslogic()
         # self._powerstabilization_logic = self.powerstabilization_logic() ##: TODO - here we can recover it with our own code
         # self._poimanagerlogic = self.poimanagerlogic() # :TODO - this is legacy poi manager, but we can use the new one.
         self._counter = self.counterlogic1()  #
-        self._fast_counter_device = self.fastcounter()  # FIXME
+        self._fast_counter_device = self.fastcounter()
+        self._wavemeter = self.Wavemeter()  # type: HighFinesseWavemeter
+        self._dlc_pro_620 = self.dlc_pro_620()
         # self.create_odmr()  #only logic (no gui)
         self.init_run()
         # self.write_standard_awg_sequences()
         self._confocal = self.confocal()
         self.tt = self._transition_tracker
+        self._power_conversion = self.power_conversion()
+        self.tt.load_rabi_parameters()
 
     def on_deactivate(self):
         pass
@@ -240,11 +244,7 @@ class queue_logic(GenericLogic):
     def persistent_file_name(self, model):
         if hasattr(model, "pi3d_dump_filename"):
             return self.log_dir + model.pi3d_dump_filename
-        return (
-            self.log_dir
-            + str(model.__class__).replace(">", "").replace("<", "")
-            + ".pyd"
-        )  # windows does not allow '>' and '<' in filenames
+        return self.log_dir + str(model.__class__).replace(">", "").replace("<", "") + ".pyd"  # windows does not allow '>' and '<' in filenames
 
     #
     def restore(self, model, fp=None):
@@ -252,9 +252,7 @@ class queue_logic(GenericLogic):
 
         if os.access(filename, os.F_OK):
 
-            self.log.info(
-                "Restoring state of " + model.__str__() + "\nfrom " + filename + ".."
-            )
+            self.log.info("Restoring state of " + model.__str__() + "\nfrom " + filename + "..")
 
             try:
                 a = pickle.load(open(filename, "rb"))
@@ -270,11 +268,7 @@ class queue_logic(GenericLogic):
     def dump(self, model):
         filename = self.persistent_file_name(model)
         self.log.info(
-            "attempting to save state of "
-            + model.__str__()
-            + "\nto "
-            + filename
-            + "..",
+            "attempting to save state of " + model.__str__() + "\nto " + filename + "..",
         )
         try:
             fil = open(filename, "wb")
@@ -392,6 +386,7 @@ class queue_logic(GenericLogic):
                     self.start_next_measurement()
                     # self.wait_for_a_measurement()
                 else:
+                    print("CUN state is " + self.cun._state + " doing nothing...")
                     pass
                     # print('There is a cun but it is workin, check you later...')
                     # we need to wait...
@@ -400,7 +395,8 @@ class queue_logic(GenericLogic):
                 self.start_next_measurement()
                 # waiting for the measurement to finish.
 
-        except Exception:
+        except Exception as e:
+            print(e)
             self.q.queue.clear()
             self.script_queue.list = []
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -434,9 +430,7 @@ class queue_logic(GenericLogic):
         """
         if hasattr(self, "cun"):
             while self.cun.state == "run":
-                QtTest.QTest.qSleep(
-                    1000
-                )  # This is Qt version for time.sleep to prevent freezinng. also doesnt work for PySide2.
+                QtTest.QTest.qSleep(1000)  # This is Qt version for time.sleep to prevent freezinng. also doesnt work for PySide2.
             else:
                 print("new measurement can be started")
         else:
@@ -446,11 +440,7 @@ class queue_logic(GenericLogic):
         try:
             self.script_queue.pop(0)
             self.script_history.append(self.current_script)
-            self.log.info(
-                "Userscript {} has finished...".format(
-                    self.current_script["module_name"][10:]
-                )
-            )
+            self.log.info("Userscript {} has finished...".format(self.current_script["module_name"][10:]))
             del self.current_script
             self.q.task_done()
 
@@ -492,9 +482,8 @@ class queue_logic(GenericLogic):
 
                 if hasattr(self, "cun"):
                     while self.cun.state == "run":
-                        QtTest.QTest.qSleep(
-                            1000
-                        )  # This is Qt version for time.sleep to prevent freezinng.
+                        QtTest.QTest.qSleep(1000)  # 1000  # This is Qt version for time.sleep to prevent freezinng.
+                        print("waaaaaaaiiittt")
                     else:
                         print("new measurement can be started")
                 else:
@@ -502,11 +491,7 @@ class queue_logic(GenericLogic):
 
                 self.script_history.append(self.current_script)
                 self.script_queue.pop(0)
-                self.log.info(
-                    "Userscript {} has finished...".format(
-                        self.current_script["module_name"][10:]
-                    )
-                )
+                self.log.info("Userscript {} has finished...".format(self.current_script["module_name"][10:]))
                 del self.current_script
                 self.q.task_done()
             except Exception:  # Not running the measurement.
@@ -548,14 +533,10 @@ class queue_logic(GenericLogic):
     def selected_user_script(self, val):
         if val != "":
             if val not in self.user_script_list:
-                raise Exception(
-                    "Script {} not in {}".format(val, self.user_script_list)
-                )
+                raise Exception("Script {} not in {}".format(val, self.user_script_list))
             self._selected_user_script = val
             # if hasattr(self, '_gui'):
-            val = collections.OrderedDict(
-                [("selected_user_script", self.selected_user_script)]
-            )
+            val = collections.OrderedDict([("selected_user_script", self.selected_user_script)])
             self.update_selected_user_script_combo_box_signal.emit(val)
             # self.gui.update_selected_user_script_combo_box(val)
 
@@ -594,9 +575,7 @@ class queue_logic(GenericLogic):
         try:
             module_name = self.init_task(name, folder)
             self.q.put({"module_name": module_name, "pd": pd})
-            self.script_queue.append(
-                ScriptQueueStep(module_name[10:], self.user_script_params)
-            )
+            self.script_queue.append(ScriptQueueStep(module_name[10:], self.user_script_params))
         except Exception:
             print("Queuelogic: Could not add script to queue.")
             exc_type, exc_value, exc_tb = sys.exc_info()
