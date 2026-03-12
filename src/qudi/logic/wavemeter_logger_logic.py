@@ -135,9 +135,42 @@ class WavemeterLoggerLogic(LogicBase):
         self._acquisition_start_time = time.time()
 
         self._queryTimer.start()
+        self._queryTimer.start()
         #self.sig_query_wavemeter.emit()
 
-        
+    def get_available_channels(self):
+        """ Return a list of available wavemeter channels, e.g. [1, 2, 3, ...]. """
+        if hasattr(self._wavemeter, 'get_active_channels'):
+            return self._wavemeter.get_active_channels()
+        # Fallback if method doesn't exist
+        return [1, 2, 3, 4, 5, 6, 7, 8]
+
+    def get_current_channel(self):
+        """ Return the currently selected wavemeter channel. """
+        if hasattr(self._wavemeter, 'get_default_channel'):
+            return self._wavemeter.get_default_channel()
+        return 1
+
+    def set_channel(self, channel):
+        """ Update the wavemeter to listen to the specified channel. """
+        # We need to tell the wavemeter to select this channel for its buffer and output
+        if hasattr(self._wavemeter, 'set_selected_channels'):
+            self._wavemeter.set_selected_channels([channel])
+        if hasattr(self._wavemeter, 'set_default_channel'):
+            self._wavemeter.set_default_channel(channel)
+            
+        # Also ensure it is in the active channels list being polled by the thread
+        if hasattr(self._wavemeter, 'get_active_channels') and hasattr(self._wavemeter, 'set_active_channels'):
+            active = self._wavemeter.get_active_channels()
+            if channel not in active:
+                if isinstance(active, list):
+                    active.append(channel)
+                else:
+                    active = list(active) + [channel]
+                self._wavemeter.set_active_channels(active)
+                
+        # Empty the logic buffer so we don't mix channels
+        self.empty_buffer()
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
