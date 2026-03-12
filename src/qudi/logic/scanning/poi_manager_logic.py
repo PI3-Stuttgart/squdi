@@ -455,7 +455,7 @@ class PoiManagerLogic(LogicBase):
 
         # Initialise the ROI scan image (xy confocal image) if not present
         if self._roi.scan_image is None:
-            self.set_scan_image(False, self._scan_axes)
+            self.set_scan_image(False, None)
 
         self.sigRoiUpdated.emit({'name': self.roi_name,
                                  'poi_nametag': self.poi_nametag,
@@ -1106,8 +1106,13 @@ class PoiManagerLogic(LogicBase):
 
             scan_data = self._data_logic().get_current_scan_data(scan_axes)
             if scan_data:
-                self._roi.set_scan_image(scan_data.data[self._optimizelogic()._data_channel],
-                                         scan_data.scan_range)
+                # Only use 2D scan data; a 1D line scan does not have a y-extent
+                # and would cause an IndexError in RegionOfInterest.set_scan_image.
+                if len(scan_data.scan_range) >= 2:
+                    self._roi.set_scan_image(scan_data.data[self._optimizelogic()._data_channel],
+                                             scan_data.scan_range)
+                else:
+                    self.log.warning('Current scan data is not 2D – skipping ROI scan image update.')
 
             if emit_change:
                 self.sigRoiUpdated.emit({'scan_image': self.roi_scan_image,

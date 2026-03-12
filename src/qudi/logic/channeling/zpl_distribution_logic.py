@@ -60,6 +60,7 @@ class ZPLDistributionLogic(LogicBase):
     sigScanCompleted = QtCore.Signal(float, object, list) # voltage, image, spots
     sigWavelengthCheckFinished = QtCore.Signal(object) # (start_freq, stop_freq) or None if failed
     sigBackgroundCaptured = QtCore.Signal(object)  # background image ndarray or None
+    sigSavingFinished = QtCore.Signal(bool, str)  # success, message
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -69,6 +70,7 @@ class ZPLDistributionLogic(LogicBase):
         self._background_image = None
         self._background_enabled = False
         self._background_running = False
+        self._saving_running = False
 
     def on_activate(self):
         self._is_running = False
@@ -104,7 +106,8 @@ class ZPLDistributionLogic(LogicBase):
         self._is_running = True
         self._stop_requested = False
         self._is_paused = False
-        self._histogram_data = {'voltage': [], 'counts': [], 'frequency': []}
+        self._histogram_data = {'voltage': [], 'counts': [], 'frequency': [],
+                                'error': [], 'mean_confidence': []}
         self._scan_results = {}
         
         try:
@@ -128,47 +131,71 @@ class ZPLDistributionLogic(LogicBase):
         self._stop_requested = True
         self._is_paused = False # Resume to allow loop to exit if paused
 
+    _MAX_SCHEDULE_POINTS = 10000  # Safety cap to prevent MemoryError on bad inputs
+
     def get_voltage_schedule(self, start, stop, step, mode='Linear', center=50.0, width=20.0, fine=1.0, coarse=5.0):
         """Generate the list of voltages to scan based on parameters."""
         if mode == 'Focused':
-            # Focused Mode
+            # Guard: fine and coarse must be positive
+            if fine <= 0:
+                fine = 1.0
+            if coarse <= 0:
+                coarse = 5.0
+
             fine_start = max(start, center - width/2)
             fine_end = min(stop, center + width/2)
-            
+
+            # Quick upper-bound estimate to catch runaway cases early
+            fine_range = max(0.0, fine_end - fine_start)
+            coarse_range = max(0.0, stop - start) - fine_range
+            est_points = int(fine_range / fine) + int(coarse_range / coarse) + 10
+            if est_points > self._MAX_SCHEDULE_POINTS:
+                raise ValueError(
+                    f"Focused schedule would generate ~{est_points} points (max {self._MAX_SCHEDULE_POINTS}). "
+                    "Increase step sizes or reduce scan range."
+                )
+
             voltages = []
             # Left Coarse
             curr = start
             while curr < fine_start:
                 voltages.append(curr)
                 curr += coarse
-                
-            # Fine
-            # Align to fine_start
+                if len(voltages) > self._MAX_SCHEDULE_POINTS:
+                    raise ValueError("Schedule exceeded maximum point limit.")
+
+            # Fine region
             curr = fine_start
             while curr <= fine_end:
                 voltages.append(curr)
                 curr += fine
-                
+                if len(voltages) > self._MAX_SCHEDULE_POINTS:
+                    raise ValueError("Schedule exceeded maximum point limit.")
+
             # Right Coarse
-            # Start from last point + coarse
-            if voltages:
-                curr = voltages[-1] + coarse
-            else:
-                curr = fine_end + coarse 
-                
+            curr = (voltages[-1] + coarse) if voltages else (fine_end + coarse)
             while curr <= stop:
                 voltages.append(curr)
                 curr += coarse
-                
-            voltages = sorted(list(set(voltages))) # Unique and sort
+                if len(voltages) > self._MAX_SCHEDULE_POINTS:
+                    raise ValueError("Schedule exceeded maximum point limit.")
+
+            voltages = sorted(list(set(voltages)))
             voltages = [v for v in voltages if start <= v <= stop]
             return voltages
-            
+
         else:
-             # Linear
-             if step <= 0: step = 1.0
-             voltages = np.arange(start, stop + step/100.0, step)
-             return list(voltages)
+            # Linear
+            if step <= 0:
+                step = 1.0
+            est_points = int((stop - start) / step) + 2
+            if est_points > self._MAX_SCHEDULE_POINTS:
+                raise ValueError(
+                    f"Linear schedule would generate ~{est_points} points (max {self._MAX_SCHEDULE_POINTS}). "
+                    "Increase step size or reduce scan range."
+                )
+            voltages = np.arange(start, stop + step / 100.0, step)
+            return list(voltages)
 
     @QtCore.Slot()
     def check_wavelength_coverage(self):
@@ -464,12 +491,16 @@ class ZPLDistributionLogic(LogicBase):
                         spots_list = self._detect_spots(display_image, method=method, threshold=threshold)
                         spot_count = len(spots_list)
                         
-                        self.log.info(f"Found {spot_count} spots at {v:.4f} V on {channel_name} ({method})")
+                        conf_stats = self._compute_confidence_stats(spots_list)
+                        self.log.info(f"Found {spot_count} spots at {v:.4f} V on {channel_name} ({method}) "
+                                      f"[err={conf_stats['error']}, mean_conf={conf_stats['mean_confidence']:.2f}]")
                         
                         # Store Data
                         self._histogram_data['voltage'].append(v)
                         self._histogram_data['counts'].append(spot_count)
                         self._histogram_data['frequency'].append(frequency_ghz)
+                        self._histogram_data['error'].append(conf_stats['error'])
+                        self._histogram_data['mean_confidence'].append(conf_stats['mean_confidence'])
 
                         self._scan_results[v] = {
                             'image': image_data,
@@ -501,6 +532,31 @@ class ZPLDistributionLogic(LogicBase):
         finally:
             self._is_running = False
             self.sigMeasurementFinished.emit()
+
+    @staticmethod
+    def _compute_confidence_stats(spots_list):
+        """Compute error bar and mean confidence from a list of detected spots.
+
+        Error bar = number of *marginal* detections (confidence < 1.0).
+        This represents how sensitive the count is to small threshold
+        changes — i.e. spots that could easily appear or disappear.
+
+        Returns dict with 'error', 'mean_confidence', 'n_marginal', 'n_solid'.
+        """
+        if not spots_list:
+            return {'error': 0, 'mean_confidence': 0.0,
+                    'n_marginal': 0, 'n_solid': 0}
+        confidences = [s.get('confidence', 0.0) for s in spots_list]
+        n_total = len(confidences)
+        n_marginal = sum(1 for c in confidences if c < 1.0)
+        n_solid = n_total - n_marginal
+        mean_conf = float(np.mean(confidences))
+        return {
+            'error': n_marginal,
+            'mean_confidence': round(mean_conf, 4),
+            'n_marginal': n_marginal,
+            'n_solid': n_solid,
+        }
 
     def _detect_spots(self, image, method='Simple', threshold=None):
         """
@@ -564,12 +620,6 @@ class ZPLDistributionLogic(LogicBase):
             g2 = ndimage.gaussian_filter(image, sigma=sigma2)
             dog = g1 - g2
             
-            # For DoG, threshold is usually lower than raw counts, likely differential
-            # But user might supply raw count threshold. 
-            # Let's interpret threshold as minimum intensity in the DoG image? 
-            # Or keep threshold as strict intensity cut on *original* image + peak in DoG.
-            # Strategy: Peak in DoG AND Value > Threshold
-            
             # 1. Find peaks in DoG
             dog_max = ndimage.maximum_filter(dog, size=5) == dog
             # 2. Check intensity in original image
@@ -581,11 +631,96 @@ class ZPLDistributionLogic(LogicBase):
              
             for y, x in zip(y_indices, x_indices):
                 val = float(image[y, x])
-                # Confidence could be DoG magnitude * intensity
                 confidence = float(dog[y, x])
                 spots.append({
                     'x': int(x), 'y': int(y), 'val': val, 'confidence': confidence
                 })
+
+        elif method == 'Adaptive':
+            # ------------------------------------------------------------------
+            # Multiscale Laplacian-of-Gaussian with adaptive threshold
+            # ------------------------------------------------------------------
+            # The "threshold" parameter acts as a *sensitivity multiplier*:
+            #   adaptive_cutoff = median + (threshold / 1000) * MAD
+            # Lower threshold → more sensitive (more detections).
+            # Typical useful range: 1000–10000 (i.e. multiplier 1–10).
+            # ------------------------------------------------------------------
+            img = image.astype(np.float64)
+
+            # --- Adaptive threshold from image statistics ---
+            median_val = np.median(img)
+            mad = np.median(np.abs(img - median_val))   # median absolute deviation
+            if mad == 0:
+                mad = np.std(img)  # fallback for very uniform images
+            sensitivity = max(threshold / 1000.0, 0.5)  # convert user threshold to multiplier
+            adaptive_cutoff = median_val + sensitivity * mad
+
+            # --- Multiscale LoG ---
+            sigmas = [0.7, 1.0, 1.5, 2.5, 4.0]
+            # Normalized LoG response at each scale (sigma^2 normalization)
+            log_responses = []
+            for s in sigmas:
+                log_img = -ndimage.gaussian_laplace(img, sigma=s) * (s ** 2)
+                log_responses.append(log_img)
+
+            # Stack into 3D volume (sigma, y, x) and take scale-space maximum
+            log_stack = np.stack(log_responses, axis=0)           # (N_sigma, H, W)
+            best_scale_idx = np.argmax(log_stack, axis=0)          # (H, W)
+            best_response = np.max(log_stack, axis=0)              # (H, W)
+
+            # --- Peak detection: local maximum in 2D on the best-response map ---
+            neighborhood_size = 5
+            local_max = ndimage.maximum_filter(best_response, size=neighborhood_size) == best_response
+
+            # --- Threshold conditions ---
+            # 1) LoG response must be positive  (blob, not valley)
+            # 2) Raw intensity above adaptive cutoff
+            # 3) LoG response above a small positive floor (suppress flat regions)
+            log_floor = mad * 0.1 if mad > 0 else 1.0
+            peak_mask = local_max & (best_response > log_floor) & (img > adaptive_cutoff)
+
+            y_indices, x_indices = np.where(peak_mask)
+            responses = best_response[y_indices, x_indices]
+            scale_indices = best_scale_idx[y_indices, x_indices]
+
+            if len(y_indices) == 0:
+                return []
+
+            # --- Non-maximum suppression with minimum separation ---
+            # Sort by LoG response (strongest first) and suppress neighbours
+            min_sep_px = 3  # minimum pixel separation between distinct defects
+            min_sep_sq = min_sep_px ** 2
+            order = np.argsort(-responses)
+            keep = np.ones(len(order), dtype=bool)
+            kept_coords = []
+
+            for rank in range(len(order)):
+                if not keep[rank]:
+                    continue
+                idx = order[rank]
+                yy, xx = int(y_indices[idx]), int(x_indices[idx])
+                # Suppress weaker peaks nearby
+                for later in range(rank + 1, len(order)):
+                    if not keep[later]:
+                        continue
+                    jdx = order[later]
+                    dy = int(y_indices[jdx]) - yy
+                    dx = int(x_indices[jdx]) - xx
+                    if dy * dy + dx * dx < min_sep_sq:
+                        keep[later] = False
+                kept_coords.append((yy, xx, idx))
+
+            for yy, xx, idx in kept_coords:
+                val = float(img[yy, xx])
+                # Confidence = LoG response normalised by MAD (unit-free, comparable across scans)
+                confidence = float(responses[order[np.where(order == idx)[0][0]]]) / mad if mad > 0 else float(responses[idx])
+                best_sigma = sigmas[int(scale_indices[idx])]
+                spots.append({
+                    'x': xx, 'y': yy, 'val': val,
+                    'confidence': round(confidence, 3),
+                    'sigma': round(best_sigma, 2),
+                })
+
                 
         return spots
 
@@ -615,6 +750,10 @@ class ZPLDistributionLogic(LogicBase):
                 else:
                     self.log.warning("Background shape mismatch in reanalyze_scan; skipping.")
 
+            # Track the active method/threshold for saving
+            self._current_method = method
+            self._current_threshold = threshold
+
             spots = self._detect_spots(display_image, method, threshold)
             
             # Update results
@@ -623,11 +762,14 @@ class ZPLDistributionLogic(LogicBase):
             res['channel'] = current_channel
             spot_count = len(spots)
             
-            # Update histogram source
+            # Update histogram source with confidence stats
+            conf_stats = self._compute_confidence_stats(spots)
             try:
                 idx = self._histogram_data['voltage'].index(voltage)
                 self._histogram_data['counts'][idx] = spot_count
-            except ValueError:
+                self._histogram_data['error'][idx] = conf_stats['error']
+                self._histogram_data['mean_confidence'][idx] = conf_stats['mean_confidence']
+            except (ValueError, IndexError):
                 pass
                 
             self.log.info(f"Re-analyzed {voltage:.2f} V with {method} (Thresh: {threshold}): {spot_count} spots")
@@ -640,17 +782,16 @@ class ZPLDistributionLogic(LogicBase):
 
     def reanalyze_all(self, method, threshold, channel=None):
         """Re-analyze ALL scans with new parameters."""
+        # Track the active method/threshold for saving
+        self._current_method = method
+        self._current_threshold = threshold
+
         count = 0
+        last_voltage = None
+        last_image = None
+        last_spots = None
+
         for voltage in self._scan_results.keys():
-             # We use the internal reanalyze_scan logic but defer updates? 
-             # Or just do it in loop. Efficiency might be okay for typical number of points (100-200).
-             # Let's optimize by not emitting sigScanCompleted for every point, only sigUpdatePlot at end?
-             # But reanalyze_scan emits signals.
-             # Let's copy logic to avoid spamming signals if needed, or just let it happen.
-             # Actually, reanalyze_scan emits sigScanCompleted which might be heavy if GUI redraws image every time.
-             # But GUI only redraws if voltage matches current view.
-             # sigUpdatePlot redraws histogram. That might be heavy 100 times.
-             
              res = self._scan_results[voltage]
              
              # Select channel
@@ -661,31 +802,99 @@ class ZPLDistributionLogic(LogicBase):
                 if 'all_channels' in res and channel in res['all_channels']:
                     image = res['all_channels'][channel]
                     current_channel = channel
-             
-             spots = self._detect_spots(image, method, threshold)
+
+             # Apply background subtraction if enabled
+             display_image = image
+             if self._background_enabled and self._background_image is not None:
+                 if self._background_image.shape == image.shape:
+                     display_image = np.clip(
+                         image.astype(float) - self._background_image.astype(float), 0, None
+                     )
+
+             spots = self._detect_spots(display_image, method, threshold)
              
              res['spots'] = spots
              res['image'] = image
              res['channel'] = current_channel
              spot_count = len(spots)
              
-             # Update histogram source
+             # Update histogram source with confidence stats
+             conf_stats = self._compute_confidence_stats(spots)
              try:
                 idx = self._histogram_data['voltage'].index(voltage)
                 self._histogram_data['counts'][idx] = spot_count
-             except ValueError:
+                self._histogram_data['error'][idx] = conf_stats['error']
+                self._histogram_data['mean_confidence'][idx] = conf_stats['mean_confidence']
+             except (ValueError, IndexError):
                 pass
              
+             last_voltage = voltage
+             last_image = image
+             last_spots = spots
              count += 1
              
-        self.log.info(f"Re-analyzed {count} scans.")
+        self.log.info(f"Re-analyzed {count} scans with {method} (threshold={threshold}).")
         self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
-        
-        # If there is a current view, we should update it too.
-        # But we don't know what GUI is viewing. 
-        # The GUI can request update or we can just emit empty sigScanCompleted? 
-        # Better: The user will likely want to see the new distribution.
+
+        # Emit for the last scan so the GUI refreshes if it's viewing one of them
+        if last_voltage is not None:
+            self.sigScanCompleted.emit(last_voltage, last_image, last_spots)
+
         return count
+
+    def compute_threshold_errors(self, method, threshold, thresh_lower, thresh_upper, channel=None):
+        """Run detection at lower/upper threshold bounds and compute asymmetric error bars.
+
+        For each voltage step:
+          - count_main  = spots at `threshold`       (already stored)
+          - count_lower = spots at `thresh_lower`    (usually more spots)
+          - count_upper = spots at `thresh_upper`    (usually fewer spots)
+          - error_plus  = count_lower - count_main   (how many MORE we'd get)
+          - error_minus = count_main  - count_upper  (how many we'd LOSE)
+
+        Stores error_lower / error_upper in _histogram_data and re-emits sigUpdatePlot.
+        """
+        error_lower = []   # error bar going DOWN (count_main - count_upper)
+        error_upper = []   # error bar going UP   (count_lower - count_main)
+
+        for voltage in self._scan_results.keys():
+            res = self._scan_results[voltage]
+
+            # Select channel
+            image = res['image']
+            if channel:
+                if 'all_channels' in res and channel in res['all_channels']:
+                    image = res['all_channels'][channel]
+
+            # Apply background subtraction if enabled
+            display_image = image
+            if self._background_enabled and self._background_image is not None:
+                if self._background_image.shape == image.shape:
+                    display_image = np.clip(
+                        image.astype(float) - self._background_image.astype(float), 0, None
+                    )
+
+            count_main = len(res['spots'])  # already computed at `threshold`
+            spots_lo = self._detect_spots(display_image, method, thresh_lower)
+            spots_hi = self._detect_spots(display_image, method, thresh_upper)
+            count_lo = len(spots_lo)
+            count_hi = len(spots_hi)
+
+            err_plus = max(count_lo - count_main, 0)
+            err_minus = max(count_main - count_hi, 0)
+
+            error_upper.append(err_plus)
+            error_lower.append(err_minus)
+
+        # Store in histogram data
+        self._histogram_data['error_lower'] = error_lower
+        self._histogram_data['error_upper'] = error_upper
+        # Also update the simple 'error' key with the max of both for CSV compatibility
+        self._histogram_data['error'] = [max(lo, up) for lo, up in zip(error_lower, error_upper)]
+
+        self.log.info(f"Threshold error analysis complete: {len(error_lower)} scans, "
+                      f"bounds=[{thresh_lower}, {thresh_upper}]")
+        self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
 
     def get_scan_result(self, voltage):
         return self._scan_results.get(voltage)
@@ -710,12 +919,14 @@ class ZPLDistributionLogic(LogicBase):
             
             # Recalculate count
             count = len(result['spots'])
+            conf_stats = self._compute_confidence_stats(result['spots'])
             
             # Update histogram data source
             try:
-                # Find index of voltage
                 idx = self._histogram_data['voltage'].index(voltage)
                 self._histogram_data['counts'][idx] = count
+                self._histogram_data['error'][idx] = conf_stats['error']
+                self._histogram_data['mean_confidence'][idx] = conf_stats['mean_confidence']
             except ValueError:
                 pass
                 
@@ -734,9 +945,12 @@ class ZPLDistributionLogic(LogicBase):
                 count = len(result['spots'])
                 
                 # Update histogram data source
+                conf_stats = self._compute_confidence_stats(result['spots'])
                 try:
                     idx = self._histogram_data['voltage'].index(voltage)
                     self._histogram_data['counts'][idx] = count
+                    self._histogram_data['error'][idx] = conf_stats['error']
+                    self._histogram_data['mean_confidence'][idx] = conf_stats['mean_confidence']
                 except ValueError:
                     pass
                     
@@ -814,162 +1028,276 @@ class ZPLDistributionLogic(LogicBase):
         finally:
             self._background_running = False
 
+    def get_default_data_dir(self):
+        """Return the qudi module_default_data_dir (respects config daily_data_dirs)."""
+        try:
+            return str(self.module_default_data_dir)
+        except Exception:
+            import os
+            return os.path.expanduser('~')
+
     def save_all_results(self, save_dir):
-        """Save results to folder."""
+        """Non-blocking: launch background thread to write all results."""
+        if self._saving_running:
+            self.log.warning("Save already in progress.")
+            return
+        self._saving_running = True
+        import threading
+        t = threading.Thread(target=self._save_all_results_worker, args=(save_dir,), daemon=True)
+        t.start()
+
+    def _save_all_results_worker(self, save_dir):
+        """Background worker: saves histogram CSV/SVG, per-scan SVG, spots CSV,
+        raw NPZ files (all channels + metadata), and a summary JSON.
+        Emits sigSavingFinished(success, message) when done.
+        """
         import os
         import csv
+        import json
+        import traceback
         from matplotlib.figure import Figure
         from matplotlib.backends.backend_agg import FigureCanvasAgg
-        
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-            
-        # 1. Save Histogram (SVG + CSV)
+
+        errors = []
+
         try:
-            # SVG
-            fig = Figure()
-            FigureCanvasAgg(fig) # Attach backend
-            ax = fig.add_subplot(111)
-            
-            ax.set_xlabel("Voltage (V)")
-            ax.set_ylabel("Number of Spots")
-            ax.set_title("ZPL Distribution")
-            if len(self._histogram_data['voltage']) > 0:
-                ax.bar(self._histogram_data['voltage'], self._histogram_data['counts'], width=self._step_voltage * 0.8)
-            
-            fig.savefig(os.path.join(save_dir, "distribution_histogram.svg"))
-            # No need to close explicitly with Figure object, it's just an object
-            
-            # CSV
-            with open(os.path.join(save_dir, "distribution_histogram.csv"), 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(["Voltage", "Frequency (GHz)", "Counts"])
-                
-                # Robust zip
-                volts = self._histogram_data['voltage']
-                counts = self._histogram_data['counts']
-                freqs = self._histogram_data.get('frequency', [float('nan')]*len(volts))
-                
-                # Ensure freqs has same length
-                if len(freqs) < len(volts):
-                    freqs.extend([float('nan')] * (len(volts) - len(freqs)))
-                
-                for v, f_val, c in zip(volts, freqs, counts):
-                    writer.writerow([v, f_val, c])
-                    
-        except Exception as e:
-            import traceback
-            self.log.error(f"Failed to save histogram: {e}\n{traceback.format_exc()}")
-            
-        # 2. Save Individual Scans (SVG + Global CSV)
-        all_spots = []
-        
-        for v, res in self._scan_results.items():
-            freq = res.get('frequency', float('nan'))
-            
-            # Collect spots for CSV
-            for s in res['spots']:
-                all_spots.append({
-                    'Voltage': v,
-                    'Frequency': freq,
-                    'X': s['x'],
-                    'Y': s['y'],
-                    'Value': s['val'],
-                    'Confidence': s['confidence']
-                })
-        
-            # Save Figure
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+
+            # ── Attempt to get scan resolution + range from scan_logic ──────
+            scan_resolution = {}
+            scan_range_um = {}
+            try:
+                sl = self._scan_logic()
+                if hasattr(sl, 'scan_settings'):
+                    ss = sl.scan_settings
+                    if ss and 'resolution' in ss:
+                        scan_resolution = ss['resolution']
+                    if ss and 'range' in ss:
+                        # Convert to µm (internal unit is likely m)
+                        for ax, rng in ss['range'].items():
+                            try:
+                                scan_range_um[ax] = round(float(rng) * 1e6, 3)
+                            except (TypeError, ValueError):
+                                scan_range_um[ax] = rng
+                elif hasattr(sl, '_scan_settings'):
+                    ss = sl._scan_settings
+                    if ss and 'resolution' in ss:
+                        scan_resolution = ss['resolution']
+                    if ss and 'range' in ss:
+                        for ax, rng in ss['range'].items():
+                            try:
+                                scan_range_um[ax] = round(float(rng) * 1e6, 3)
+                            except (TypeError, ValueError):
+                                scan_range_um[ax] = rng
+            except Exception as e:
+                self.log.warning(f"Could not retrieve scan settings: {e}")
+
+            # ── 1. Histogram SVG ───────────────────────────────────────────────
             try:
                 fig = Figure()
                 FigureCanvasAgg(fig)
                 ax = fig.add_subplot(111)
-                
-                ax.set_title(f"Scan at {v:.4f} V ({freq:.2f} GHz)")
-                ax.imshow(res['image'], origin='lower', cmap='viridis')
-                
-                spots = res['spots']
-                if spots:
-                    xs = [s['x'] for s in spots]
-                    ys = [s['y'] for s in spots]
-                    ax.scatter(xs, ys, c='r', marker='x', s=50)
-                
-                # Sanitize filename
-                v_str = f"{v:.4f}".replace('.', ',') # European style or just safe? 
-                # Actually '.' is fine. Colon is not.
-                # But just to be safe, maybe user locale issue? 
-                # Let's just stick to standard. 
-                # If v is float, it should be fine.
-                # However, if v is something else or has weird chars?
-                # Let's ensure it is float
+                ax.set_xlabel("Frequency (GHz) / Voltage (V)")
+                ax.set_ylabel("Number of Spots")
+                ax.set_title("ZPL Distribution")
+                volts_sv = self._histogram_data['voltage']
+                counts_sv = self._histogram_data['counts']
+                freqs_sv = self._histogram_data.get('frequency', [])
+                errors_sv = self._histogram_data.get('error', [0] * len(volts_sv))
+                if len(volts_sv) > 0:
+                    use_freq = (len(freqs_sv) == len(volts_sv)
+                                and not all(np.isnan(f) for f in freqs_sv if not np.isnan(f) == np.isnan(f)))
+                    x_sv = freqs_sv if (use_freq and len(freqs_sv) == len(volts_sv)) else volts_sv
+                    if len(x_sv) > 1:
+                        diffs_sv = np.diff(np.sort([v for v in x_sv if not np.isnan(v)]))
+                        nonzero_sv = diffs_sv[diffs_sv > 0]
+                        bar_w_sv = float(np.min(nonzero_sv)) * 0.8 if len(nonzero_sv) > 0 else 1.0
+                    else:
+                        bar_w_sv = getattr(self, '_step_voltage', 1.0) * 0.8
+                    ax.bar(x_sv, counts_sv, width=bar_w_sv, alpha=0.85, color='steelblue')
+                    # Add error bars
+                    if len(errors_sv) == len(x_sv):
+                        ax.errorbar(x_sv, counts_sv, yerr=errors_sv, fmt='none',
+                                    ecolor='black', capsize=3, capthick=1)
+                fig.savefig(os.path.join(save_dir, "distribution_histogram.svg"))
+            except Exception as e:
+                err = f"Histogram SVG: {e}"
+                errors.append(err)
+                self.log.error(f"{err}\n{traceback.format_exc()}")
+
+            # ── 2. Histogram CSV ───────────────────────────────────────────────
+            try:
+                volts = self._histogram_data['voltage']
+                counts = self._histogram_data['counts']
+                freqs = self._histogram_data.get('frequency', [float('nan')] * len(volts))
+                if len(freqs) < len(volts):
+                    freqs = list(freqs) + [float('nan')] * (len(volts) - len(freqs))
+                # Build resolution string
+                res_str = ', '.join(f"{ax}: {r}" for ax, r in scan_resolution.items()) if scan_resolution else 'N/A'
+                range_str = ', '.join(f"{ax}: {r} µm" for ax, r in scan_range_um.items()) if scan_range_um else 'N/A'
+                with open(os.path.join(save_dir, "distribution_histogram.csv"), 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([f"# Scan Resolution: {res_str}"])
+                    writer.writerow([f"# Scan Range: {range_str}"])
+                    writer.writerow([f"# Zero Frequency (THz): {self._zero_frequency}"])
+                    writer.writerow([f"# Detection Method: {self._current_method}"])
+                    writer.writerow([f"# Threshold: {self._current_threshold}"])
+                    writer.writerow(["Voltage (V)", "Frequency (GHz)", "Spot Count",
+                                     "Error (marginal)", "Mean Confidence"])
+                    err_list = self._histogram_data.get('error', [0] * len(volts))
+                    conf_list = self._histogram_data.get('mean_confidence', [0.0] * len(volts))
+                    for i, (v, f_val, c) in enumerate(zip(volts, freqs, counts)):
+                        e = err_list[i] if i < len(err_list) else 0
+                        mc = conf_list[i] if i < len(conf_list) else 0.0
+                        writer.writerow([v, f_val, c, e, f"{mc:.4f}"])
+            except Exception as e:
+                err = f"Histogram CSV: {e}"
+                errors.append(err)
+                self.log.error(f"{err}\n{traceback.format_exc()}")
+
+            # ── 3. Per-scan: SVG + raw NPZ ─────────────────────────────────────
+            all_spots = []
+            for v, res in self._scan_results.items():
+                freq = res.get('frequency', float('nan'))
+
+                # Collect spots for global CSV
+                for s in res['spots']:
+                    all_spots.append({
+                        'Voltage': v, 'Frequency_GHz': freq,
+                        'X': s['x'], 'Y': s['y'],
+                        'Value': s['val'], 'Confidence': s['confidence']
+                    })
+
                 try:
                     v_float = float(v)
-                    fname = f"scan_{v_float:.4f}V.svg"
-                except:
-                    # Fallback
-                    clean_v = str(v).replace(':', '_').replace('/', '_').replace('\\', '_')
-                    fname = f"scan_{clean_v}V.svg"
-                
-                fig.savefig(os.path.join(save_dir, fname))
-            except Exception as e:
-                self.log.error(f"Failed to save scan at {v}: {e}")
-                
-        # Save All Spots CSV
-        try:
-            with open(os.path.join(save_dir, "all_spots.csv"), 'w', newline='') as f:
-                fieldnames = ['Voltage', 'Frequency', 'X', 'Y', 'Value', 'Confidence']
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(all_spots)
-        except Exception as e:
-            self.log.error(f"Failed to save spots CSV: {e}")
-            
-        # 4. Save JSON Database Export
-        try:
-            import json
-            
-            class NumpyEncoder(json.JSONEncoder):
-                def default(self, obj):
-                    if isinstance(obj, np.integer):
-                        return int(obj)
-                    elif isinstance(obj, np.floating):
-                        return float(obj)
-                    elif isinstance(obj, np.ndarray):
-                        return obj.tolist()
-                    return super(NumpyEncoder, self).default(obj)
+                    v_safe = f"{v_float:.4f}"
+                except Exception:
+                    v_safe = str(v).replace(':', '_').replace('/', '_').replace('\\', '_')
 
-            export_data = {
-                "metadata": {
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "scan_channels": self._scan_channels,
-                    "count_channel": self._count_channel,
-                    "detection_method": self._detection_method,
-                    "spot_threshold": self._spot_threshold
-                },
-                "histogram": {
-                    "voltage": self._histogram_data['voltage'],
-                    "counts": self._histogram_data['counts'],
-                    "frequency": self._histogram_data.get('frequency', [])
-                },
-                "scans": []
-            }
-            
-            for v, res in self._scan_results.items():
-                scan_entry = {
-                    "voltage": v,
-                    "frequency": res.get('frequency', None),
-                    "timestamp": res.get('timestamp', ""),
-                    "channel": res.get('channel', ""),
-                    "spots": res['spots'], # List of dicts, already JSON/Encoder friendly
-                    "image": res['image']  # Numpy array, handled by Encoder
+                # SVG figure
+                try:
+                    fig = Figure()
+                    FigureCanvasAgg(fig)
+                    ax = fig.add_subplot(111)
+                    freq_str = f"{freq:.3f} GHz" if not np.isnan(freq) else "? GHz"
+                    res_str2 = ', '.join(f"{ax_}: {r}" for ax_, r in scan_resolution.items()) if scan_resolution else ''
+                    title = f"Scan at {v_safe} V  ({freq_str})"
+                    if res_str2:
+                        title += f"\nResolution: {res_str2}"
+                    ax.set_title(title)
+                    ax.imshow(res['image'], origin='lower', cmap='viridis')
+                    spots = res['spots']
+                    if spots:
+                        ax.scatter([s['x'] for s in spots], [s['y'] for s in spots],
+                                   c='r', marker='x', s=50)
+                    fig.savefig(os.path.join(save_dir, f"scan_{v_safe}V.svg"))
+                except Exception as e:
+                    err = f"SVG scan {v_safe}V: {e}"
+                    errors.append(err)
+                    self.log.error(err)
+
+                # Raw NPZ  — all channels + metadata
+                try:
+                    npz_path = os.path.join(save_dir, f"scan_{v_safe}V_raw.npz")
+                    # Build arrays dict: one entry per channel
+                    arrays = {}
+                    if 'all_channels' in res and res['all_channels']:
+                        for ch_name, arr in res['all_channels'].items():
+                            safe_ch = ch_name.replace(' ', '_').replace('/', '_')
+                            arrays[safe_ch] = np.asarray(arr)
+                    else:
+                        # Fallback: just the primary image
+                        arrays['image'] = np.asarray(res['image'])
+
+                    # Metadata as JSON-encoded string (npz only stores arrays natively)
+                    meta = {
+                        'voltage_V': float(v) if not isinstance(v, float) else v,
+                        'frequency_GHz': float(freq) if not np.isnan(freq) else None,
+                        'timestamp': res.get('timestamp', ''),
+                        'channel': res.get('channel', ''),
+                        'count_channel': res.get('count_channel', ''),
+                        'detection_method': getattr(self, '_current_method', self._detection_method),
+                        'threshold': float(getattr(self, '_current_threshold', self._spot_threshold)),
+                        'scan_resolution': scan_resolution,
+                        'zero_frequency_THz': self._zero_frequency,
+                        'spots': res['spots'],  # list of dicts
+                    }
+                    arrays['_metadata_json'] = np.array(json.dumps(meta))
+                    np.savez_compressed(npz_path, **arrays)
+                except Exception as e:
+                    err = f"NPZ scan {v_safe}V: {e}"
+                    errors.append(err)
+                    self.log.error(f"{err}\n{traceback.format_exc()}")
+
+            # ── 4. All-spots CSV ───────────────────────────────────────────────
+            try:
+                with open(os.path.join(save_dir, "all_spots.csv"), 'w', newline='') as f:
+                    fieldnames = ['Voltage', 'Frequency_GHz', 'X', 'Y', 'Value', 'Confidence']
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(all_spots)
+            except Exception as e:
+                err = f"All-spots CSV: {e}"
+                errors.append(err)
+                self.log.error(err)
+
+            # ── 5. Summary JSON ────────────────────────────────────────────────
+            try:
+                class NumpyEncoder(json.JSONEncoder):
+                    def default(self, obj):
+                        if isinstance(obj, np.integer): return int(obj)
+                        if isinstance(obj, np.floating): return float(obj)
+                        if isinstance(obj, np.ndarray): return obj.tolist()
+                        return super().default(obj)
+
+                export_data = {
+                    "metadata": {
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "scan_channels": list(self._scan_channels),
+                        "count_channel": self._count_channel,
+                        "detection_method": self._current_method,
+                        "spot_threshold": float(self._current_threshold),
+                        "scan_resolution": scan_resolution,
+                        "scan_range_um": scan_range_um,
+                        "zero_frequency_THz": self._zero_frequency,
+                    },
+                    "histogram": {
+                        "voltage": self._histogram_data['voltage'],
+                        "counts": self._histogram_data['counts'],
+                        "frequency_GHz": self._histogram_data.get('frequency', [])
+                    },
+                    "scans": [
+                        {
+                            "voltage": v,
+                            "frequency_GHz": res.get('frequency', None),
+                            "timestamp": res.get('timestamp', ''),
+                            "channel": res.get('channel', ''),
+                            "n_spots": len(res['spots']),
+                            "spots": res['spots'],
+                            # image omitted from JSON to keep file small; use NPZ instead
+                        }
+                        for v, res in self._scan_results.items()
+                    ]
                 }
-                export_data["scans"].append(scan_entry)
-                
-            with open(os.path.join(save_dir, "results.json"), 'w') as f:
-                json.dump(export_data, f, cls=NumpyEncoder, indent=2)
-                
+                with open(os.path.join(save_dir, "results.json"), 'w') as f:
+                    json.dump(export_data, f, cls=NumpyEncoder, indent=2)
+            except Exception as e:
+                err = f"Summary JSON: {e}"
+                errors.append(err)
+                self.log.error(f"{err}\n{traceback.format_exc()}")
+
+            if errors:
+                msg = f"Saved to {save_dir} with {len(errors)} error(s): {'; '.join(errors)}"
+                self.sigSavingFinished.emit(False, msg)
+            else:
+                self.sigSavingFinished.emit(True, f"All results saved to:\n{save_dir}")
+
         except Exception as e:
-            import traceback
-            self.log.error(f"Failed to save JSON export: {e}\n{traceback.format_exc()}")
+            self.log.error(f"Save worker crashed: {e}\n{traceback.format_exc()}")
+            self.sigSavingFinished.emit(False, f"Save failed: {e}")
+        finally:
+            self._saving_running = False
 
     def fit_gaussian(self):
         """

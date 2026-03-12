@@ -64,14 +64,21 @@ class ZPLDistributionGui(GuiBase):
         super().__init__(parent=parent, **kwargs)
         self._mw = QtWidgets.QWidget()
         self._mw.setWindowTitle('ZPL Distribution')
+        self._save_root_path = ''   # set in on_activate once logic is available
+        self._save_name_tag = ''
         self._init_ui()
 
     def on_activate(self):
+        # Seed the default save root from the logic's qudi data dir
+        self._save_root_path = self._logic().get_default_data_dir()
+        self._update_save_path_label()
+
         self._logic().sigUpdatePlot.connect(self.update_plot)
         self._logic().sigMeasurementFinished.connect(self.on_finished)
         self._logic().sigScanCompleted.connect(self.on_scan_completed)
         self._logic().sigWavelengthCheckFinished.connect(self.on_coverage_check_finished)
         self._logic().sigBackgroundCaptured.connect(self.on_background_captured)
+        self._logic().sigSavingFinished.connect(self.on_saving_finished)
         self.show()
         
     def on_deactivate(self):
@@ -80,6 +87,7 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigScanCompleted.disconnect(self.on_scan_completed)
         self._logic().sigWavelengthCheckFinished.disconnect(self.on_coverage_check_finished)
         self._logic().sigBackgroundCaptured.disconnect(self.on_background_captured)
+        self._logic().sigSavingFinished.disconnect(self.on_saving_finished)
         if self._mw:
             self._mw.close()
 
@@ -237,8 +245,42 @@ class ZPLDistributionGui(GuiBase):
         bg_layout.addStretch()
 
         layout.addWidget(bg_group)
-        
-        # 2. Main Content Tabs
+
+        # --- Saving Dock ---
+        save_group = QtWidgets.QGroupBox("Save Settings")
+        save_layout = QtWidgets.QGridLayout()
+        save_group.setLayout(save_layout)
+
+        # Row 0: name tag
+        save_layout.addWidget(QtWidgets.QLabel("Folder name:"), 0, 0)
+        self.save_name_edit = QtWidgets.QLineEdit()
+        self.save_name_edit.setPlaceholderText("e.g. sample_A_run1  (leave empty for root)")
+        self.save_name_edit.textChanged.connect(self._on_save_name_changed)
+        save_layout.addWidget(self.save_name_edit, 0, 1, 1, 2)
+
+        # Row 1: path buttons + label
+        self.daily_path_btn = QtWidgets.QPushButton("Daily Directory")
+        self.daily_path_btn.setToolTip("Use the daily data directory defined in the qudi config")
+        self.daily_path_btn.clicked.connect(self._on_daily_path_clicked)
+        save_layout.addWidget(self.daily_path_btn, 1, 0)
+
+        self.new_path_btn = QtWidgets.QPushButton("New Path...")
+        self.new_path_btn.setToolTip("Open file explorer to choose a custom root directory")
+        self.new_path_btn.clicked.connect(self._on_new_path_clicked)
+        save_layout.addWidget(self.new_path_btn, 1, 1)
+
+        self.save_path_label = QtWidgets.QLabel("")
+        self.save_path_label.setWordWrap(True)
+        self.save_path_label.setStyleSheet("color: gray; font-size: 10px;")
+        save_layout.addWidget(self.save_path_label, 2, 0, 1, 3)
+
+        # Row 3: save button
+        self.save_btn = QtWidgets.QPushButton("💾  Save All Results")
+        self.save_btn.clicked.connect(self.save_all_results)
+        save_layout.addWidget(self.save_btn, 3, 0, 1, 3)
+
+        layout.addWidget(save_group)
+
         self.tabs = QtWidgets.QTabWidget()
         layout.addWidget(self.tabs)
         
@@ -331,10 +373,6 @@ class ZPLDistributionGui(GuiBase):
         self.remove_spot_btn.clicked.connect(self.remove_selected_spot)
         side_panel.addWidget(self.remove_spot_btn)
         
-        self.save_all_btn = QtWidgets.QPushButton("Save All Results")
-        self.save_all_btn.clicked.connect(self.save_all_results)
-        side_panel.addWidget(self.save_all_btn)
-        
         # --- Analysis Controls --- (unchanged)
         side_panel.addSpacing(10)
         side_panel.addWidget(QtWidgets.QLabel("<b>Detection Settings:</b>"))
@@ -342,7 +380,14 @@ class ZPLDistributionGui(GuiBase):
         # Method Selection
         side_panel.addWidget(QtWidgets.QLabel("Method:"))
         self.method_combo = QtWidgets.QComboBox()
-        self.method_combo.addItems(['Simple', 'Gaussian', 'DoG'])
+        self.method_combo.addItems(['Simple', 'Gaussian', 'DoG', 'Adaptive'])
+        self.method_combo.setToolTip(
+            "Simple: raw threshold + local max\n"
+            "Gaussian: smooth then threshold\n"
+            "DoG: difference-of-Gaussians band-pass\n"
+            "Adaptive: multiscale LoG, auto-adapts to background.\n"
+            "  Threshold acts as sensitivity (1000-10000)."
+        )
         side_panel.addWidget(self.method_combo)
         
         # Threshold
@@ -352,7 +397,39 @@ class ZPLDistributionGui(GuiBase):
         self.threshold_spin.setValue(5000) # Default
         side_panel.addWidget(self.threshold_spin)
         
-        # Re-Analyze Button
+        # --- Error Analysis Controls ---
+        self.error_analysis_chk = QtWidgets.QCheckBox("Error Analysis")
+        self.error_analysis_chk.setToolTip(
+            "When enabled, re-analysis also runs detection at lower/upper\n"
+            "threshold bounds. The difference in spot counts becomes the\n"
+            "asymmetric error bar on the histogram."
+        )
+        self.error_analysis_chk.toggled.connect(self._on_error_analysis_toggled)
+        side_panel.addWidget(self.error_analysis_chk)
+
+        self.error_bounds_widget = QtWidgets.QWidget()
+        eb_layout = QtWidgets.QGridLayout()
+        eb_layout.setContentsMargins(0, 0, 0, 0)
+        self.error_bounds_widget.setLayout(eb_layout)
+
+        eb_layout.addWidget(QtWidgets.QLabel("Lower:"), 0, 0)
+        self.thresh_lower_spin = QtWidgets.QDoubleSpinBox()
+        self.thresh_lower_spin.setRange(0, 1e9)
+        self.thresh_lower_spin.setValue(3000)
+        self.thresh_lower_spin.setToolTip("Lower threshold bound (more detections)")
+        eb_layout.addWidget(self.thresh_lower_spin, 0, 1)
+
+        eb_layout.addWidget(QtWidgets.QLabel("Upper:"), 1, 0)
+        self.thresh_upper_spin = QtWidgets.QDoubleSpinBox()
+        self.thresh_upper_spin.setRange(0, 1e9)
+        self.thresh_upper_spin.setValue(7000)
+        self.thresh_upper_spin.setToolTip("Upper threshold bound (fewer detections)")
+        eb_layout.addWidget(self.thresh_upper_spin, 1, 1)
+
+        self.error_bounds_widget.setVisible(False)
+        side_panel.addWidget(self.error_bounds_widget)
+
+        # Re-Analyze Buttons
         self.reanalyze_btn = QtWidgets.QPushButton("Re-Analyze Current")
         self.reanalyze_btn.clicked.connect(self.run_reanalysis)
         side_panel.addWidget(self.reanalyze_btn)
@@ -404,6 +481,7 @@ class ZPLDistributionGui(GuiBase):
             
             # Update Label
             self.preview_label.setText(f"Points: {len(voltages)}")
+            self.preview_label.setStyleSheet("")  # Reset any warning style
             
             # Update Plot
             # If we are not running, we can show lines.
@@ -433,9 +511,12 @@ class ZPLDistributionGui(GuiBase):
                  
             self.canvas_hist.draw()
             
+        except ValueError as e:
+            # Too many points or other parameter error from get_voltage_schedule
+            self.preview_label.setText("⚠ Too many points!")
+            self.preview_label.setStyleSheet("color: red;")
         except Exception as e:
-            # Logic might not be ready or error
-            # print(f"Preview Error: {e}")
+            # Logic might not be ready or other error
             pass
             
     def start_measurement(self):
@@ -492,6 +573,16 @@ class ZPLDistributionGui(GuiBase):
              success = self._logic().reanalyze_scan(self._current_view_voltage, method, threshold, channel)
              
              if success:
+                 # Run error analysis if enabled
+                 if self.error_analysis_chk.isChecked():
+                     self.status_label.setText("Status: Computing threshold errors...")
+                     QtWidgets.QApplication.processEvents()
+                     self._logic().compute_threshold_errors(
+                         method, threshold,
+                         self.thresh_lower_spin.value(),
+                         self.thresh_upper_spin.value(),
+                         channel
+                     )
                  self.status_label.setText(f"Status: Re-analysis complete.")
              else:
                  self.status_label.setText(f"Status: Re-analysis failed.")
@@ -503,22 +594,29 @@ class ZPLDistributionGui(GuiBase):
         self.status_label.setText(f"Status: Re-analyzing ALL scans with {method}...")
         QtWidgets.QApplication.processEvents()
         
-        # We can optionally select a channel if user wants to force a specific channel for all?
-        # Current UI logic for 'Current' uses the dropdown. 
-        # For 'All', we should probably respect the same dropdown if it makes sense, 
-        # or use 'default' logic if channel varies per scan.
-        # But 'channel_combo' content depends on the *currently selected scan*.
-        # So using it for *all* scans might be dangerous if they have different channels.
-        # However, usually a measurement run has consistent channels.
-        # Let's pass None to let logic decide (default or fallback), 
-        # or pass the current combo text if valid.
-        # Logic `reanalyze_all` signature takes `channel`.
-        # Safe bet: pass None (Logic uses original channel or finds match).
+        # Pass the currently selected channel so all scans are re-analyzed
+        # on the same channel the user is viewing.
+        channel = self.channel_combo.currentText() if self.channel_combo.count() > 0 else None
         
-        count = self._logic().reanalyze_all(method, threshold, channel=None)
+        count = self._logic().reanalyze_all(method, threshold, channel=channel)
         
-        self.status_label.setText(f"Status: Re-analysis of {count} scans complete.")
-        QtWidgets.QMessageBox.information(self._mw, "Re-analysis Complete", f"Re-analyzed {count} scans.")
+        # Run error analysis if enabled
+        if self.error_analysis_chk.isChecked():
+            self.status_label.setText("Status: Computing threshold errors...")
+            QtWidgets.QApplication.processEvents()
+            self._logic().compute_threshold_errors(
+                method, threshold,
+                self.thresh_lower_spin.value(),
+                self.thresh_upper_spin.value(),
+                channel
+            )
+        
+        self.status_label.setText(f"Status: Re-analysis of {count} scans complete ({method}).")
+        
+        # Refresh the currently viewed scan to show updated spots
+        self.update_scan_view()
+        
+        QtWidgets.QMessageBox.information(self._mw, "Re-analysis Complete", f"Re-analyzed {count} scans with {method}.")
 
 
     def stop_measurement(self):
@@ -587,6 +685,25 @@ class ZPLDistributionGui(GuiBase):
                     and len(volts) > 0
                     and not np.all(np.isnan(freqs)))
 
+        # Extract error bars: prefer asymmetric (threshold sweep) if available
+        has_asymmetric = ('error_lower' in data and 'error_upper' in data
+                          and len(data['error_lower']) == len(volts))
+        if has_asymmetric:
+            err_lo = np.array(data['error_lower'], dtype=float)
+            err_hi = np.array(data['error_upper'], dtype=float)
+            yerr = np.array([err_lo, err_hi])  # shape (2, N) for asymmetric
+            err_label = 'Threshold sensitivity'
+        else:
+            errors = np.array(data.get('error', [0] * len(volts)), dtype=float)
+            if len(errors) < len(volts):
+                errors = np.concatenate([errors, np.zeros(len(volts) - len(errors))])
+            yerr = errors
+            err_label = 'Marginal detections'
+
+        mean_confs = np.array(data.get('mean_confidence', [0.0] * len(volts)), dtype=float)
+        if len(mean_confs) < len(volts):
+            mean_confs = np.concatenate([mean_confs, np.zeros(len(volts) - len(mean_confs))])
+
         if has_freq:
             # ---- Primary axis: Frequency (GHz) ----
             x_data = freqs
@@ -601,7 +718,12 @@ class ZPLDistributionGui(GuiBase):
             else:
                 width = 1.0  # single-point fallback
 
-            self.ax_hist.bar(x_data, counts, width=width, picker=5, label='Counts')
+            self.ax_hist.bar(x_data, counts, width=width, picker=5, label='Counts',
+                             alpha=0.85, color='steelblue')
+            # Error bars
+            self.ax_hist.errorbar(x_data, counts, yerr=yerr, fmt='none',
+                                  ecolor='black', capsize=3, capthick=1,
+                                  label=err_label)
             self.ax_hist.scatter(x_data, [0] * len(x_data),
                                  color='red', marker='|', s=50, picker=5)
 
@@ -634,12 +756,29 @@ class ZPLDistributionGui(GuiBase):
                 bar_w = float(np.min(nonzero)) * 0.8 if len(nonzero) > 0 else step * 0.8
             else:
                 bar_w = step * 0.8 if step > 0 else 1.0
-            self.ax_hist.bar(volts, counts, width=bar_w, picker=5)
+            self.ax_hist.bar(volts, counts, width=bar_w, picker=5,
+                             alpha=0.85, color='steelblue')
+            # Error bars
+            self.ax_hist.errorbar(volts, counts, yerr=yerr, fmt='none',
+                                  ecolor='black', capsize=3, capthick=1,
+                                  label=err_label)
             self.ax_hist.scatter(volts, [0] * len(volts),
                                  color='red', marker='|', s=50, picker=5)
 
         self.ax_hist.set_ylabel("Number of Spots")
-        self.ax_hist.set_title("ZPL Distribution")
+
+        # Title with mean confidence annotation
+        valid_confs = mean_confs[mean_confs > 0]
+        if len(valid_confs) > 0:
+            overall_conf = float(np.mean(valid_confs))
+            self.ax_hist.set_title(f"ZPL Distribution    (mean conf: {overall_conf:.2f})")
+        else:
+            self.ax_hist.set_title("ZPL Distribution")
+
+        has_any_err = (np.any(yerr > 0) if yerr.ndim == 1 else np.any(yerr > 0))
+        if has_any_err:
+            self.ax_hist.legend(loc='upper right', fontsize=8)
+
         self.canvas_hist.draw()
         
         # Refresh current view if it is still active
@@ -832,6 +971,10 @@ class ZPLDistributionGui(GuiBase):
         if row >= 0 and self._current_view_voltage is not None:
              self._logic().remove_spot(self._current_view_voltage, row)
 
+    def _on_error_analysis_toggled(self, checked):
+        """Show/hide the threshold bounds widgets."""
+        self.error_bounds_widget.setVisible(checked)
+
     # -------------------------------------------------------------------------
     # Background removal slots
     # -------------------------------------------------------------------------
@@ -860,13 +1003,69 @@ class ZPLDistributionGui(GuiBase):
             self.bg_enable_chk.setEnabled(False)
             self.bg_enable_chk.setChecked(False)
 
-    def save_all_results(self):
-        # Open dialog
-        # Use explicit kwargs to avoid qtpy issue
-        folder = QtWidgets.QFileDialog.getExistingDirectory(parent=self._mw, caption="Select Directory to Save Analysis")
+    # -------------------------------------------------------------------------
+    # Saving dock slots
+    # -------------------------------------------------------------------------
+
+    def _on_save_name_changed(self, text):
+        self._save_name_tag = text.strip()
+        self._update_save_path_label()
+
+    def _on_daily_path_clicked(self):
+        """Reset root to the qudi daily data directory (from config)."""
+        self._save_root_path = self._logic().get_default_data_dir()
+        self._update_save_path_label()
+
+    def _on_new_path_clicked(self):
+        """Open a file explorer to choose a custom root directory."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            parent=self._mw,
+            caption="Select Root Save Directory",
+            dir=self._save_root_path if self._save_root_path else ''
+        )
         if folder:
-            self._logic().save_all_results(folder)
-            QtWidgets.QMessageBox.information(self._mw, "Saved", f"Results saved to {folder}")
+            self._save_root_path = folder
+            self._update_save_path_label()
+
+    def _update_save_path_label(self):
+        import os
+        if self._save_name_tag:
+            # Strip unsafe path chars from name tag for safety
+            safe_tag = self._save_name_tag.replace('/', '_').replace('\\', '_').replace(':', '_')
+            full_path = os.path.join(self._save_root_path, safe_tag) if self._save_root_path else safe_tag
+        else:
+            full_path = self._save_root_path if self._save_root_path else '<not set>'
+        if hasattr(self, 'save_path_label'):
+            self.save_path_label.setText(f"Save to: {full_path}")
+        self._effective_save_path = full_path
+
+    def save_all_results(self):
+        """Trigger background save to the path shown in the dock."""
+        import os
+        # Rebuild effective path (in case it was not yet set)
+        self._update_save_path_label()
+        save_dir = getattr(self, '_effective_save_path', '')
+        if not save_dir:
+            QtWidgets.QMessageBox.warning(self._mw, "No Save Path",
+                                          "Please set a save directory first.")
+            return
+        # Disable save button while saving
+        self.save_btn.setEnabled(False)
+        self.save_btn.setText("Saving...")
+        self.status_label.setText(f"Status: Saving to {save_dir} ...")
+        # Kick off background save (non-blocking)
+        self._logic().save_all_results(save_dir)
+
+    def on_saving_finished(self, success, message):
+        """Called from sigSavingFinished when background save completes."""
+        self.save_btn.setEnabled(True)
+        self.save_btn.setText("\U0001f4be  Save All Results")
+        if success:
+            self.status_label.setText("Status: Save complete.")
+            QtWidgets.QMessageBox.information(self._mw, "Saved", message)
+        else:
+            self.status_label.setText("Status: Save finished with errors.")
+            QtWidgets.QMessageBox.warning(self._mw, "Save — partial errors", message)
 
     def check_coverage(self):
         start = self.start_spin.value()
