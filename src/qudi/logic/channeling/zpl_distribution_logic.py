@@ -1064,6 +1064,13 @@ class ZPLDistributionLogic(LogicBase):
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
+            # ── Thread safety: snapshot all shared data up front ────────────
+            # Matplotlib is NOT thread-safe.  The measurement thread may
+            # mutate _scan_results / _histogram_data while we render SVGs,
+            # causing an access violation.  Deep-copy everything once.
+            histogram_data = copy.deepcopy(self._histogram_data)
+            scan_results   = copy.deepcopy(self._scan_results)
+
             # ── Attempt to get scan resolution + range from scan_logic ──────
             scan_resolution = {}
             scan_range_um = {}
@@ -1101,10 +1108,10 @@ class ZPLDistributionLogic(LogicBase):
                 ax.set_xlabel("Frequency (GHz) / Voltage (V)")
                 ax.set_ylabel("Number of Spots")
                 ax.set_title("ZPL Distribution")
-                volts_sv = self._histogram_data['voltage']
-                counts_sv = self._histogram_data['counts']
-                freqs_sv = self._histogram_data.get('frequency', [])
-                errors_sv = self._histogram_data.get('error', [0] * len(volts_sv))
+                volts_sv = histogram_data['voltage']
+                counts_sv = histogram_data['counts']
+                freqs_sv = histogram_data.get('frequency', [])
+                errors_sv = histogram_data.get('error', [0] * len(volts_sv))
                 if len(volts_sv) > 0:
                     use_freq = (len(freqs_sv) == len(volts_sv)
                                 and not all(np.isnan(f) for f in freqs_sv if not np.isnan(f) == np.isnan(f)))
@@ -1128,9 +1135,9 @@ class ZPLDistributionLogic(LogicBase):
 
             # ── 2. Histogram CSV ───────────────────────────────────────────────
             try:
-                volts = self._histogram_data['voltage']
-                counts = self._histogram_data['counts']
-                freqs = self._histogram_data.get('frequency', [float('nan')] * len(volts))
+                volts = histogram_data['voltage']
+                counts = histogram_data['counts']
+                freqs = histogram_data.get('frequency', [float('nan')] * len(volts))
                 if len(freqs) < len(volts):
                     freqs = list(freqs) + [float('nan')] * (len(volts) - len(freqs))
                 # Build resolution string
@@ -1145,8 +1152,8 @@ class ZPLDistributionLogic(LogicBase):
                     writer.writerow([f"# Threshold: {self._current_threshold}"])
                     writer.writerow(["Voltage (V)", "Frequency (GHz)", "Spot Count",
                                      "Error (marginal)", "Mean Confidence"])
-                    err_list = self._histogram_data.get('error', [0] * len(volts))
-                    conf_list = self._histogram_data.get('mean_confidence', [0.0] * len(volts))
+                    err_list = histogram_data.get('error', [0] * len(volts))
+                    conf_list = histogram_data.get('mean_confidence', [0.0] * len(volts))
                     for i, (v, f_val, c) in enumerate(zip(volts, freqs, counts)):
                         e = err_list[i] if i < len(err_list) else 0
                         mc = conf_list[i] if i < len(conf_list) else 0.0
@@ -1158,7 +1165,7 @@ class ZPLDistributionLogic(LogicBase):
 
             # ── 3. Per-scan: SVG + raw NPZ ─────────────────────────────────────
             all_spots = []
-            for v, res in self._scan_results.items():
+            for v, res in scan_results.items():
                 freq = res.get('frequency', float('nan'))
 
                 # Collect spots for global CSV
@@ -1217,8 +1224,8 @@ class ZPLDistributionLogic(LogicBase):
                         'timestamp': res.get('timestamp', ''),
                         'channel': res.get('channel', ''),
                         'count_channel': res.get('count_channel', ''),
-                        'detection_method': getattr(self, '_current_method', self._detection_method),
-                        'threshold': float(getattr(self, '_current_threshold', self._spot_threshold)),
+                        'detection_method': self._current_method,
+                        'threshold': float(self._current_threshold),
                         'scan_resolution': scan_resolution,
                         'zero_frequency_THz': self._zero_frequency,
                         'spots': res['spots'],  # list of dicts
@@ -1263,9 +1270,9 @@ class ZPLDistributionLogic(LogicBase):
                         "zero_frequency_THz": self._zero_frequency,
                     },
                     "histogram": {
-                        "voltage": self._histogram_data['voltage'],
-                        "counts": self._histogram_data['counts'],
-                        "frequency_GHz": self._histogram_data.get('frequency', [])
+                        "voltage": histogram_data['voltage'],
+                        "counts": histogram_data['counts'],
+                        "frequency_GHz": histogram_data.get('frequency', [])
                     },
                     "scans": [
                         {
@@ -1277,7 +1284,7 @@ class ZPLDistributionLogic(LogicBase):
                             "spots": res['spots'],
                             # image omitted from JSON to keep file small; use NPZ instead
                         }
-                        for v, res in self._scan_results.items()
+                        for v, res in scan_results.items()
                     ]
                 }
                 with open(os.path.join(save_dir, "results.json"), 'w') as f:

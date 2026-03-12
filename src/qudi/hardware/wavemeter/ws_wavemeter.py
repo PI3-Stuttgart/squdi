@@ -136,17 +136,25 @@ class HighFinesseWavemeter(WavemeterInterface):
     def on_deactivate(self):
         if self.module_state() != 'idle' and self.module_state() != 'deactivated':
             self.stop_acquisition()
-        self.hardware_thread.quit()
-        self.sig_handle_timer.disconnect()
-        self._hardware_pull.sig_wavelength.disconnect()
+            
+        if hasattr(self, 'hardware_thread'):
+            self.hardware_thread.quit()
+            self.hardware_thread.wait()
+            try:
+                self.sig_handle_timer.disconnect()
+                self._hardware_pull.sig_wavelength.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            del self.hardware_thread
+            del self._hardware_pull
 
         try:
             # clean up by removing reference to the ctypes library object
-            del self._wavemeterdll
+            if hasattr(self, '_wavemeter'):
+                del self._wavemeter
             return 0
-        except:
-            self.log.error('Could not unload the wlmData.dll of the '
-                    'wavemeter.')
+        except Exception as e:
+            self.log.error(f'Could not unload the wavemeter: {e}')
 
 
     #############################################
@@ -162,18 +170,20 @@ class HighFinesseWavemeter(WavemeterInterface):
         """ Function to save the wavelength, when it comes in with a signal.
         """
         elapsed_time = time.time() - self.start_time
-        row = [wavelengths[ch] for ch in self._selected_channels]
+        
+        # Use .get() to prevent KeyErrors if channels change mid-measurement
+        row = [wavelengths.get(ch, 0.0) for ch in self._selected_channels]
         row.append(elapsed_time)
+        
+        # Default channel value for change detection
+        current_default_wl = wavelengths.get(self._default_channel, 0.0)
+        
         if len(self._wavelength_buffer) < 1:
-            
-            self._wavelength_buffer = np.array(
-                row
-                )
+            self._wavelength_buffer = np.array(row)
         elif len(self._wavelength_buffer) > 2:
-            if (np.abs(np.round(wavelengths[self._default_channel], 5) - np.round(self._wavelength_buffer[-1][0], 5))) > 0:
+            # Only append if the default channel wavelength has changed slightly
+            if (np.abs(np.round(current_default_wl, 5) - np.round(self._wavelength_buffer[-1][0], 5))) > 0:
                 self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
-            else:
-                pass
         else:
             self._wavelength_buffer = np.vstack((self._wavelength_buffer, row))
 
@@ -240,11 +250,38 @@ class HighFinesseWavemeter(WavemeterInterface):
     
     def get_selected_channels(self):
         return self._selected_channels
-    
-    def get_current_wavelength(self):
-    
-        return self._current_wavelengths[self._default_channel]
         
+    def set_selected_channels(self, channels):
+        """ Dynamically change which channels are recorded in the buffer. """
+        self.threadlock.acquire()
+        try:
+            self._selected_channels = channels
+            self.empty_buffer()
+        finally:
+            self.threadlock.release()
+
+    def get_active_channels(self):
+        return self._active_channels
+
+    def set_active_channels(self, channels):
+        """ Dynamically change which channels are queried from the wavemeter. """
+        self.threadlock.acquire()
+        try:
+            self._active_channels = channels
+            for ch in self._active_channels:
+                if ch not in self._current_wavelengths:
+                    self._current_wavelengths[ch] = 0.0
+        finally:
+            self.threadlock.release()
+
+    def get_default_channel(self):
+        return self._default_channel
+
+    def set_default_channel(self, channel):
+        self._default_channel = channel
+
+    def get_current_wavelength(self):
+        return self._current_wavelengths.get(self._default_channel, 0.0)
 
     def get_timing(self):
         """ Get the timing of the internal measurement thread.

@@ -81,7 +81,7 @@ class WLM():
         self.dll.GetWavelengthNum.restype = ctypes.c_double
         self.dll.GetWavelengthNum.argtypes = [ctypes.c_long, ctypes.c_double]
         wavelength = self.dll.GetWavelengthNum(channel, 0)
-        if units != 'vac':
+        if wavelength > 0 and units != 'vac':
             wavelength = self.convert_wavelength(wavelength, 'vac', units)
         return wavelength
 

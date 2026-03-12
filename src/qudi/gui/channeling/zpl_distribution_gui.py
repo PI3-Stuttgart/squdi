@@ -1018,10 +1018,11 @@ class ZPLDistributionGui(GuiBase):
 
     def _on_new_path_clicked(self):
         """Open a file explorer to choose a custom root directory."""
+        start_dir = self._save_root_path if self._save_root_path else ''
         folder = QtWidgets.QFileDialog.getExistingDirectory(
-            parent=self._mw,
-            caption="Select Root Save Directory",
-            dir=self._save_root_path if self._save_root_path else ''
+            self._mw,
+            "Select Root Save Directory",
+            start_dir
         )
         if folder:
             self._save_root_path = folder
