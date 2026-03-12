@@ -82,7 +82,7 @@ class MicrowaveSmiq(MicrowaveInterface):
         """ Initialisation performed during activation of the module. """
         # Connect to hardware
         self._rm = visa.ResourceManager()
-        print(self._rm.list_resources())
+       
         if self._visa_baud_rate is None:
             self._device = self._rm.open_resource(self._visa_address,
                                                   timeout=self._comm_timeout)

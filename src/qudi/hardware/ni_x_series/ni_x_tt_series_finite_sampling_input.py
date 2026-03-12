@@ -334,20 +334,23 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         cbm stnads for count between markers
         @return int: error code (0:OK, -1:error)
         """
+        self._timetagger_cbm_tasks = list()
         channels_tt = [int(ch.split("_")[-1]) for ch in self.__active_channels['di_channels'] if "tt" == ch.split("_")[0]]
         clock_tt = int(self._tt_ni_clock_input.split("_")[-1])
         #Workaround for the old time tagger version at the praktikum
+        
         if self._tt_falling_edge_clock_input:
                 clock_fall_tt = int(self._tt_falling_edge_clock_input.split("_")[-1])
         else:
             clock_fall_tt = - clock_tt
+        
         for channel in channels_tt:
                 self._timetagger_cbm_tasks.append(
                         self._tt.count_between_markers(click_channel = channel, 
                                             begin_channel = clock_tt,
                                             end_channel = clock_fall_tt, 
-                                            n_values=self.frame_size)
-                )
+                                            n_values=self.frame_size))
+                
         return 0
 
     def start_buffered_acquisition(self):
@@ -479,9 +482,12 @@ class NIXTTSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                 for num, di_channel in enumerate(self.__active_channels['di_channels']):
                     data_cbm = self._timetagger_cbm_tasks[num].getData()
                     di_data[num] = data_cbm
+                   
                     data[di_channel] = di_data[num] * self.sample_rate  # To go to c/s # TODO What if unit not c/s
-                self._scanner_ready = self._timetagger_cbm_tasks[-1].ready()
-                    # print(self._scanner_ready)
+                self._scanner_ready = self._timetagger_cbm_tasks[0].ready()
+
+                
+                    
             # Read analog channelss
             # if self._ai_reader is not None:
             #     data_buffer = np.zeros(number_of_samples * len(self.__active_channels['ai_channels']))

@@ -28,7 +28,7 @@ from PySide2 import QtCore, QtWidgets
 from qudi.util.widgets.plotting.plot_item import DataImageItem
 from qudi.util.widgets.plotting.colorbar import ColorBarWidget
 from qudi.util.colordefs import QudiPalettePale as palette
-
+from qudi.util.colordefs import ColorScaleRdBuRev as ColorScale
 
 class OdmrPlotWidget(QtWidgets.QWidget):
     """
@@ -66,7 +66,7 @@ class OdmrPlotWidget(QtWidgets.QWidget):
         # Create matrix plot
         self._image_widget = pg.PlotWidget()
         self._image_widget.getPlotItem().setContentsMargins(0, 1, 5, 2)
-        self._image_item = DataImageItem()
+        self._image_item = DataImageItem(colorscale=ColorScale)
         self._image_widget.addItem(self._image_item)
         self._image_widget.setMinimumWidth(100)
         self._image_widget.setMinimumHeight(100)
@@ -79,7 +79,7 @@ class OdmrPlotWidget(QtWidgets.QWidget):
         main_layout.addWidget(self._image_widget, 1, 0)
 
         # Create colorbar
-        self._colorbar = ColorBarWidget()
+        self._colorbar = ColorBarWidget(colorscale=ColorScale)
         self._colorbar.set_label(text='Signal', unit='P')
         self._colorbar.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
         if self._colorbar.mode is ColorBarWidget.ColorBarMode.PERCENTILE:
