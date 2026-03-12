@@ -148,7 +148,7 @@ class WLM():
             os.makedirs(output_directory)
             print(f"Created directory: {output_directory}")
 
-        filename = os.path.join(output_directory, f"{filename}.ltr").encode('utf-8')
+        filename = os.path.join(output_directory, f"{filename}.ltx").encode('utf-8')
         result = set_operation_file_func(filename)
         print(f"Data will be recorded to: {filename}")
         return result
