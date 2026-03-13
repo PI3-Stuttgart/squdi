@@ -216,7 +216,12 @@ class Magnet3D(Base):
         if self._abortRampLoop:
             self.pause_ramp()
             return 
-        self.ramping_state = self.get_ramping_state()
+        try:
+            self.ramping_state = self.get_ramping_state()
+        except Exception:
+            self.log.exception("Failed to query ramping state during fast ramp loop. Retrying.")
+            self.fastRampTimer.start()
+            return
         if self.ramping_state == [2,2,2]: # might be a problem with pause?
             self._abortRampLoop = True
             if self.enter_persistent:
@@ -271,7 +276,12 @@ class Magnet3D(Base):
             index = 1
         if axis == 'z':
             index = 2
-        ramping_state = self.get_ramping_state()
+        try:
+            ramping_state = self.get_ramping_state()
+        except Exception:
+            self.log.exception("Failed to query ramping state during slow ramp loop. Retrying.")
+            self.slowRampTimer.start()
+            return
         if ramping_state[index] == 2: #HOLDING
             if len(self.order_axes) > 0:
                 # go to next axis
@@ -312,10 +322,12 @@ class Magnet3D(Base):
 
         @return: list of ints with ramping status [status_x,status_y,status_z].
         """
-        status_x = self._magnet_x.get_ramping_state()
-        status_y = self._magnet_y.get_ramping_state()
-        status_z = self._magnet_z.get_ramping_state()
-        status = [status_x,status_y,status_z]
+        status = []
+        for axis, magnet in (("x", self._magnet_x), ("y", self._magnet_y), ("z", self._magnet_z)):
+            try:
+                status.append(magnet.get_ramping_state())
+            except Exception as err:
+                raise RuntimeError(f"Failed to get ramping state for {axis}-axis magnet.") from err
         return status
 
 
@@ -380,8 +392,13 @@ class Magnet3D(Base):
         if self._abortRampToZeroLoop:
             self.pause_ramp()
             return 
-        ramping_state = self.get_ramping_state()
-        currents = self.get_supply_currents()
+        try:
+            ramping_state = self.get_ramping_state()
+            currents = self.get_supply_currents()
+        except Exception:
+            self.log.exception("Failed to query status during ramp-to-zero loop. Retrying.")
+            self.zeroRampTimer.start()
+            return
         # ramping to zero sometimes ends up in HOLDING (2) or PAUSED (3) or ZERO (8)
         # no iddea why but this should fix it.
         boolean = (ramping_state == [8,8,8]) or \
@@ -453,9 +470,14 @@ class Magnet3D(Base):
     def _equalize_currents_loop_body(self):
         if self.debug:
             print('_equalize_currents_loop_body')
-        curr_mag = self.get_magnet_currents()
-        curr_sup = self.get_supply_currents()
-        state = self.get_ramping_state()
+        try:
+            curr_mag = self.get_magnet_currents()
+            curr_sup = self.get_supply_currents()
+            state = self.get_ramping_state()
+        except Exception:
+            self.log.exception("Failed to query status during current equalization loop. Retrying.")
+            self.equalizeCurrentsTimer.start()
+            return
         if np.allclose(curr_mag, curr_sup,atol=0.01) and (state==[2,2,2]):
             if self.debug:
                 print('currents equalized')
@@ -540,8 +562,13 @@ class Magnet3D(Base):
     def _psw_status_change_loop_body(self):
         if self.debug:
             print('_psw_status_change_loop_body')
-        state = self.get_ramping_state()
-        psw = self.get_psw_status()
+        try:
+            state = self.get_ramping_state()
+            psw = self.get_psw_status()
+        except Exception:
+            self.log.exception("Failed to query status during PSW state change loop. Retrying.")
+            self.pswTimer.start()
+            return
         # get all possible combinations of HOLDING and ZERO state
         statemix = []
         for i in [3,8]:

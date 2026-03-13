@@ -4,6 +4,7 @@ import inspect
 
 from qudi.core.module import LogicBase
 from qudi.core.connector import Connector
+from qudi.core.configoption import ConfigOption
 
 
 class MagnetLogic(LogicBase):
@@ -18,6 +19,12 @@ class MagnetLogic(LogicBase):
     sigContinueRamp = QtCore.Signal()
     sigRampToZero = QtCore.Signal()
     sigRamp = QtCore.Signal(np.ndarray, bool)
+    sigStatusUpdated = QtCore.Signal(object)
+    sigRequestStatusUpdate = QtCore.Signal()
+
+    _status_poll_interval_ms = ConfigOption(
+        name="status_poll_interval_ms", default=1000, missing="nothing"
+    )
     
 
     def __init__(self, *args, **kwargs):
@@ -39,9 +46,58 @@ class MagnetLogic(LogicBase):
 
         # switches
         self._rampForPixel = False
+        self._status_poll_timer = QtCore.QTimer(self)
+        self._status_poll_timer.setInterval(max(100, int(self._status_poll_interval_ms)))
+        self._status_poll_timer.timeout.connect(
+            self._emit_status_update, QtCore.Qt.QueuedConnection
+        )
+        self.sigRequestStatusUpdate.connect(
+            self._emit_status_update, QtCore.Qt.QueuedConnection
+        )
+        self._status_poll_timer.start()
 
     def on_deactivate(self):
-        pass
+        if hasattr(self, "_status_poll_timer") and self._status_poll_timer is not None:
+            self._status_poll_timer.stop()
+            try:
+                self._status_poll_timer.timeout.disconnect()
+            except RuntimeError:
+                pass
+            self._status_poll_timer = None
+        try:
+            self.sigRequestStatusUpdate.disconnect(self._emit_status_update)
+        except RuntimeError:
+            pass
+
+    @QtCore.Slot()
+    def request_status_update(self):
+        self.sigRequestStatusUpdate.emit()
+
+    @QtCore.Slot()
+    def _emit_status_update(self):
+        try:
+            ramp_states = list(self._magnet.get_ramping_state())
+            curr_amps = np.asarray(self._magnet.get_magnet_currents(), dtype=float)
+            field_cart = np.asarray(self._magnet.get_field(), dtype=float)
+        except Exception:
+            self.log.exception("Failed to query magnet status.")
+            return
+
+        field_spherical = self.cartesian_to_spherical(field_cart)
+        if field_spherical[0] * 1e3 < 5:
+            field_spherical[1] = 0
+            field_spherical[2] = 0
+        elif field_spherical[1] < 0.5 or field_spherical[1] > 179.5:
+            field_spherical[2] = 0
+
+        self.sigStatusUpdated.emit(
+            {
+                "ramping_state": ramp_states,
+                "magnet_currents": curr_amps,
+                "field_cartesian": field_cart,
+                "field_spherical": field_spherical,
+            }
+        )
 
     def set_up_scan(self, params, int_time):
         self.log.debug("set up scan")

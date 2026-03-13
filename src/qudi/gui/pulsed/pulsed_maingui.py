@@ -848,6 +848,14 @@ class PulsedMeasurementGui(GuiBase):
     def _activate_main_window_ui(self):
         self._mw.setDockNestingEnabled(True)
         self._mw.setTabPosition(QtCore.Qt.AllDockWidgetAreas, QtWidgets.QTabWidget.North)
+        dock_options = (
+            QtWidgets.QMainWindow.AllowNestedDocks
+            | QtWidgets.QMainWindow.AllowTabbedDocks
+            | QtWidgets.QMainWindow.AnimatedDocks
+        )
+        if hasattr(QtWidgets.QMainWindow, 'GroupedDragging'):
+            dock_options |= QtWidgets.QMainWindow.GroupedDragging
+        self._mw.setDockOptions(dock_options)
         self._setup_toolbar()
         self.loaded_asset_updated(*self.pulsedmasterlogic().loaded_asset)
         return
@@ -892,14 +900,22 @@ class PulsedMeasurementGui(GuiBase):
         self._mw.save_ToolBar.addWidget(self._mw.save_tag_LineEdit)
         return
 
-    def _create_plot_dock_widget(self, object_name, title, content_widget):
+    def _create_plot_dock_widget(self, object_name, title, content_widget, allow_close=False,
+                                 min_width=None, max_width=None):
         dock_widget = QtWidgets.QDockWidget(title, self._mw)
         dock_widget.setObjectName(object_name)
         dock_widget.setAllowedAreas(QtCore.Qt.AllDockWidgetAreas)
-        dock_widget.setFeatures(
+        features = (
             QtWidgets.QDockWidget.DockWidgetMovable
             | QtWidgets.QDockWidget.DockWidgetFloatable
         )
+        if allow_close:
+            features |= QtWidgets.QDockWidget.DockWidgetClosable
+        dock_widget.setFeatures(features)
+        if isinstance(min_width, int) and min_width > 0:
+            dock_widget.setMinimumWidth(min_width)
+        if isinstance(max_width, int) and max_width > 0:
+            dock_widget.setMaximumWidth(max_width)
 
         container = QtWidgets.QWidget()
         container_layout = QtWidgets.QVBoxLayout(container)
@@ -935,6 +951,23 @@ class PulsedMeasurementGui(GuiBase):
         self._pa.second_plot_GroupBox.hide()
         return
 
+    def _ensure_measurement_parameter_dock(self):
+        if hasattr(self, '_measurement_parameters_dockwidget'):
+            return
+
+        self._measurement_parameters_dockwidget = self._create_plot_dock_widget(
+            object_name='pulsed_measurement_parameters_dockwidget',
+            title='Measurement Parameters',
+            content_widget=self._pa.groupBox_8,
+            allow_close=True,
+            min_width=300,
+            max_width=520
+        )
+        self._mw.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self._measurement_parameters_dockwidget)
+        self._pa.horizontalLayout_3.removeWidget(self._pa.groupBox_8)
+        self._pa.groupBox_8.setMaximumWidth(500)
+        return
+
     def _ensure_ssr_histogram_dock(self):
         if not hasattr(self._pa, 'ssr_hist_PlotWidget') or hasattr(self, '_ssr_histogram_dockwidget'):
             return
@@ -953,6 +986,28 @@ class PulsedMeasurementGui(GuiBase):
 
         self._pa.horizontalLayout_3.removeWidget(self._pa.ssr_hist_groupBox)
         self._pa.ssr_hist_groupBox.hide()
+        return
+
+    def _ensure_ssr_parameter_dock(self):
+        if not hasattr(self._pa, 'ssr_groupBox') or hasattr(self, '_ssr_parameters_dockwidget'):
+            return
+
+        self._ssr_parameters_dockwidget = self._create_plot_dock_widget(
+            object_name='pulsed_ssr_parameters_dockwidget',
+            title='SSR Readout',
+            content_widget=self._pa.ssr_groupBox,
+            allow_close=True,
+            min_width=240,
+            max_width=400
+        )
+        self._mw.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self._ssr_parameters_dockwidget)
+        if hasattr(self, '_measurement_parameters_dockwidget'):
+            self._mw.tabifyDockWidget(
+                self._measurement_parameters_dockwidget, self._ssr_parameters_dockwidget
+            )
+            self._measurement_parameters_dockwidget.raise_()
+        self._pa.horizontalLayout_3.removeWidget(self._pa.ssr_groupBox)
+        self._pa.ssr_groupBox.setMaximumWidth(360)
         return
 
     @QtCore.Slot(bool)
@@ -2998,6 +3053,7 @@ class PulsedMeasurementGui(GuiBase):
         self._pa.first_plot_splitter.setSizes((window_width, window_width/3))
         self._pa.second_plot_splitter.setSizes((window_width, window_width / 3))
         self._ensure_analysis_plot_docks()
+        self._ensure_measurement_parameter_dock()
 
         # set boundaries
         self._pa.ana_param_num_laser_pulse_SpinBox.setMinimum(1)
@@ -3068,6 +3124,7 @@ class PulsedMeasurementGui(GuiBase):
         layout.addWidget(self._pa.ssr_valid_fraction_LineEdit, 3, 1, 1, 2)
 
         self._pa.horizontalLayout_3.insertWidget(2, self._pa.ssr_groupBox)
+        self._ensure_ssr_parameter_dock()
 
         self._pa.ssr_hist_groupBox = QtWidgets.QGroupBox('SSR Histogram')
         self._pa.ssr_hist_groupBox.setMinimumWidth(280)

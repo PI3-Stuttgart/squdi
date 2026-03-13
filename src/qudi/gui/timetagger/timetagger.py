@@ -371,9 +371,9 @@ class TTGui(GuiBase):
         self._gated_extra_gate_spinbox = ScienDSpinBox()
         self._gated_extra_gate_spinbox.setSuffix('s')
         self._gated_extra_gate_spinbox.setDecimals(9)
-        self._gated_extra_gate_spinbox.setMinimum(-1)
+        self._gated_extra_gate_spinbox.setMinimum(0)
         self._gated_extra_gate_spinbox.setMaximum(1)
-        self._gated_extra_gate_spinbox.setValue(0.00001)  # default: 400 mus
+        self._gated_extra_gate_spinbox.setValue(10e-6)  # default: 10 us
         self._gated_extra_gate_spinbox.setToolTip(
             'Extra time the gate stays closed after the kick ends\n'
             '(covers laser turn-off transient). Re-toggle to apply.'
@@ -417,8 +417,8 @@ class TTGui(GuiBase):
         length = self._gated_length_spinbox.value()
         channels = {ch: cb.isChecked() for ch, cb in self._gated_channel_checkboxes.items()}
         toggle = self._gated_toggle_btn.isChecked()
-        extra_gate_ms = self._gated_extra_gate_spinbox.value()
-        self.sigToggleGatedCounter.emit({'gated_counter': (freq, length, channels, toggle, extra_gate_ms)})
+        extra_gate_s = self._gated_extra_gate_spinbox.value()
+        self.sigToggleGatedCounter.emit({'gated_counter': (freq, length, channels, toggle, extra_gate_s)})
 
     def update_gated_counter_data(self, data):
         """Update the gated counter plot and count display."""

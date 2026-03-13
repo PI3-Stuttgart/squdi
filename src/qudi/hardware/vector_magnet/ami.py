@@ -1,7 +1,8 @@
 from cmath import isclose
 import numpy as np
 import socket
-from time import sleep
+import threading
+from time import sleep, monotonic
 
 from qudi.core.module import Base
 from qudi.core.configoption import ConfigOption
@@ -9,12 +10,14 @@ from qudi.core.configoption import ConfigOption
 class AMI430(Base):
     _ip = ConfigOption(name='ip', missing='warn')
     _port = ConfigOption(name='port', missing='warn')
+    _timeout = ConfigOption(name='timeout', default=2.0, missing='nothing')
 
     def __init__(self, ip=None, port=None,**kwargs):
         if ip:
             self._ip = ip
         if port:
             self._port = port
+        self._io_lock = threading.RLock()
         super().__init__(**kwargs)
 
 
@@ -38,6 +41,7 @@ class AMI430(Base):
             port = self._port
         try:
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._socket.settimeout(float(self._timeout))
             self._socket.connect((ip, port))
             greeting = self._read()
             print(greeting)
@@ -57,20 +61,33 @@ class AMI430(Base):
 
     def _read(self, length=1024):
         """Reads the feedback from the device."""
-        return self._socket.recv(length).decode("ascii").strip().split("\r\n")
+        with self._io_lock:
+            try:
+                return self._socket.recv(length).decode("ascii").strip().split("\r\n")
+            except socket.timeout as err:
+                raise TimeoutError(
+                    f"Timeout while waiting for AMI430 response from {self._ip}:{self._port}"
+                ) from err
 
 
     def _write(self, cmd):
         """Writes the specified command to the decive without waiting for a response."""
-        return self._socket.send( (cmd+"\r\n").encode("ascii"))
+        with self._io_lock:
+            return self._socket.send((cmd + "\r\n").encode("ascii"))
 
 
     def _query(self, cmd):
         """Writes the specified command to the device and waits for a response. 
         
         Will take forever, if no response is given. In this case use _write."""
-        self._write(cmd)
-        return self._read()
+        with self._io_lock:
+            self._socket.send((cmd + "\r\n").encode("ascii"))
+            try:
+                return self._socket.recv(1024).decode("ascii").strip().split("\r\n")
+            except socket.timeout as err:
+                raise TimeoutError(
+                    f"Timeout while waiting for AMI430 response from {self._ip}:{self._port}"
+                ) from err
 
 
     def local(self):
@@ -466,9 +483,15 @@ class AMI430(Base):
             9:  Heating persistent switch
             10: Cooling persistent switch
         """
-        ans = self._query('STATE?')
-        ans=int(ans[0])
-        return ans
+        last_response = None
+        for _ in range(2):
+            response = self._query("STATE?")
+            last_response = response
+            state = self._extract_integer_from_response(response, valid_values=range(1, 11))
+            if state is not None:
+                return state
+            sleep(0.05)
+        raise ValueError(f"Unexpected response to STATE?: {last_response!r}")
 
 
     def get_psw_status(self):
@@ -477,9 +500,33 @@ class AMI430(Base):
         0 means heater is switched off.
         1 means heateris switched on.
         """
-        ans = self._query('PSWITCH?')
-        ans = int(ans[0])
-        return ans
+        ans = self._query("PSWITCH?")
+        status = self._extract_integer_from_response(ans, valid_values=(0, 1))
+        if status is None:
+            raise ValueError(f"Unexpected response to PSWITCH?: {ans!r}")
+        return status
+
+    @staticmethod
+    def _extract_integer_from_response(response, valid_values=None):
+        """Extract first integer-like token from instrument response lines."""
+        if response is None:
+            return None
+        for line in response:
+            if line is None:
+                continue
+            tokens = str(line).replace(",", " ").split()
+            for token in tokens:
+                try:
+                    value = float(token)
+                except ValueError:
+                    continue
+                rounded = int(round(value))
+                if abs(value - rounded) > 1e-6:
+                    continue
+                if valid_values is not None and rounded not in valid_values:
+                    continue
+                return rounded
+        return None
 
 
     def equalize_currents(self):
@@ -490,10 +537,16 @@ class AMI430(Base):
             return 0
         else:
             self.ramp(current_target=curr_mag)
-            while True: # run until currents are the same (should only take a couple of seconds if ramp speed is set correctly)
-                sleep(2) # TODO: find something that does not freezue qudi
-                if np.isclose(curr_mag, curr_sup,atol=0.01):
+            deadline = monotonic() + 120.0
+            while monotonic() < deadline:
+                sleep(0.2)
+                curr_mag = self.get_magnet_current()
+                curr_sup = self.get_supply_current()
+                if np.isclose(curr_mag, curr_sup, atol=0.01):
                     return 0
+            raise TimeoutError(
+                "Timed out while equalizing AMI430 magnet and supply currents."
+            )
 
 
 
