@@ -1123,10 +1123,10 @@ class NuclearOPs(DataGeneration):
         """Execute the SnV PLE refocus sequence."""
         REPUMP_TIME_S = 1.0
         OPTIMIZER_POLL_S = 0.2
-        AFTER_OPTIMIZER_WAIT_S = 1.0
-        BEFORE_CW_STOP_WAIT_S = 0.1
-        BEFORE_DEVIATION_WAIT_S = 1.0
-        AFTER_DEVIATION_WAIT_S = 1.0
+        AFTER_OPTIMIZER_WAIT_S = 3.0
+        # BEFORE_CW_STOP_WAIT_S = 0.1
+        # BEFORE_DEVIATION_WAIT_S = 1.0
+        # AFTER_DEVIATION_WAIT_S = 1.0
         LOCK_SETTLE_TIME_S = 3.0
 
         q = self.queue
@@ -1159,31 +1159,31 @@ class NuclearOPs(DataGeneration):
         # Start optimization
         q._switches.set_state("AOM_620", "on")
         q._PLE_logic.toggle_optimize(True)
-
         while q._PLE_logic.optimizer_running:
             if abort.is_set():
                 q.log.info("Abort during PLE optimization.")
                 return False
             time.sleep(OPTIMIZER_POLL_S)
+        q._switches.set_state("AOM_620", "off")
 
         if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
             return False
 
         wavelength = q._wavemeter.read_single_point()[0][0] * 1e9
-        actual_voltage = int(q._dlc_pro_620.get_pc_voltage_act() * 1000)
+        # actual_voltage = int(q._dlc_pro_620.get_pc_voltage_act() * 1000)
 
-        if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
-            return False
+        # if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
+        #     return False
 
-        q._awg.stop_cw_mode()
+        # q._awg.stop_cw_mode()
 
-        if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
-            return False
+        # if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
+        #    return False
 
-        q._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage + 400)
+        # q._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage + 400)
 
-        if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
-            return False
+        # if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
+        #     return False
 
         q.tt.update_ple(wavelength)
         q._wavemeter.start_lock(wavelength=wavelength)

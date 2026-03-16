@@ -86,6 +86,7 @@ class OPX(Base):  # hardware, awg,
 
         ls_curr_do: list = [key for key, value in self.cw_do_states.items() if value == "on"]
         dict_curr_ao = {key: value for key, value in self.cw_ao_values.items() if value != 0.0}
+
         # check if any output should be set, if not stop the current qm program
         if not ls_curr_do and not dict_curr_ao:
             if self.cw_job:
@@ -94,7 +95,9 @@ class OPX(Base):  # hardware, awg,
             duration = 1 * u.us
             with program() as cw_program:
                 with infinite_loop_():
-
+                    if "LaserScanner_red" in dict_curr_ao.keys():
+                        set_dc_offset("LaserScanner_red", "single", dict_curr_ao["LaserScanner_red"])
+                    dict_curr_ao.pop("LaserScanner_red", None)
                     for ao, power in dict_curr_ao.items():
                         # checks if same element also uses digital output
                         pulse = "pulse" if ao in ls_curr_do else "power"

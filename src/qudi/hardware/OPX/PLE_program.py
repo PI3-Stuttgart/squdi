@@ -108,7 +108,7 @@ def qm_scan_program(aoOPX):
             # assign(count_repump, count_repump + 1)
             scan_laser_to_target(max_ls_volt, crc_laser_voltage)
             # wait(10 * u.ms)
-            # crc(volt_620, volt_520, counts, counts_st)
+            crc(volt_620, volt_520, counts, counts_st)
             scan_laser_to_target(crc_laser_voltage, min_ls_volt)
             # with for_each_(vLSBS, back_scan_ls_volt_array):
             #    set_dc_offset("LaserScanner_red", "single", vLSBS)
