@@ -50,7 +50,7 @@ def qm_scan_program(aoOPX):
     counts_threshold = counts_per_second_threshold * sweep_duration / (nr_ls_volt_steps) * 1e-6
     curr_do: list = [key for key, value in aoOPX._opx.cw_do_states.items() if value == "on"]
     curr_ao = {key: value for key, value in aoOPX._opx.cw_ao_values.items() if value != 0.0}
-    curr_laser_scanner_volt = curr_ao["LaserScanner_red"]
+    curr_laser_scanner_volt = aoOPX.get_setpoint("LaserScanner_red") * 0.5
     array_volts_scan_laser_to_start = np.linspace(curr_laser_scanner_volt, min_ls_volt, nr_ls_volt_steps)
     # print(f"laser position: {aoOPX.get_setpoint("LaserScanner_red")}")
     with program() as ple:

@@ -1100,38 +1100,98 @@ class NuclearOPs(DataGeneration):
             self.performedRefocus = True
 
     def do_refocus_ple_SnV(self, abort):
-        repump_length_ms = 1000
-        delta_t = time.time() - self.last_red_confocal_refocus
-        if delta_t >= self.ple_refocus_interval:
-            self.queue.log.info("--------- doing ple refocus ---------")
-            self.queue._wavemeter.stop_lock()
-            self.queue._awg.stop_awgs()
-            # green repump
-            self.queue._switches.set_state("Laser_520", "on")
-            time.sleep(repump_length_ms / 1000)
-            self.queue._switches.set_state("Laser_520", "off")
+        """Run SnV PLE refocus only when the refocus interval has elapsed."""
+        now = time.time()
+        delta_t = now - self.last_ple_refocus
 
-            # Start optimization
-            self.queue._switches.set_state("AOM_620", "on")
-            self.queue._PLE_logic.toggle_optimize(True)
-            while self.queue._PLE_logic.optimizer_running:
-                time.sleep(1)  # QtTest.QTest.qSleep(1000)
-            time.sleep(1)
-            wavelength = self.queue._wavemeter.read_single_point()[0][0] * 1e9
-            actual_voltage = int(self.queue._dlc_pro_620.get_pc_voltage_act() * 1000)
-            time.sleep(0.1)
-            self.queue._awg.stop_cw_mode()
-            time.sleep(1)
-            self.queue._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage + 400)
-            time.sleep(1)
-            # wavelength is saved in ple_A1
-            self.queue.tt.update_ple(wavelength)
-            self.queue._wavemeter.start_lock(wavelength=wavelength)
-            time.sleep(3)
-        else:
-            self.queue.log.info("Not time for PLE refocus yet. Time left: {}s".format(int(self.ple_refocus_interval - delta_t)))
+        if delta_t < self.ple_refocus_interval:
+            remaining = max(0, self.ple_refocus_interval - delta_t)
+            self.queue.log.info(f"Not time for PLE refocus yet. Time left: {remaining:.1f}s")
+            return False
 
-        self.last_red_confocal_refocus = time.time()
+        self.queue.log.info("--------- doing ple refocus ---------")
+
+        success = self._run_refocus_ple_SnV_sequence(abort)
+
+        if success:
+            self.last_ple_refocus = time.time()
+            self.performedRefocus = True
+
+        return success
+
+    def _run_refocus_ple_SnV_sequence(self, abort):
+        """Execute the SnV PLE refocus sequence."""
+        REPUMP_TIME_S = 1.0
+        OPTIMIZER_POLL_S = 0.2
+        AFTER_OPTIMIZER_WAIT_S = 1.0
+        BEFORE_CW_STOP_WAIT_S = 0.1
+        BEFORE_DEVIATION_WAIT_S = 1.0
+        AFTER_DEVIATION_WAIT_S = 1.0
+        LOCK_SETTLE_TIME_S = 3.0
+
+        q = self.queue
+
+        def wait_or_abort(seconds, step=0.1):
+            end_time = time.time() + seconds
+            while time.time() < end_time:
+                if abort.is_set():
+                    q.log.info("PLE refocus aborted.")
+                    return False
+                time.sleep(min(step, end_time - time.time()))
+            return True
+
+        if abort.is_set():
+            return False
+
+        q._wavemeter.stop_lock()
+        q._awg.stop_awgs()
+
+        # Green repump
+        q._switches.set_state("Laser_520", "on")
+        if not wait_or_abort(REPUMP_TIME_S):
+            q._switches.set_state("Laser_520", "off")
+            return False
+        q._switches.set_state("Laser_520", "off")
+
+        if abort.is_set():
+            return False
+
+        # Start optimization
+        q._switches.set_state("AOM_620", "on")
+        q._PLE_logic.toggle_optimize(True)
+
+        while q._PLE_logic.optimizer_running:
+            if abort.is_set():
+                q.log.info("Abort during PLE optimization.")
+                return False
+            time.sleep(OPTIMIZER_POLL_S)
+
+        if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
+            return False
+
+        wavelength = q._wavemeter.read_single_point()[0][0] * 1e9
+        actual_voltage = int(q._dlc_pro_620.get_pc_voltage_act() * 1000)
+
+        if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
+            return False
+
+        q._awg.stop_cw_mode()
+
+        if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
+            return False
+
+        q._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage + 400)
+
+        if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
+            return False
+
+        q.tt.update_ple(wavelength)
+        q._wavemeter.start_lock(wavelength=wavelength)
+
+        if not wait_or_abort(LOCK_SETTLE_TIME_S):
+            return False
+
+        return True
 
     def do_refocus_zpl(self, abort):
         delta_t = time.time() - self.last_red_confocal_refocus
