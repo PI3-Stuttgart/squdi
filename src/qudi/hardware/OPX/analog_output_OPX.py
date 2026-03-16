@@ -26,6 +26,8 @@ from qm import SimulationConfig
 import matplotlib.pyplot as plt
 from typing import Iterable, Mapping, Union, Optional, Tuple, Type, Dict
 
+from qudi.UserScripts.OPX_snippets.OPX_utils import crc
+
 _Real = Union[int, float]
 
 
@@ -244,6 +246,54 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             set_dc_offset("620_pi_w_power", "single", res_power)
 
             with infinite_loop_():
+                align()
+                if green_power > 0:
+                    play(
+                        "pulse" * amp(green_power),
+                        "Laser_520",
+                        duration=(pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns,
+                    )
+                play(pulse="trigit", element="620_pi", duration=(pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns)
+                play("trigit", "Gate_Trigger", duration=20 * u.ns)
+                wait(wait_between_pulses * u.ns)
+
+        self._arb_job = self._opx.qm.execute(arb_pulse)
+
+    def run_arb_puls_crc(
+        self,
+        pulse_width: float,
+        pulse_shape: str,
+        pulse_amplitude: int = 255,
+        ppg_pulse_delay: float = 0,
+        counting_delay: float = 0,
+        wait_between_pulses: float = 1000,
+        AOM_end_buffer: float = 0,  # ns
+        res_power=1,
+        vccrf=None,
+        vref=None,
+        green_power=0.02,
+    ):
+        """Writes a pulse defined by the input parameters to the PPG and triggers it using the OPX.
+        Args:
+            pulse_width (float): Width of the Puls (FWHM for Gaussian) in ns.
+            pulse_shape (str): Right now only "gaussian" and "square" are implemented.
+            pulse_amplitude (int, optional): Pulse amplitude in units of 1/255 of the maximum voltage supplied by the PPG. Defaults to 255.
+            ppg_pulse_delay (float, optional): Delay of the PPG puls relative to the AOM in ns. Defaults to 0.
+            counting_delay (float, optional): Delay of the counting (Trigger to TT) relative to the PPG pulse in ns. Defaults to 0.
+            res_power (int, optional): Power of the AOM. between 0, 1. Defaults to 0.
+        """
+        PPG_write_status: bool = self.pulses_definition(pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude)
+        if vccrf is not None:
+            self._ppg.set_vccrf(vccrf)
+        if vref is not None:
+            self._ppg.set_vref(vref)
+
+        self._opx.update_config()
+        with program() as arb_pulse:
+            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red") / 2)
+            set_dc_offset("620_pi_w_power", "single", res_power)
+
+            with for_():
                 align()
                 if green_power > 0:
                     play(

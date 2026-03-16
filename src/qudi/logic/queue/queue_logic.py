@@ -139,6 +139,8 @@ class queue_logic(GenericLogic):
     Wavemeter = Connector(interface="HighFinesseWavemeter")
     dlc_pro_620 = Connector(interface="DlProLaser")
     power_conversion = Connector(interface="AomPowerCalibration")
+    process_setpoint_combiner = Connector(interface="ProcessSetpointCombinerInterfuse")
+    switches = Connector(interface="SwitchCombinerInterfuse")  # for controlling the switches in the setup, e.g. for switching between confocal and widefield.
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
     update_queue_list = pyqtSignal(collections.OrderedDict)
@@ -183,6 +185,8 @@ class queue_logic(GenericLogic):
         self._fast_counter_device = self.fastcounter()
         self._wavemeter = self.Wavemeter()  # type: HighFinesseWavemeter
         self._dlc_pro_620 = self.dlc_pro_620()
+        self._process_setpoint_combiner = self.process_setpoint_combiner()
+        self._switches = self.switches()
         # self.create_odmr()  #only logic (no gui)
         self.init_run()
         # self.write_standard_awg_sequences()
@@ -192,7 +196,6 @@ class queue_logic(GenericLogic):
         self.tt.load_rabi_parameters()
 
     def on_deactivate(self):
-        pass
         self.timer.stop()
         # FIXME destroy me gently
 

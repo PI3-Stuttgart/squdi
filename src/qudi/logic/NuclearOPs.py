@@ -844,6 +844,10 @@ class NuclearOPs(DataGeneration):
             # if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
             #     self.queue.wavemeter.unlock_frequency()
             #     time.sleep(0.1)
+            print("cun:Finished run_measurement")
+            self.queue._wavemeter.stop_lock()
+            self.sleep(2)
+            self.queue._dlc_pro_620.set_pc_voltage(60)
 
     @property
     def session_meas_count(self):
@@ -1096,14 +1100,22 @@ class NuclearOPs(DataGeneration):
             self.performedRefocus = True
 
     def do_refocus_ple_SnV(self, abort):
+        repump_length_ms = 1000
         delta_t = time.time() - self.last_red_confocal_refocus
         if delta_t >= self.ple_refocus_interval:
-            print("--------- doing ple refocus ---------")
+            self.queue.log.info("--------- doing ple refocus ---------")
             self.queue._wavemeter.stop_lock()
             self.queue._awg.stop_awgs()
+            # green repump
+            self.queue._switches.set_state("Laser_520", "on")
+            time.sleep(repump_length_ms / 1000)
+            self.queue._switches.set_state("Laser_520", "off")
+
+            # Start optimization
+            self.queue._switches.set_state("AOM_620", "on")
             self.queue._PLE_logic.toggle_optimize(True)
             while self.queue._PLE_logic.optimizer_running:
-                time.sleep(1)
+                time.sleep(1)  # QtTest.QTest.qSleep(1000)
             time.sleep(1)
             wavelength = self.queue._wavemeter.read_single_point()[0][0] * 1e9
             actual_voltage = int(self.queue._dlc_pro_620.get_pc_voltage_act() * 1000)
@@ -1113,9 +1125,11 @@ class NuclearOPs(DataGeneration):
             self.queue._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage + 400)
             time.sleep(1)
             # wavelength is saved in ple_A1
-            self.queue.tt.ple_A1 = wavelength
+            self.queue.tt.update_ple(wavelength)
             self.queue._wavemeter.start_lock(wavelength=wavelength)
             time.sleep(3)
+        else:
+            self.queue.log.info("Not time for PLE refocus yet. Time left: {}s".format(int(self.ple_refocus_interval - delta_t)))
 
         self.last_red_confocal_refocus = time.time()
 

@@ -1,16 +1,17 @@
-#from __future__ import print_function, absolute_import, division
-#__metaclass__ = type
+# from __future__ import print_function, absolute_import, division
+# __metaclass__ = type
 from PySide2.QtWidgets import QAbstractItemView, QMainWindow, QFileDialog
-#from PySide2 import QtGui
+
+# from PySide2 import QtGui
 from PySide2.QtCore import Signal as pyqtSignal
 
-#from logic.qudip_enhanced import *
-#import importlib
-#setup = False
-#import multi_channel_awg_seq as MCAS; importlib.reload(MCAS)
-#import sip
+# from logic.qudip_enhanced import *
+# import importlib
+# setup = False
+# import multi_channel_awg_seq as MCAS; importlib.reload(MCAS)
+# import sip
 
-#try:
+# try:
 #    sip.setapi('QDate', 2)
 #    sip.setapi('QDateTime', 2)
 #    sip.setapi('QString', 2)
@@ -18,26 +19,30 @@ from PySide2.QtCore import Signal as pyqtSignal
 #    sip.setapi('Qtime', 2)
 #    sip.setapi('QUrl', 2)
 #    sip.setapi('QVariant', 2)
-#except ValueError as e:
+# except ValueError as e:
 #    raise RuntimeError('Could not set API version (%s): did you import PyQt4 directly?' % e)
 
-#import datetime
-#import logging
-#import logging.handlers
+# import datetime
+# import logging
+# import logging.handlers
 import os
-#import pickle
-#import shutil
+
+# import pickle
+# import shutil
 import sys
-#import threading
-#import time
+
+# import threading
+# import time
 from qudi.core.connector import Connector
 from qudi.core.module import GuiBase
 import traceback
-#import numpy as np
-#import psutil
+
+# import numpy as np
+# import psutil
 import collections
 from PySide2 import QtWidgets
 import qudi.util.uic as uic
+
 
 class ScriptQueueStep:
     def __init__(self, name, pd):
@@ -105,7 +110,7 @@ class ScriptQueueList(collections.abc.MutableSequence):
 
     def insert(self, i, v):
         if i != len(self.list):
-            raise Exception('Only appending and popping items allowed')
+            raise Exception("Only appending and popping items allowed")
         self.check(v)
         # self.check_duplicate(v)
         self.list.insert(i, v)
@@ -117,15 +122,16 @@ class ScriptQueueList(collections.abc.MutableSequence):
     def __repr__(self):
         return str(self.list)
 
+
 class QueueMainWindow(QtWidgets.QMainWindow):
-    """ Create the Main Window based on the *.ui file. """
+    """Create the Main Window based on the *.ui file."""
 
     def __init__(self):
         # Get the path to the *.ui file
         super().__init__()
         # Load it
         this_dir = os.path.dirname(__file__)
-        ui_file = os.path.join(this_dir,'pi3d_main_window.ui')
+        ui_file = os.path.join(this_dir, "pi3d_main_window.ui")
         # Load ui
         uic.loadUi(ui_file, self)
 
@@ -142,39 +148,37 @@ class queue_gui(GuiBase):
     update_script_queue_table_data_signal = pyqtSignal(collections.OrderedDict)
     update_user_script_params_text_field_signal = pyqtSignal(collections.OrderedDict)
 
-    #Connect to the Queue.
+    # Connect to the Queue.
     queue_logic = Connector(interface="queue_logic")  # class name
 
     def __init__(self, config, title=None, parent=None, no_qt=None, gui=True, **kwargs):
-        super(queue_gui, self).__init__(config = config, **kwargs)
+        super(queue_gui, self).__init__(config=config, **kwargs)
 
     def init_gui(self):
-        self._mw.setWindowTitle('nuclear ops queue')
+        self._mw.setWindowTitle("nuclear ops queue")
         # icon = QtGui.QIcon()
         # icon.addPixmap(QtGui.QPixmap(r"D:\Python\pi3diamond\qtgui\folder_icon.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
         # self.user_script_folder_pushButton.setIcon(icon)
         self._mw.setObjectName("window")
-        #self._mw.resize(760, 793)
+        # self._mw.resize(760, 793)
         self._mw.setWindowOpacity(1.0)
         self._mw.setAutoFillBackground(False)
         for name in [
-            'update_user_script_folder_text_field',
-            'update_selected_user_script_combo_box',
-            'update_script_queue_table_data',
+            "update_user_script_folder_text_field",
+            "update_selected_user_script_combo_box",
+            "update_script_queue_table_data",
         ]:
-            getattr(getattr(self, "{}_signal".format(name)), 'connect')(
-                getattr(self, "{}_signal_emitted".format(name)))
-        self._mw.selected_user_script_combo_box.currentIndexChanged.connect(
-            self.update_selected_user_script_from_combo_box)
+            getattr(getattr(self, "{}_signal".format(name)), "connect")(getattr(self, "{}_signal_emitted".format(name)))
+        self._mw.selected_user_script_combo_box.currentIndexChanged.connect(self.update_selected_user_script_from_combo_box)
         self._mw.remove_next_script_button.clicked.connect(self._queue_logic.remove_last_script)
         self._mw.set_stop_request_button.clicked.connect(self._queue_logic.set_stop_request)
         self._mw.add_to_queue_button.clicked.connect(self.add_to_queue)
         self._mw.add_rco_button.clicked.connect(self._queue_logic.add_rco)
         self._mw.evaluate_button.clicked.connect(self._queue_logic.evaluate)
         self._mw.write_standard_awg_sequences_button.clicked.connect(self._queue_logic.write_standard_awg_sequences)
-        #self._mw.user_script_folder_text_field.textChanged.connect(self.user_script_folder_text_field_text_changed)
+        # self._mw.user_script_folder_text_field.textChanged.connect(self.user_script_folder_text_field_text_changed)
         self._mw.user_script_folder_pushButton.clicked.connect(self.open_user_script_folder_file_dialog)
-        #self.show()
+        # self.show()
         self._queue_logic.update_selected_user_script_combo_box_signal.connect(self.update_selected_user_script_combo_box)
         self._queue_logic.update_queue_list.connect(self.update_script_queue_table_data)
 
@@ -184,78 +188,143 @@ class queue_gui(GuiBase):
         self.init_gui()
 
     def show(self):
-        """ Make window visible and put it above all other windows.
-        """
-        #pass
+        """Make window visible and put it above all other windows."""
+        # pass
         QtWidgets.QMainWindow.show(self._mw)
         self._mw.activateWindow()
         self._mw.raise_()
 
-
     def on_deactivate(self):
-        self._mw.close()
+        try:
+            self.update_user_script_folder_text_field_signal.disconnect(self.update_user_script_folder_text_field_signal_emitted)
+        except Exception:
+            pass
 
+        try:
+            self.update_selected_user_script_combo_box_signal.disconnect(self.update_selected_user_script_combo_box_signal_emitted)
+        except Exception:
+            pass
+
+        try:
+            self.update_script_queue_table_data_signal.disconnect(self.update_script_queue_table_data_signal_emitted)
+        except Exception:
+            pass
+
+        try:
+            self._mw.selected_user_script_combo_box.currentIndexChanged.disconnect(self.update_selected_user_script_from_combo_box)
+        except Exception:
+            pass
+
+        try:
+            self._mw.remove_next_script_button.clicked.disconnect(self._queue_logic.remove_last_script)
+        except Exception:
+            pass
+
+        try:
+            self._mw.set_stop_request_button.clicked.disconnect(self._queue_logic.set_stop_request)
+        except Exception:
+            pass
+
+        try:
+            self._mw.add_to_queue_button.clicked.disconnect(self.add_to_queue)
+        except Exception:
+            pass
+
+        try:
+            self._mw.add_rco_button.clicked.disconnect(self._queue_logic.add_rco)
+        except Exception:
+            pass
+
+        try:
+            self._mw.evaluate_button.clicked.disconnect(self._queue_logic.evaluate)
+        except Exception:
+            pass
+
+        try:
+            self._mw.write_standard_awg_sequences_button.clicked.disconnect(self._queue_logic.write_standard_awg_sequences)
+        except Exception:
+            pass
+
+        try:
+            self._mw.user_script_folder_pushButton.clicked.disconnect(self.open_user_script_folder_file_dialog)
+        except Exception:
+            pass
+
+        try:
+            self._queue_logic.update_selected_user_script_combo_box_signal.disconnect(self.update_selected_user_script_combo_box)
+        except Exception:
+            pass
+
+        try:
+            self._queue_logic.update_queue_list.disconnect(self.update_script_queue_table_data)
+        except Exception:
+            pass
+
+        try:
+            self._mw.blockSignals(True)
+            self._mw.hide()
+            self._mw.close()
+            self._mw.deleteLater()
+        except Exception:
+            pass
+
+        self._mw = None
+        self._queue_logic = None
 
     def add_to_queue(self, stupid_argument_emitted_by_qt_signal):
         self._queue_logic.add_to_queue()
 
-
-    def update_selected_user_script_combo_box(self,val):
+    def update_selected_user_script_combo_box(self, val):
         self.update_selected_user_script_combo_box_signal.emit(val)
-
 
     def update_selected_user_script_combo_box_signal_emitted(self, val):
         self._mw.selected_user_script_combo_box.blockSignals(True)
-        if 'user_script_list' in val:
+        if "user_script_list" in val:
             self._mw.selected_user_script_combo_box.clear()
-            self._mw.selected_user_script_combo_box.addItems(
-                val['user_script_list'])  # currentIndexChanged is triggered, value is first item (e.g. sweeps)
-        self._mw.selected_user_script_combo_box.setCurrentText(val['selected_user_script'])
+            self._mw.selected_user_script_combo_box.addItems(val["user_script_list"])  # currentIndexChanged is triggered, value is first item (e.g. sweeps)
+        self._mw.selected_user_script_combo_box.setCurrentText(val["selected_user_script"])
         self._mw.selected_user_script_combo_box.blockSignals(False)
-
 
     def update_selected_user_script_from_combo_box(self):
         self._queue_logic.selected_user_script = str(self._mw.selected_user_script_combo_box.currentText())
 
-
     def update_script_queue_table_data(self, val):
         self.update_script_queue_table_data_signal.emit(val)
-
 
     def update_script_queue_table_data_signal_emitted(self, val):
         self._mw.script_queue_table.blockSignals(True)
         self._mw.script_queue_table.clear_table_contents()
-        self._mw.script_queue_table.set_column_names(['name', 'pd'])
+        self._mw.script_queue_table.set_column_names(["name", "pd"])
         self._mw.script_queue_table.setColumnWidth(0, 400)
         self._mw.script_queue_table.setColumnWidth(1, 100)
         self._mw.script_queue_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._mw.script_queue_table.setSelectionMode(QAbstractItemView.SingleSelection)
         for cn, cp in val.items():
-            self._mw.script_queue_table.set_column(cn, data=cp, )
+            self._mw.script_queue_table.set_column(
+                cn,
+                data=cp,
+            )
         self._mw.script_queue_table.blockSignals(False)
-
 
     def update_user_script_folder_text_field(self, val):
         self.update_user_script_folder_text_field_signal.emit(val)
-
 
     def update_user_script_folder_text_field_signal_emitted(self, val):
         self._mw.user_script_folder_text_field.blockSignals(True)
         self._mw.user_script_folder_text_field.setText(val)
         self._mw.user_script_folder_text_field.blockSignals(False)
 
-
-    #def user_script_folder_text_field_text_changed(self):
-        #self.user_script_folder = self._mw.user_script_folder_text_field.toPlainText()
-        # needs to be cleaned up, and separated from logic# TODO
+    # def user_script_folder_text_field_text_changed(self):
+    # self.user_script_folder = self._mw.user_script_folder_text_field.toPlainText()
+    # needs to be cleaned up, and separated from logic# TODO
 
     def open_user_script_folder_file_dialog(self):
         self.user_script_folder = QFileDialog.getExistingDirectory(
             self._mw,
-            'Select user_script_folder',
+            "Select user_script_folder",
             r"C:\Users\yy3\git\squdi\src\qudi\userscripts",
         )
         self._queue_logic.user_script_folder = self.user_script_folder
-        #this is working - need to do now the gui, no?
-        #it calls a setter which then updates the text, why not update it here?
+        # this is working - need to do now the gui, no?
+        # it calls a setter which then updates the text, why not update it here?
         self.update_user_script_folder_text_field(self.user_script_folder)
