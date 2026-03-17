@@ -23,7 +23,13 @@ from qudi.core.module import Base
 # from qudi.hardware.OPX.configuration import *
 
 config_module = importlib.import_module("qudi.hardware.OPX.configuration")
-globals().update({name: getattr(config_module, name) for name in dir(config_module) if not name.startswith("_")})
+globals().update(
+    {
+        name: getattr(config_module, name)
+        for name in dir(config_module)
+        if not name.startswith("_")
+    }
+)
 
 
 # class OPXmanual(Base):
@@ -38,7 +44,9 @@ class OPX(Base):  # hardware, awg,
         options:
     """
 
-    _qm_config_file = ConfigOption(name="qm_config_file", default="configuration", missing="nothing")
+    _qm_config_file = ConfigOption(
+        name="qm_config_file", default="configuration", missing="nothing"
+    )
 
     _configuration: Any
     _qm_manual_output_control = None
@@ -59,8 +67,16 @@ class OPX(Base):  # hardware, awg,
     def on_activate(self) -> None:
         """Loads QM config and establishs connection to OPX+"""
         # import QuantumMachines configuration python file
-        self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
-        globals().update({name: getattr(self._configuration, name) for name in dir(self._configuration) if not name.startswith("_")})
+        self._configuration = importlib.import_module(
+            f"qudi.hardware.OPX.{self._qm_config_file}"
+        )
+        globals().update(
+            {
+                name: getattr(self._configuration, name)
+                for name in dir(self._configuration)
+                if not name.startswith("_")
+            }
+        )
 
         # Establish connection to OPX+
 
@@ -84,8 +100,10 @@ class OPX(Base):  # hardware, awg,
 
     def run_cw_mode(self) -> None:
         """Runs a continuous wave program on the OPX that sets the digital and analog outputs as specified in the dictionaries."""
-        ls_curr_do: list = [key for key, value in self.cw_do_states.items() if value == "on"]
-        dict_curr_ao = {key: value for key, value in self.cw_ao_values.items() if value != 0.0}
+        ls_curr_do: list = [
+            key for key, value in self.cw_do_states.items() if value == "on"
+        ]
+        dict_curr_ao = {key: value for key, value in self.cw_ao_values.items()}
         # check if any output should be set, if not stop the current qm program
         if not ls_curr_do and not dict_curr_ao:
             if self.cw_job:
@@ -93,12 +111,19 @@ class OPX(Base):  # hardware, awg,
         else:
             duration = 1 * u.us
             with program() as cw_program:
-                if ("LaserScanner_red" in dict_curr_ao.keys()) and (dict_curr_ao["LaserScanner_red"] != self.prev_LaserScanner_red_voltge):
+                if ("LaserScanner_red" in dict_curr_ao.keys()) and (
+                    dict_curr_ao["LaserScanner_red"]
+                    != self.prev_LaserScanner_red_voltge
+                ):
                     self.log.warning(
                         f"Setting LaserScanner_red voltage to {dict_curr_ao['LaserScanner_red']} V (Prev voltage: {self.prev_LaserScanner_red_voltge} V)"
                     )
                     self.prev_LaserScanner_red_voltge = dict_curr_ao["LaserScanner_red"]
-                    set_dc_offset("LaserScanner_red", "single", dict_curr_ao["LaserScanner_red"] * 0.5)
+                    set_dc_offset(
+                        "LaserScanner_red",
+                        "single",
+                        dict_curr_ao["LaserScanner_red"] * 0.5,
+                    )
                     dict_curr_ao.pop("LaserScanner_red", None)
                 with infinite_loop_():
                     for ao, power in dict_curr_ao.items():
@@ -136,7 +161,9 @@ class OPX(Base):  # hardware, awg,
 
         self.log.info("simulate")
         simulation_config = SimulationConfig(duration=duration)  # In clock cycles = 4ns
-        job_sim = self.qmm.simulate(self._configuration.config, sequence, simulation_config)
+        job_sim = self.qmm.simulate(
+            self._configuration.config, sequence, simulation_config
+        )
         # Simulate blocks python until the simulation is done
         # job_sim.get_simulated_samples().con1
         # job_sim.get_simulated_samples().con1.plot()
@@ -151,7 +178,9 @@ class OPX(Base):  # hardware, awg,
             with open(os.path.join(save_path, "awg_file.json"), "w") as fp:
                 json.dump(waveform_dict, fp)
         if plot:
-            waveform_report.create_plot(samples, plot=plot, save_path="./" if save_path is None else save_path)
+            waveform_report.create_plot(
+                samples, plot=plot, save_path="./" if save_path is None else save_path
+            )
         t1 = time.time()
         print("simulation", t1 - t0)
 
@@ -165,7 +194,9 @@ class OPX(Base):  # hardware, awg,
             self._qm = self.qmm.open_qm(config=self._configuration.config)
 
         except qm.exceptions.OpenQmException:
-            self.log.warning("Could not connect to OPX with keeping previous connections. Previouse connections disconnected.")
+            self.log.warning(
+                "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
+            )
             pass  # do nothing for now...
 
     @property
@@ -180,8 +211,16 @@ class OPX(Base):  # hardware, awg,
     def update_config(self):
         if self._configuration in sys.modules:
             del sys.modules[self._configuration]
-        self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
-        globals().update({name: getattr(self._configuration, name) for name in dir(self._configuration) if not name.startswith("_")})
+        self._configuration = importlib.import_module(
+            f"qudi.hardware.OPX.{self._qm_config_file}"
+        )
+        globals().update(
+            {
+                name: getattr(self._configuration, name)
+                for name in dir(self._configuration)
+                if not name.startswith("_")
+            }
+        )
 
     @property
     def name(self) -> str:
