@@ -4,6 +4,7 @@ import inspect
 
 from qudi.core.module import LogicBase
 from qudi.core.connector import Connector
+from typing import Any, Dict, Optional, Sequence
 
 
 class MagnetLogic(LogicBase):
@@ -194,14 +195,14 @@ class MagnetLogic(LogicBase):
         self._set_up_next_pixel()
         return
 
-    def spherical_to_carthesian(self, spherical):
+    @staticmethod
+    def spherical_to_carthesian(spherical: Sequence[float]) -> np.ndarray:
         """Turns spherical coordinates into carthesian coordinates.
 
         @param array spherical: spherical coordinates in [r, theta, phi]
 
         @return array carthesian: carthesian coordinates in [x, y, z]
         """
-        self.log.debug("spherical_to_carthesian")
         r = spherical[0]
         theta = np.deg2rad(spherical[1])
         phi = np.deg2rad(spherical[2])
@@ -211,13 +212,11 @@ class MagnetLogic(LogicBase):
         z = r * np.cos(theta)
 
         carthesian = np.array([x, y, z])
-        print(carthesian)
-        print(phi)
-        print(theta)
 
         return carthesian
 
-    def cartesian_to_spherical(self, cartesian):
+    @staticmethod
+    def cartesian_to_spherical(cartesian: Sequence[float]) -> np.ndarray:
         """
         Converts a list of Cartesian coordinates to spherical coordinates using NumPy.
 
@@ -239,6 +238,40 @@ class MagnetLogic(LogicBase):
         phi = np.arctan2(y, x)
         phi_deg = np.rad2deg(phi) if phi > 0 else np.rad2deg(phi) + 360
         return np.array([radius, np.rad2deg(theta), phi_deg])
+    
+    @staticmethod
+    def rotate_vector(vector: Sequence[float], theta_SnV: float, phi_SnV: float‚) -> np.ndarray:
+        """Rotate a vector from the lab frame into the configured SnV frame."""
+
+        theta_SnV = np.radians(theta_SnV)
+        phi_SnV = np.radians(phi_SnV)
+        z_SnV = np.array(
+            [
+                np.sin(theta_SnV) * np.cos(phi_SnV),
+                np.sin(theta_SnV) * np.sin(phi_SnV),
+                np.cos(theta_SnV),
+            ]
+        )
+
+        z_lab = np.array([0, 0, 1])
+
+        # Prüfen ob z_nv parallel zu z_lab ist, um Singularität zu vermeiden
+        if np.allclose(z_SnV, z_lab) or np.allclose(z_SnV, -z_lab):
+            # Spezialfall: NV liegt entlang der z-Achse oder dagegen
+            # x_nv kann dann willkürlich orthogonal gewählt werden
+            x_SnV = np.array([1, 0, 0])
+        else:
+            x_SnV = np.cross(z_lab, z_SnV)
+            x_SnV = x_SnV / np.linalg.norm(x_SnV)
+
+        y_SnV = np.cross(z_SnV, x_SnV)
+
+        # Rotationsmatrix: Spalten sind die Basisvektoren des NV-Frames im Lab-Frame
+        R = np.column_stack((x_SnV, y_SnV, z_SnV))
+        # Apply rotation
+        vector = np.asarray(vector)
+        return R @ vector
+
 
     def stop_scan(self):
         """Aborts the scan.

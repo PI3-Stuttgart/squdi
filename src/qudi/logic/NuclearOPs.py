@@ -75,6 +75,7 @@ class NuclearOPs(DataGeneration):
     additional_recalibration_interval = misc.ret_property_typecheck("additional_recalibration_interval", int)
 
     __TITLE_DATE_FORMAT__ = "%Y%m%dh%Hm%Ms%S"
+    IDLE_LASERSCANNER_DLC_SET_VOLTAGE = 60
 
     def __init__(self) -> None:  # TODO - revert back here from the self.queue.
         """Initialize measurement defaults and runtime state."""
@@ -82,37 +83,25 @@ class NuclearOPs(DataGeneration):
         super().__init__()
         self.state = "idle"
         self._state = self.state
-        self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE = 60
 
-        ## TODO give all the handles for the interfaces from queue here...
-        # TODO for future ODMR refocus parameters.
-        self.odmr_pd = dict(
-            n=0,
-            freq=None,
-            size={"left": "1", "right": ""},
-            repeat=False,
-        )
-        self.odmr_pd_refocus = dict(
-            n=1,
-            freq=None,
-            size={"left": "1", "right": ""},
-            repeat=False,
-        )
+
+        # Options
+        self.lock_laser_to_wavemeter: bool = False
+        self.do_ple_refocus_A1: bool = False
+        self.
+        self.do_confocal_refocus = False
+        self.measure_A1_power: bool = False
+        self.measure_A2_power: bool = False
+
+        self.use_defect_frame: bool = False
+
         self.manual_pause = False
         self.hashed = False
         self.start_pause_time = 2.75
         self.end_pause_time = 6.25
-        self.do_ple_refocusA2 = False
-        self.do_ple_refocusA1 = False
-        self.do_ple_refocus = False
-        self.do_ple_refocus_SnV = False
-        self.do_confocal_repump_refocus = False
-        self.do_confocal_A1A2_refocus = False
-        self.do_confocal_A2MW_refocus = False
-        self.check_A1_power = False
-        self.check_A2_power = False
-        self.set_A1_power = False
-        self.set_A2_power = False
+
+
+        # FIXME: Go through all that and set it correctly from QUDI
         self.A1LaserPower = 1  # nW
         self.A2LaserPower = 1  # nW
         #
@@ -197,21 +186,6 @@ class NuclearOPs(DataGeneration):
                             zpl_counters.append(name)
 
                 if self.save_smartly:
-                    # return zpl_counters + \
-                    #        [
-                    #            # 'trace',
-                    #         'average_counts',
-                    #         'start_time', 'end_time','events',
-                    #         'aom_Ex_power_measured', 'aom_A1_power_measured',
-                    #         'Ex_RO_power_measured', 'EOM_Ex_integrator_voltage',
-                    #         ]
-
-                    # TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
-
-                    if self.yellow_repump_compensation:
-                        yell = ["yellow_freq_measured"]
-                    else:
-                        yell = []
                     return (
                         ["result_{}".format(i) for i in range(self.number_of_results)]
                         + zpl_counters
@@ -230,20 +204,12 @@ class NuclearOPs(DataGeneration):
                             "confocal_y",
                             "confocal_z",
                             "A2_Power",
-                            #'aom_Ex_power_measured', 'aom_A1_power_measured', 'Ex_RO_power_measured', 'A2_Power',
-                            # 'EOM_Ex_integrator_voltage',
                             "windows_ps",
                             "delays_ps",
                         ]
-                        + yell
                     )
 
                 if self.raw_clicks_processing:
-                    if self.yellow_repump_compensation:
-                        yell = ["yellow_freq_measured"]
-                    else:
-                        yell = []
-
                     return (
                         zpl_counters
                         + [
@@ -256,21 +222,13 @@ class NuclearOPs(DataGeneration):
                             "confocal_x",
                             "confocal_y",
                             "confocal_z",
-                            # 'aom_Ex_power_measured', 'aom_A1_power_measured', 'Ex_RO_power_measured',
-                            # 'EOM_Ex_integrator_voltage',
                             "A2_Power",
                             "windows_ps",
                             "delays_ps",
                         ]
-                        + yell
                     )
 
                 else:
-                    if self.yellow_repump_compensation:
-                        yell = ["yellow_freq_measured"]
-                    else:
-                        yell = []
-
                     return (
                         ["result_{}".format(i) for i in range(self.number_of_results)]
                         + zpl_counters
@@ -288,13 +246,10 @@ class NuclearOPs(DataGeneration):
                             "confocal_x",
                             "confocal_y",
                             "confocal_z",
-                            # 'aom_Ex_power_measured', 'aom_A1_power_measured', 'Ex_RO_power_measured',
                             "A2_Power",
-                            # 'EOM_Ex_integrator_voltage',
                             "windows_ps",
                             "delays_ps",
                         ]
-                        + yell
                     )
         except Exception:
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -306,15 +261,6 @@ class NuclearOPs(DataGeneration):
         print('Nuclear OPS called "def dtypes"')
         if not hasattr(self, "_dtypes"):
             if self.save_smartly:
-
-                # self._dtypes = dict(events='int',
-                #                     # windows_ps='object',
-                #                     # delays_ps='object',
-                #                     # trace='object',
-                #                     start_time='datetime', end_time='datetime',
-                #                     average_counts='float')
-
-                # # TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
                 self._dtypes = dict(
                     delays_ps="object",
                     windows_ps="object",
@@ -389,11 +335,6 @@ class NuclearOPs(DataGeneration):
             # Whats difference between envs/qudi/lib/threading and envs/qudi/lib/subprocess?
             # self.run_measurement(*args, **kwargs)
 
-    # def mainloop():
-
-    #    Qtimer.timeout.connect(run_iteration)
-
-    # def run_iteration(self, current_iterator):
 
     def checktime(self, abort: Any) -> None:
         """Pause execution during the configured nightly quiet-time window."""
@@ -412,6 +353,7 @@ class NuclearOPs(DataGeneration):
         if idx > 0:
             print("Continue after sleeping")
 
+
     def check_manual_pause(self, abort: Any) -> None:
         """Wait while manual pause is enabled unless an abort is requested."""
         while self.manual_pause:
@@ -419,146 +361,45 @@ class NuclearOPs(DataGeneration):
                 break
             QtTest.QTest.qSleep(1000)
 
-    def rotate_vector(
-        self, vector: Sequence[float], theta_SnV: float, phi_SnV: float
-    ) -> np.ndarray:
-        """Rotate a vector from the lab frame into the configured SnV frame."""
-
-        theta_SnV = np.radians(theta_SnV)
-        phi_SnV = np.radians(phi_SnV)
-
-        z_SnV = np.array(
-            [
-                np.sin(theta_SnV) * np.cos(phi_SnV),
-                np.sin(theta_SnV) * np.sin(phi_SnV),
-                np.cos(theta_SnV),
-            ]
-        )
-
-        z_lab = np.array([0, 0, 1])
-
-        # Prüfen ob z_nv parallel zu z_lab ist, um Singularität zu vermeiden
-        if np.allclose(z_SnV, z_lab) or np.allclose(z_SnV, -z_lab):
-            # Spezialfall: NV liegt entlang der z-Achse oder dagegen
-            # x_nv kann dann willkürlich orthogonal gewählt werden
-            x_SnV = np.array([1, 0, 0])
-        else:
-            x_SnV = np.cross(z_lab, z_SnV)
-            x_SnV = x_SnV / np.linalg.norm(x_SnV)
-
-        y_SnV = np.cross(z_SnV, x_SnV)
-
-        # Rotationsmatrix: Spalten sind die Basisvektoren des NV-Frames im Lab-Frame
-        R = np.column_stack((x_SnV, y_SnV, z_SnV))
-        # Apply rotation
-        vector = np.asarray(vector)
-        return R @ vector
-
-    def spherical_to_carthesian(self, spherical: Sequence[float]) -> np.ndarray:
-        """Turns spherical coordinates into carthesian coordinates.
-
-        @param array spherical: spherical coordinates in [r, theta, phi]
-
-        @return array carthesian: carthesian coordinates in [x, y, z]
-        """
-        r = spherical[0]
-        theta = np.deg2rad(spherical[1])
-        phi = np.deg2rad(spherical[2])
-
-        x = r * np.cos(phi) * np.sin(theta)
-        y = r * np.sin(phi) * np.sin(theta)
-        z = r * np.cos(theta)
-
-        carthesian = np.array([x, y, z])
-
-        return carthesian
-
-    def cartesian_to_spherical(self, cartesian: Sequence[float]) -> np.ndarray:
-        """
-        Converts a list of Cartesian coordinates to spherical coordinates using NumPy.
-
-        Parameters:
-        coords (list): A list containing the Cartesian coordinates [x, y, z].
-
-        Returns:
-        list: A list containing the spherical coordinates [radius, polar_angle, azimuthal_angle].
-            - radius (float): The distance from the origin to the point.
-            - polar_angle (float): The angle from the positive z-axis (in radians).
-            - azimuthal_angle (float): The angle from the positive x-axis in the x-y plane (in radians).
-        """
-        x = cartesian[0]
-        y = cartesian[1]
-        z = cartesian[2]
-
-        radius = np.sqrt(x**2 + y**2 + z**2)
-        theta = np.arccos(z / radius) if radius != 0 else 0
-        phi = np.arctan2(y, x)
-        phi_deg = np.rad2deg(phi) if phi > 0 else np.rad2deg(phi) + 360
-        return np.array([radius, np.rad2deg(theta), phi_deg])
-
     def run_measurement(self, abort: Any, **kwargs: Any) -> None:
         """Execute the main measurement loop used during normal queue operation."""
 
-        # if self.debug_mode:
-        #     # Simulates the QUA program for the specified duration
-        #     simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
-        #     job_sim = qmm.simulate(config, self.setup_rf(), simulation_config)
-        #     # Simulate blocks python until the simulation is done
-        #     # job_sim.get_simulated_samples().con1
-        #     job_sim.get_simulated_samples().con1.plot()
-        #     plt.show()
 
-        print("cun:NuclearOps run_measurement")
+        self.queue.log.info("cun: NuclearOps run measurement")
 
         self.init_run(**kwargs)
 
-        logging.info("passed the init")
-        # When the confocal connected #TODO 1
-        confocal = self.queue._confocal
-        ### new qudi positions
+        # Get and safe confocal positions from Qudi
+        x = self.queue._confocal.scanner_position["x"]
+        y = self.queue._confocal.scanner_position["y"]
+        z = self.queue._confocal.scanner_position["z"]
 
-        x = confocal.scanner_position["x"]
-        y = confocal.scanner_position["y"]
-        z = confocal.scanner_position["z"]
-
-        # logging.info('got the confocal position')
         self.df_refocus_pos = pd.DataFrame(OrderedDict(confocal_x=[x], confocal_y=[y], confocal_z=[z]))
-        # [self._confocal.x], confocal_y=[self._confocal.y], confocal_z=[self._confocal.z]))
-        try:
-            if hasattr(self.queue, "microwave"):
-                self.queue.microwave.On()  ## SMIQ baby..
 
-            self.queue._gated_counter.set_counter()  # as before, but now the channels for the gate are 5.
-            # start_trigger_delay_ps_list = self.delay_ps_list ,window_ps_list = self.window_ps_list) - this is for the pulse streamer.
-            # enumerator=enumerate(self.iterator())
-            # iterator_list=list(self.iterator()) # seems to laag imensely
-            # The iterator walks through the parameter dataframe that defines the
-            # measurement grid for the current userscript.
-            for idx, _ in enumerate(self.iterator()):  # range(len(iterator_list)):
+        try:
+            # Setup gated counter
+            self.queue._gated_counter.set_counter()
+
+
+            # Lock laser to wavemeter if specified and not continously updated by PLE refocus
+            if self.lock_laser_to_wavemeter and not self.do_ple_refocus_A1:
+                self.queue._wavemeter.start_lock(use_current_wavelength=True)
+
+            for idx, _ in enumerate(self.iterator()):
                 if abort.is_set():
                     break
-                while True:
+
+                while True:   
                     if abort.is_set():
                         break
 
-                    # self.checktime(abort)  # Stops measurement during detector cycling # doesnt work yet.
-
+                    # we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
                     self.check_manual_pause(
                         abort
-                    )  # we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
+                    ) 
 
-                    # Uncomment when on the setup #TODO
-                    if False:  # self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
-                        freq = self.queue.wavemeter.get_current_frequency()
-                        self.queue.wavemeter.set_lock_frequency(freq)
-                        self.queue.wavemeter.lock_frequency()
-                        time.sleep(0.1)
-                    if False:  #'defect_ids' in self.current_iterator_df.columns:
-                        defect_id = str(self.current_iterator_df.defect_ids.at[0])
-                        self.queue._poimanagerlogic.go_to_poi(defect_id)
-                        QtTest.QTest.qSleep(1)  # safety.
-                        time.sleep(0.1)
 
+                    # TODO: Implement in the futur clean
                     # while self.queue._counter.heating: # This is during the SNSPDs are recycled.
                     # FIXME Here better to ask for the temperature of the photonspot cryostat.
                     #     now = datetime.datetime.now()
@@ -567,147 +408,32 @@ class NuclearOPs(DataGeneration):
                     #     print("Countrate too high. Assuming hearting of photon detector. Going to sleep for 1min.")
                     #     QtTest.QTest.qSleep(60000)
 
-                    if "applied_voltage" in self.current_iterator_df.keys():
-                        self.set_bias_voltage(abort)
-
-                    if self.set_A1_power or self.set_A2_power:
-                        self.set_laser_power(abort)
-
-                    if self.do_ple_refocusA2 or self.do_ple_refocusA1:
-                        self.do_refocus_ple(abort)
-
-                    if self.do_confocal_repump_refocus:
-                        self.do_refocus_repump()
-
-                    if self.do_ple_refocus_SnV:
-                        self.do_refocus_ple_SnV(abort)
-
-                    if self.do_confocal_A1A2_refocus or self.do_confocal_A2MW_refocus:
-                        self.do_refocus_zpl(abort)
-
-                    # if 'delta_ple_A2' in self.current_iterator_df.keys():
-                    #     self.queue.ple_A2.delta_ple = self.current_iterator_df['delta_ple_A2'].unique()[0]
-                    #     logging.getLogger().info(
-                    #         'I set delta_ple_A2: {}'.format(self.current_iterator_df['delta_ple_A2'].unique()[0]))
-
-                    if self.refocus_cw_odmr or self.refocus_pulsed_odmr:
-                        self.do_refocusodmr(
-                            abort,
-                            check_odmr_frequency_drift_ok=False,
-                            initial_odmr=False,
-                        )
-
+                    # updates click channel for gated counter if defined
                     if "click_channel" in self.current_iterator_df.keys():
                         self.queue._fast_counter_device._count_between_markers["click_channel"] = self.current_iterator_df["click_channel"].unique()[0]
 
-                    if "B" in self.current_iterator_df.keys():
+                    if self.do_ple_refocus_A1:
+                        self.refocus_ple_A1(abort)
 
+                    # TODO: remove duplicate implementation
+                    if "B" in self.current_iterator_df.keys():
                         B_amp_ = self.current_iterator_df["B"].unique()[0] * 1e-3
                         B_theta_ = self.current_iterator_df["B"].unique()[1]
                         B_phi_ = self.current_iterator_df["B"].unique()[2]
 
                     if "B_amp" in self.current_iterator_df.keys():
-
-                        if True == False:
-                            B_vec_SnV = np.array(
-                                [
-                                    self.current_iterator_df["B_amp"].unique()[0] * 1e-3,
-                                    self.current_iterator_df["B_theta"].unique()[0],
-                                    self.current_iterator_df["B_phi"].unique()[0],
-                                ]
-                            )
-
-                            B_vec_cart_SnV = self.spherical_to_carthesian(B_vec_SnV)
-
-                            B_vec_cart_Lab = self.rotate_vector(B_vec_cart_SnV, 55, 225)
-                            B_vec_Lab = self.cartesian_to_spherical(B_vec_cart_Lab)
-                            print(f"B lab: {B_vec_Lab}, B SnV: {B_vec_SnV}")
-
-                        else:
-                            B_vec_Lab = np.array(
-                                [
-                                    self.current_iterator_df["B_amp"].unique()[0] * 1e-3,
-                                    self.current_iterator_df["B_theta"].unique()[0],
-                                    self.current_iterator_df["B_phi"].unique()[0],
-                                ]
-                            )
-
-                        self.queue._magnet_logic.ramp(B_vec_Lab)
-                        time.sleep(0.5)
-                        while min(self.queue._magnet_logic._magnet.get_ramping_state()) == 1:
-                            time.sleep(0.1)
-                        time.sleep(1)
-                    # if 'aom_Ex_power_sweep' in self.current_iterator_df.keys():
-                    #     current_Ex_voltage = self.queue.power_calibration.aom_list['aom_Ex_power'].voltage
-                    #
-                    #     if self.current_iterator_df['aom_Ex_power_sweep'].unique()!= current_Ex_voltage:
-                    #         logging.getLogger().info('I set voltage Ex: {}'.format(self.current_iterator_df['aom_Ex_power_sweep'].unique()))
-                    #         self.queue.power_calibration.aom_list['aom_Ex_power'].set_voltage(
-                    #             self.current_iterator_df['aom_Ex_power_sweep'].unique())
-                    #         time.sleep(0.1)
-
-                    # if 'Ex_RO_power_sweep' in self.current_iterator_df.keys():
-                    #     current_Ex_RO_voltage = self.queue.power_calibration.aom_list['Ex_RO_aom_power'].voltage
-                    #
-                    #     if self.current_iterator_df['Ex_RO_power_sweep'].unique()!= current_Ex_RO_voltage:
-                    #         logging.getLogger().info(
-                    #             'I set voltage RO Ex: {}'.format(self.current_iterator_df['Ex_RO_power_sweep'].unique()))
-                    #         self.queue.power_calibration.aom_list['Ex_RO_aom_power'].set_voltage(
-                    #                 self.current_iterator_df['Ex_RO_power_sweep'].unique())
-                    #         time.sleep(0.1)
-
-                    # if 'aom_A1_power_sweep' in self.current_iterator_df.keys():
-                    #     current_A1_voltage = self.queue.power_calibration.aom_list['aom_A1_power'].voltage
-                    #
-                    #     if self.current_iterator_df['aom_A1_power_sweep'].unique()!= current_A1_voltage:
-                    #         logging.getLogger().info(
-                    #             'I set voltage A1: {}'.format(self.current_iterator_df['aom_A1_power_sweep'].unique()))
-                    #         self.queue.power_calibration.aom_list['aom_A1_power'].set_voltage(
-                    #             self.current_iterator_df['aom_A1_power_sweep'].unique())
-                    #         time.sleep(0.1)
-
-                    # if 'repump_power_sweep' in self.current_iterator_df.keys():
-                    #     current_repump_voltage = self.queue.power_calibration.aom_list['aom_repump_power'].voltage
-                    #
-                    #     # if self.current_iterator_df['repump_power_sweep'].unique()!= current_repump_voltage:
-                    #     #     logging.getLogger().info(
-                    #     #         'I set voltage repump: {}'.format(self.current_iterator_df['repump_power_sweep'].unique()))
-                    #     #     #self.queue.power_calibration.aom_list['aom_repump_power'].set_voltage(
-                    #     #             self.current_iterator_df['repump_power_sweep'].unique())
-                    #     #     time.sleep(0.1)
-
-                    # if self.do_interferometerPhase_locking:
-                    #   interferometer_phase = None
-
-                    #  if 'interferometer_phase' in self.current_iterator_df.keys():
-                    #     interferometer_phase = self.current_iterator_df['interferometer_phase'].unique()[0]
-                    # pass
-                    # self.do_interf_phase_lock(interferometer_phase)
-
-                    # if self.yellow_repump_compensation:
-                    # add here the ability to sweep desired frequency
-                    # if 'yellow_desired_freq' in self.current_iterator_df.keys():
-                    #   yellow_desired_freq = self.current_iterator_df['yellow_desired_freq'].unique()[0]
-                    #  # print('yellow_desired_freq ', yellow_desired_freq)
-                    # self.queue.ple_repump.desired_freq = yellow_desired_freq
-
-                    # self.queue.ple_repump.compensate_drift()
-                    print("Cun:Starting measurement sequence...")
-                    self.setup_rf(self.current_iterator_df, hashed=self.hashed)  # MCAS is ready
+                        self.do_ramp_magnet()
+                   
+                    self.queue.log.info("Cun: Starting measurement sequence")
+                    self.setup_rf(self.current_iterator_df, hashed=self.hashed)
 
                     if abort.is_set():
                         break
 
-                    if False:  # self.raw_clicks_processing:
-                        self.data.set_observations(
-                            pd.concat([self.df_refocus_pos.iloc[-1:, :]] * self.number_of_simultaneous_measurements).reset_index(drop=True)
-                        )
-                        self.data.set_observations([OrderedDict(ple_A1=self.queue._transition_tracker.ple_A1)] * self.number_of_simultaneous_measurements)
-                        self.data.set_observations([OrderedDict(ple_A2=self.queue._transition_tracker.ple_A2)] * self.number_of_simultaneous_measurements)
-                    # elif not self.save_smartly: # we anyway doint it.
+                    # Save relevant data from transition tracker to data set
                     self.data.set_observations(
                         [OrderedDict(mw_mixing_frequency=self.queue._transition_tracker.mw_mixing_frequency_L)] * self.number_of_simultaneous_measurements
-                    )  # TODO rename mw_freq
+                    ) 
                     self.data.set_observations(
                         [OrderedDict(mw_mixing_frequency=self.queue._transition_tracker.mw_mixing_frequency_R)] * self.number_of_simultaneous_measurements
                     )
@@ -727,58 +453,20 @@ class NuclearOPs(DataGeneration):
 
                     self.data.set_observations([OrderedDict(start_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
 
-                    # TODO
-                    # Measure powers and record them!!!!
-                    ##
-                    # self.data.set_observations([OrderedDict(EOM_Ex_integrator_voltage=self.queue.power_calibration.pd_list[
-                    #     'pd_Ex_integrator_voltage'].get_data())] * self.number_of_simultaneous_measurements)
-
-                    # if False:  # not self._md.debug_mode: Laser power calibration #Fixme
-                    #     self._md["red_Ex"].run()
-                    #     # self.data.set_observations([OrderedDict(aom_Ex_power_measured=self.queue.power_calibration.pd_list['pd_A1_power'].get_data())]*self.number_of_simultaneous_measurements)
-                    #     time.sleep(0.1)
-                    #     self._md.stop_awgs()
-
-                    #     self._md["Ex_RO"].run()
-                    #     # self.data.set_observations([OrderedDict(Ex_RO_power_measured=self.queue.power_calibration.pd_list['pd_A1_power'].get_data())]*self.number_of_simultaneous_measurements)
-                    #     time.sleep(0.1)
-                    #     self._md.stop_awgs()
-
-                    #     self._md["red_A1"].run()
-                    #     # self.data.set_observations([OrderedDict(aom_A1_power_measured=self.queue.power_calibration.pd_list['pd_A1_power'].get_data())]*self.number_of_simultaneous_measurements)
-                    #     time.sleep(0.1)
-                    #     self._md.stop_awgs()
-                    if False:  # self.check_A2_power:
-                        self.queue._awg.mcas_dict["A2"].run()
-                        # QtTest.QTest.qSleep(1500)
-                        self.data.set_observations(
-                            [OrderedDict(A2_Power=self.queue._powerstabilization_logic.current_power)] * self.number_of_simultaneous_measurements
-                        )
-                        self.queue._awg.mcas_dict.stop_awgs()
-                        # QtTest.QTest.qSleep(1000)
-                    if False:  # self.do_repump:
-                        self.queue._awg.mcas_dict["repump"].run()
-                        # self.data.set_observations([OrderedDict(aom_A1_power_measured=self.queue.power_calibration.pd_list['pd_A1_power'].get_data())]*self.number_of_simultaneous_measurements)
-                        # QtTest.QTest.qSleep(100)
-                        self.queue._awg.mcas_dict.stop_awgs()
-                        # QtTest.QTest.qSleep(1000)
-                    # TODO add laser power meters to the df
-                    # if self.yellow_repump_compensation:
-                    # self.data.set_observations([OrderedDict(yellow_freq_measured=self.queue.wavemeter.dll.GetFrequencyNum(3, 0))] * self.number_of_simultaneous_measurements)
-                    # Thread1=threading.Thread(target=self.get_trace, args=(abort), kwargs={'delay_ps_list': self.delay_ps_list ,'window_ps_list' : self.window_ps_list})
-                    # Thread1.start()
+                    # start measurement 
+                    self.log
                     self.get_trace(
                         abort,
                         delay_ps_list=self.delay_ps_list,
                         window_ps_list=self.window_ps_list,
-                    )  # Start AWGs...
+                    )
                     if abort.is_set():
                         break
 
                     self.data.set_observations([OrderedDict(end_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
+                    
                     if self.save_smartly:  # non zero to the data
-                        # pass
-                        # TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
+                        # FIXME:  TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
                         dd = self.ana_trace.trace
                         idx = np.nonzero(dd)
                         ddd = dd[idx]
@@ -790,96 +478,48 @@ class NuclearOPs(DataGeneration):
                     else:
                         self.data.set_observations([OrderedDict(trace=self.ana_trace.trace)] * self.number_of_simultaneous_measurements)
 
-                    # # print('type(self.ana_trace.trace) ', type(self.ana_trace.trace))
-                    # # print('self.ana_trace.trace.dtype ', self.ana_trace.trace.dtype)
-                    # TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
-                    # self.data.set_observations([OrderedDict(delays_ps=self.delay_ps_list)]*self.number_of_simultaneous_measurements)
-                    # self.data.set_observations([OrderedDict(windows_ps=self.window_ps_list)]*self.number_of_simultaneous_measurements)
-                    if False:  # self.queue._gated_counter.ZPL_counter:
-                        for i, delay_ps in enumerate(self.delay_ps_list):
-                            for j, window_ps in enumerate(self.window_ps_list):
-                                name = "zpl_counter_data_{i}_{j}".format(i=i, j=j)
-                                dd = getattr(self.queue._gated_counter, name)
-                                if self.save_smartly:
-
-                                    self.data.set_observations([OrderedDict({name: dd})] * self.number_of_simultaneous_measurements)
-
-                                    # TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
-                                    # idx = np.nonzero(dd)
-                                    # ddd = dd[idx]
-                                    idx = np.nonzero(dd)
-                                    ddd = dd[idx]
-                                    self.data.set_observations([OrderedDict({name: (idx, ddd)})] * self.number_of_simultaneous_measurements)
-                                else:
-                                    self.data.set_observations([OrderedDict({name: dd})] * self.number_of_simultaneous_measurements)
-
-                                if self.two_zpl_apd:
-                                    name = "zpl_2_counter_data_{i}_{j}".format(i=i, j=j)
-                                    dd = getattr(self.queue._gated_counter, name)
-                                    if self.save_smartly:
-                                        self.data.set_observations([OrderedDict({name: dd})] * self.number_of_simultaneous_measurements)
-
-                                        # # TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
-                                        idx = np.nonzero(dd)
-                                        ddd = dd[idx]
-                                        self.data.set_observations([OrderedDict({name: (idx, ddd)})] * self.number_of_simultaneous_measurements)
-                                    else:
-                                        self.data.set_observations([OrderedDict({name: dd})] * self.number_of_simultaneous_measurements)
 
                     if abort.is_set():
                         break
+
                     repeat_measurement = self.analyze()
-                    print("Achtung!!!! Repeating__???::::", repeat_measurement)  ##TODO here we make only non zeros., and do the average.
+                    
                     if abort.is_set():
                         break
 
-                    # if self.do_ple_refocus or self.do_ple_refocusA1 or self.do_ple_refocusA2:
-                    #     self.do_refocus_ple(abort)
 
-                    if self.do_ple_refocus_SnV:
-                        self.do_refocus_ple_SnV(abort)
-
-                    if self.do_confocal_repump_refocus:
-                        self.do_refocus_repump(abort)
-
-                    if self.do_confocal_A1A2_refocus or self.do_confocal_A2MW_refocus:
-                        self.do_refocus_zpl(abort)
-
-                    if self.refocus_cw_odmr or self.refocus_pulsed_odmr:
-                        self.do_refocusodmr(abort=abort)
-                        odmr_frequency_drift_ok = self.do_refocusodmr(abort=abort)
-                    else:
-                        odmr_frequency_drift_ok = True
+                    if self.do_ple_refocus_A1:
+                        self.refocus_ple_A1(abort=abort)
 
                     if repeat_measurement:
-                        print("cun:repeat_measurement ")
-                    if odmr_frequency_drift_ok and not repeat_measurement:
-                        break
+                        self.queue.log.info("cun:repeat_measurement ")
                     # end of while
                     # print("end of while")
 
                 if hasattr(self, "_pld"):
                     self.pld.new_data_arrived()
-                    print("New data arrived ----> Clicked!!!!")
+                    self.queue.log.info("Cun: New data arrived")
+                
                 if abort.is_set():
                     break
 
                 self.save()
 
-                # end of for
-                # print("end of for")
+
 
         except Exception as e:
-            print("cun ERROR: Nuclear op failed in run measuremt", e)
+            
+            self.queue.log.error("cun ERROR: Nuclear op failed in run measurement", e)
             abort.set()
-            exc_type, exc_value, exc_tb = sys.exc_info()
-            traceback.print_exception(exc_type, exc_value, exc_tb)
             self.update_current_str()
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            raise exc_type(e)
+            # traceback.print_exception(exc_type, exc_value, exc_tb)
+            # self.update_current_str()
         finally:
             self.state = "idle"
             self.data._df = data_handling.df_take_duplicate_rows(self.data.df, self.iterator_df_done)  # drops unfinished measurements,
             self.pld.new_data_arrived()
-            # self.queue.multi_channel_awg_sequence.stop_awgs(self.queue.awgs)
             self.update_current_str()
             if self.session_meas_count == 0:
                 self.pld.gui.close_gui()
@@ -889,10 +529,8 @@ class NuclearOPs(DataGeneration):
             if os.path.exists(self.save_dir) and not os.listdir(self.save_dir):
                 os.rmdir(self.save_dir)
 
-            # if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
-            #     self.queue.wavemeter.unlock_frequency()
-            #     time.sleep(0.1)
-            print("cun:Finished run_measurement")
+
+            self.queue.log.info("cun: Finished function run_measurement")
             self.queue._wavemeter.stop_lock()
             time.sleep(2)
             self.queue._dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
@@ -971,196 +609,39 @@ class NuclearOPs(DataGeneration):
     @property
     def sweeps(self) -> Any:
         return self.parameters["sweeps"]
-
-    def do_refocus_ple(self, abort: Any) -> None:
-        """Run configured PLE refocus steps when the interval threshold is met."""
-        delta_t = time.time() - self.last_ple_refocus
-
-        if delta_t >= self.ple_refocus_interval:
-
-            if self.do_ple_refocusA1:
-                self.do_refocus_pleA1(abort)
-                self.performedRefocus = True
-
-            if self.do_ple_refocusA2:
-                self.do_refocus_pleA2(abort)
-                self.performedRefocus = True
-
-            self.last_ple_refocus = time.time()
-            self.queue._awg.mcas_dict.stop_awgs()
-            while self.queue._PLE_logic.happy:
-                QtTest.QTest.qSleep(1000)
-        return
-
-    def set_laser_power(self, abort: Any) -> None:
-        """Adjust or stabilize configured laser powers before acquisition."""
-        if "A2_power" in self.current_iterator_df:
-            a2power = float(max(self.current_iterator_df["A2_power"]))
-        else:
-            a2power = 0
-            print("No laserpower in Iterator. Check for bugs. Is laserpower set correctly?")
-        self.queue._awg.mcas_dict.stop_awgs()
-
-        if self.check_A1_power:
-            print("A1 POWER STAB = TRUE")
-            # somewhere the output voltage is set to 1 at beginning of stabilization
-            # self.queue._awg.mcas_dict.awgs["ps"].constant(pulse=(0,["A1"],0,0))
-            self.queue._awg.mcas_dict["A1"].run()
-            self.queue._powerstabilization_logic.controlA1 = True
-            self.queue._powerstabilization_logic.controlA2 = False
-            self.queue._powerstabilization_logic.TargetPower = self.A1LaserPower
-            self.queue._powerstabilization_logic.start_control
-            start_time = time.time()
-            QtTest.QTest.qSleep(1000)
-            while self.queue._powerstabilization_logic.stabilizing:
-                QtTest.QTest.qSleep(500)
-                if abort.is_set():
-                    break
-                if start_time - time.time() > 30:
-                    logging.getLogger().info("Could not reach desired A1-laserpower in reasonable time. Set analog voltage to 0.5V.")
-                    self.queue._powerstabilization_logic.A1Voltage = 0.5
-                    self.queue._powerstabilization_logic.set_fix_voltage(tag="A1")
-            self.queue._awg.mcas_dict.stop_awgs()
-        if self.check_A2_power:
-            print("Start A2 laser for Powerstab in Nuclear OPs")
-            self.queue._awg.mcas_dict["A2"].run()
-            print("A2 power to set", a2power)
-            # self.queue._powerstabilization_logic.TargetPower = a2power  # self.A2LaserPower
-            print("Starting power stab via NuclearOps")
-            self.queue._powerstabilization_logic.set_power(a2power)  # start_control
-            # start_time = time.time()
-            QtTest.QTest.qSleep(1000)
-            # while self.queue._powerstabilization_logic.stabilizing:
-            #     QtTest.QTest.qSleep(500)
-            #     # print("abort: ", abort.is_set())
-            #     if abort.is_set():
-            #         break
-            #     elif start_time - time.time() > 30:
-            #         logging.getLogger().info(
-            #             'Could not reach desired A2-laserpower in reasonable time. Set analog voltage to 1V.')
-            #         self.queue._powerstabilization_logic.A2Voltage = 1
-            #         self.queue._powerstabilization_logic.set_fix_voltage(tag="A2")
-            # print("Done stabilizing. Turning laser off now...")
-            self.queue._awg.mcas_dict.stop_awgs()
-        return
-
-    def set_bias_voltage(self, abort: Any) -> None:
-        """Apply the iterator-defined bias voltage and wait for settling."""
-        if "applied_voltage" in self.current_iterator_df:
-            volt = float(max(self.current_iterator_df["applied_voltage"])) / self.queue._currentmeasurementlogic.Multiplier
-        else:
-            volt = 0
-            print("No bias voltage in Iterator. Check for bugs.")
-
-        self.queue._currentmeasurementlogic.set_voltage(volt)
-        self.queue._currentmeasurementlogic.voltages = [volt, volt]
-        QtTest.QTest.qSleep(1000)
-        return
-
-    def do_refocus_pleA2(self, abort: Any) -> None:  # CHANGED! commented what belonged to wavemeter
-        # if self.wavemeter_lock and self.queue.wavemeter.wm_id!=0:
-        #    self.queue.wavemeter.unlock_frequency()
-        #    time.sleep(0.1)
-        print(
-            "voltage before PLE: ",
-            self.queue._PLE_logic._scanning_device.get_scanner_position()[3],
-        )
-        # Check that countrate after refocus is not worse than before.
-        # self.queue._awg.mcas_dict['RepumpAndA1AndA2'].run()
-        # QtTest.QTest.qSleep(3000)
-        # counts_before = np.mean(self.queue._counter.countdata_smoothed[0][-20:])
-        # counts_after = 0
-        # print('average counts before refocus')
-        # print(counts_before)
-        repetitions = 0
-        self.queue._PLE_logic.Lock_laser = True
-        volt_before = self.queue._PLE_logic._static_v
-        self.queue._PLE_logic.happy = True
-
-        # while counts_before * 0.5 > counts_after: #This is keeping refocusing forever! if ple moved e.g.?
-        # TODO - this should be in PLE ITSELF!!!! not a buisness of Nops whatever happens in ple refocus.
-        with self.queue._threadlock:
-
-            self.queue._PLE_logic.start_scanning()
-            # print(self.queue.module_state)
-            # print("inside")
-            while self.queue._PLE_logic.module_state() == "locked":
-                # print(self.queue._PLE_logic.module_state())
-                QtTest.QTest.qSleep(500)
-        QtTest.QTest.qSleep(1000)
-
-        self.queue._awg.mcas_dict.stop_awgs()
-        self.queue._PLE_logic.happy = False
-        # if repetitions > 1:
-        #     print("*********************************************PLE REFOCUS WAS NOT SUCCESSFUL AFTER 5 ITERATIONS ******************************************")
-        #         if self.mode==1: # what does this mean?
-        #             self.queue._PLE_logic._static_v=volt_before
-        #             self.queue._PLE_logic.goto_voltage(max(volt_before-0.5,-3))
-        #             self.queue._PLE_logic.goto_voltage(self.queue._PLE_logic._static_v)
-        #
-        # break
-
-        # repetitions +=1
-
-        # self.queue.ple_A2.syncFlag = False
-        # self.queue.ple_A2.state = 'refocus PLE'
-
-        # while(self.queue.ple_A2.syncFlag == False):
-        #     time.sleep(0.1)
-        # time.sleep(0.5)
-
-        # if self.wavemeter_lock and self.queue.wavemeter.wm_id != 0:
-        #    freq = self.queue.wavemeter.get_current_frequency()
-        #    self.queue.wavemeter.set_lock_frequency(freq)
-        #    self.queue.wavemeter.lock_frequency()
-        #    time.sleep(0.1)
-
-    def do_refocus_pleA1(self, abort):
-        self.queue.ple_A1.syncFlag = False
-        self.queue.ple_A1.state = "refocus PLE"
-
-        while self.queue.ple_A1.syncFlag == False:
-            QtTest.QTest.qSleep(100)
-        QtTest.QTest.qSleep(1000)
-
-    def do_refocus_repump(self):
-        delta_t = time.time() - self.last_red_confocal_refocus
-        print("doing_refocus_repump")
-        if delta_t >= self.confocal_refocus_interval:
-
-            # self.queue._awg.mcas_dict.awgs["ps"].constant(pulse=(0,["repump"],0,0))
-            self.queue._awg.mcas_dict["repump"].run()
-
-            self.queue._optimizer.start_refocus(
-                initial_pos=np.array(self.df_refocus_pos.iloc[0]),
-                caller_tag="NuclearOps",
-            )
-            while not self.queue._optimizer.refocus_finished:
-                QtTest.QTest.qSleep(250)
-            self.df_refocus_pos = pd.DataFrame(
-                OrderedDict(
-                    confocal_x=[self.queue._optimizer.optim_pos_x],
-                    confocal_y=[self.queue._optimizer.optim_pos_y],
-                    confocal_z=[self.queue._optimizer.optim_pos_z],
-                )
+    
+    def do_ramp_magnet(self) -> None:
+        if self.use_defect_frame:
+            B_vec_SnV = np.array(
+                [
+                    self.current_iterator_df["B_amp"].unique()[0] * 1e-3,
+                    self.current_iterator_df["B_theta"].unique()[0],
+                    self.current_iterator_df["B_phi"].unique()[0],
+                ]
             )
 
-            self.queue._awg.mcas_dict.stop_awgs()
-            # TODO connect to optimized and return when done
-            # self.queue.optimizer.syncFlag=False
-            # self.queue.optimizer.state = 'refocus_red'
+            B_vec_cart_SnV = self.spherical_to_carthesian(B_vec_SnV)
 
-            # while self.queue.confocal.syncFlag == False:
-            #     time.sleep(0.1)
+            # FIXME: Implement all this within the magnet logic and make it SnV orientation agnostic
+            B_vec_cart_Lab = self.queue._magnet_logic.rotate_vector(B_vec_cart_SnV, 55, 225)
+            B_vec_Lab = self.queue._magnet_logic.cartesian_to_spherical(B_vec_cart_Lab)
 
-            # time.sleep(0.5)
-            # self.last_red_confocal_refocus = time.time()
+        else:
+            B_vec_Lab = np.array(
+                [
+                    self.current_iterator_df["B_amp"].unique()[0] * 1e-3,
+                    self.current_iterator_df["B_theta"].unique()[0],
+                    self.current_iterator_df["B_phi"].unique()[0],
+                ]
+            )
 
-            # self.df_refocus_pos = pd.DataFrame(OrderedDict(confocal_x=[self.queue.confocal.x], confocal_y=[self.queue.confocal.y], confocal_z=[self.queue.confocal.z]))
+        self.queue._magnet_logic.ramp(B_vec_Lab)
+        time.sleep(0.5)
+        while min(self.queue._magnet_logic._magnet.get_ramping_state()) == 1:
+            time.sleep(0.1)
+        time.sleep(1)
 
-            self.performedRefocus = True
-
-    def do_refocus_ple_SnV(self, abort):
+    def refocus_ple_A1(self, abort):
         """Run SnV PLE refocus only when the refocus interval has elapsed."""
         now = time.time()
         delta_t = now - self.last_ple_refocus
@@ -1180,7 +661,7 @@ class NuclearOPs(DataGeneration):
 
         return success
 
-    def _run_refocus_ple_SnV_sequence(self, abort):
+    def _run_refocus_ple_A1_sequence(self, abort):
         """Execute the SnV PLE refocus sequence."""
         REPUMP_TIME_S = 1.0
         OPTIMIZER_POLL_S = 0.2
@@ -1239,7 +720,6 @@ class NuclearOPs(DataGeneration):
 
         q._process_setpoint_combiner.set_setpoint("LaserScanner_red", 0)
         q._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage)
-        # q._awg.stop_cw_mode()
 
         # if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
         #     return False
@@ -1250,13 +730,13 @@ class NuclearOPs(DataGeneration):
         q.tt.update_ple(wavelength)
         q._wavemeter.start_lock(wavelength)
         q.log.info(f"PLE refocus complete. Locked to wavelength: {wavelength:.2f} nm")
-        # q._wavemeter.start_lock(wavelength=wavelength)
 
         if not wait_or_abort(LOCK_SETTLE_TIME_S):
             return False
 
         return True
 
+    # TODO: implement for Our setup and qudi
     def do_refocus_zpl(self, abort):
         delta_t = time.time() - self.last_red_confocal_refocus
 
@@ -1347,209 +827,6 @@ class NuclearOPs(DataGeneration):
 
             self.performedRefocus = True
 
-    def check_eom(self):
-
-        logging.getLogger().info("checking the eom")
-        for i in range(3):
-            current_voltage = self.queue.power_calibration.pd_list["pd_Ex_integrator_voltage"].get_data()
-            if current_voltage > 1.5 or current_voltage < -1.5:
-                logging.getLogger().info("V_c = {}: relocking...".format(current_voltage))
-                for rel in range(3):
-                    self.queue.interferometer.relock_eom()
-            else:
-                return
-        raise Exception("After 3 trials EOM is not locked!")
-
-    # ----------------
-    # Should not refocus every time, should refocus only if time>last_interferometer_refocus
-    # ----------------
-
-    # def do_interf_phase_lock(self, interferometer_phase = None):
-    #     interferometer = self.queue.interferometer
-    #     delta_t = time.time() - self.last_interferometer_refocus
-    #     if (delta_t >= self.interferometer_refocus_interval):
-    #         interferometer.do_calibration_scan()
-
-    #     while interferometer.syncFlag == False:
-    #         time.sleep(0.1)
-
-    #     if (interferometer_phase is not None) and (interferometer._desired_voltage!=interferometer_phase):
-    #         print('I am setting interferometer phase {} pi'.format(interferometer_phase/np.pi))
-    #         interferometer.desired_phase = interferometer_phase
-    #         interferometer.set_desired_voltage(interferometer.phase2voltage(interferometer.desired_phase))
-    #         interferometer.go_to_position(interferometer._desired_voltage)
-
-    #     while interferometer.syncFlag == False:
-    #         time.sleep(0.1)
-
-    #     time.sleep(0.2)
-    #     self.last_interferometer_refocus = time.time()
-
-    #     # def do_interf_phase_lock(self, interferometer_phase=None):
-    #     #     interferometer = self.queue.interferometer
-    #     #     if interferometer_phase is not None:
-    #     #         interferometer.desired_phase = interferometer_phase
-    #     #     interferometer.do_calibration_scan()
-    #     #     while interferometer.syncFlag == False:
-    #     #         time.sleep(0.1)
-    def do_refocusodmr(self, abort=None, check_odmr_frequency_drift_ok=True, initial_odmr=False):
-        if abort.is_set():
-            logging.getLogger().info("do_refocusodmr stopped here0")
-        self.queue._odmr_ref.file_name = self.file_name  # todo need to add the odmr-refocus file to the queue.
-        delta_t = time.time() - self.last_odmr
-        if self.odmr_interval != 0 and (delta_t >= self.odmr_interval) or len(self.data.df) == 0 or initial_odmr:
-            if check_odmr_frequency_drift_ok and hasattr(self, "maximum_odmr_drift"):
-                self.add_odmr_script_to_queue(abort, self.odmr_pd)
-                current_drift = np.abs(self.queue.tt.current_local_oscillator_freq - self.data.df.iloc[-1, :].local_oscillator_freq)
-                if current_drift > self.maximum_odmr_drift:
-                    logging.getLogger().info("Too much drift ({} > {}), trying again!".format(current_drift, self.maximum_odmr_drift))
-                    odmr_frequency_drift_ok = False
-                else:
-                    logging.getLogger().info("Drift is ok  ({} < {})".format(current_drift, self.maximum_odmr_drift))
-                    odmr_frequency_drift_ok = True
-                if self.refocus_interval != 0 and self.odmr_count % self.refocus_interval == 0:
-                    self.add_odmr_script_to_queue(abort, self.odmr_pd_refocus)
-            else:
-                if self.refocus_interval != 0 and self.odmr_count % self.refocus_interval == 0:
-                    self.add_odmr_script_to_queue(abort, self.odmr_pd_refocus)
-                else:
-                    self.add_odmr_script_to_queue(abort, self.odmr_pd)
-                odmr_frequency_drift_ok = True
-            self.odmr_count += 1
-            self.last_odmr = time.time()
-            if abort.is_set():
-                logging.getLogger().info("do_refocusodmr stopped here1")
-            return odmr_frequency_drift_ok
-        elif check_odmr_frequency_drift_ok:
-            if abort.is_set():
-                logging.getLogger().info("do_refocusodmr stopped here2")
-            return True
-
-    def run_refocus(self):
-        pass
-        # print('NUCLEAROPS RUN REFOCUS')
-        # self.queue.confocal.run_refocus()
-        # self.df_refocus_pos = self.df_refocus_pos.append(pd.DataFrame(OrderedDict(confocal_x=[self.queue.confocal.x],
-        #                                                                           confocal_y=[self.queue.confocal.y],
-        #                                                                           confocal_z=[self.queue.confocal.z]))).reset_index(drop=True)
-        # if self.refocus_moving_average_num > 1:
-        #     ma = self.confocal_pos_moving_average(min(len(self.df_refocus_pos), self.refocus_moving_average_num))
-        #     for axis in ['x', 'y', 'z']:
-        #         setattr(self.queue.confocal, axis, getattr(ma, 'confocal_{}'.format(axis)).iloc[-1])
-        #     logging.getLogger().info("Refocus ma_deviation [nm]: {}, {}, {}".format(*[(getattr(self.queue.confocal, axis) - self.df_refocus_pos.iloc[-1, :]['confocal_{}'.format(axis)])*1000 for axis in ['x', 'y', 'z']]))
-
-    def add_odmr_script_to_queue(self, abort, pd):
-        sys.modules[self.queue.init_task(name="refocus_confocal_odmr", folder="C:/src/qudi/notebooks")].run_fun(self, abort=abort, **pd)
-
-    def do_refocusodmr_gui(self, abort=None, check_odmr_frequency_drift_ok=True, initial_odmr=False):
-        print("do ODMR refocus?")
-        if abort.is_set():
-            pass
-            # logging.getLogger().info('do_refocusodmr stopped here0')
-
-        # Range of ODMR?
-
-        delta_t = time.time() - self.last_odmr_refocus
-        print(delta_t, self.last_odmr_refocus, time.time() - self.last_odmr_refocus)
-        if delta_t >= self.odmr_refocus_interval:
-            print("starting ODMR refocus")
-            try:  # Add current defect name name to callertag
-                caller_tag = "NuclearOps_ODMR_" + str(self.current_iterator_df.defect_ids.at[0])
-            except:
-                caller_tag = "NuclearOps_ODMR_"
-
-            self.queue._optimizer.start_refocus(initial_pos=self.queue._confocal.get_position(), caller_tag=caller_tag)
-
-            if self.refocus_cw_odmr:
-                self.queue._ODMR_logic.ODMRLogic.cw_PerformFit = True
-                self.queue._ODMR_logic.ODMRLogic.cw_Stoptime = 60  # sec
-                self.queue._ODMR_logic.ODMRLogic.cw_Run_Button_Clicked(True)
-
-                while self.queue._ODMR_logic.ODMRLogic.cw_odmr_refocus_running:
-                    QtTest.QTest.qSleep(500)
-
-            elif self.refocus_pulsed_odmr:
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StartFreq_LineEdit_textEdited(str(self.queue._transition_tracker.mw_mixing_frequency_L - 5))
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StopFreq_LineEdit_textEdited(str(self.queue._transition_tracker.mw_mixing_frequency_L + 5))
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_MW2_Freq_LineEdit_textEdited(str(self.queue._transition_tracker.mw_mixing_frequency_R))
-                # self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StartFreq_LineEdit_textEdited(str(2394))
-                # self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StopFreq_LineEdit_textEdited(str(2405))
-                # self.queue._ODMR_logic.pulsedODMRLogic.pulsed_MW2_Freq_LineEdit_textEdited(str(2539))
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_PerformFit = True
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_Stoptime = 40  # sec
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_Run_Button_Clicked(True, tag=caller_tag + "L")
-
-                while self.queue._ODMR_logic.pulsedODMRLogic.pulsed_odmr_refocus_running:
-                    QtTest.QTest.qSleep(500)
-                print("TRYING TO WRITE START FREQ")
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StartFreq_LineEdit_textEdited(str(self.queue._transition_tracker.mw_mixing_frequency_R - 5))
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StopFreq_LineEdit_textEdited(str(self.queue._transition_tracker.mw_mixing_frequency_R + 5))
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_MW2_Freq_LineEdit_textEdited(str(self.queue._transition_tracker.mw_mixing_frequency_L))
-                # self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StartFreq_LineEdit_textEdited(str(2534))
-                # self.queue._ODMR_logic.pulsedODMRLogic.pulsed_StopFreq_LineEdit_textEdited(str(2545))
-                # self.queue._ODMR_logic.pulsedODMRLogic.pulsed_MW2_Freq_LineEdit_textEdited(str(2400))
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_PerformFit = True
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_Stoptime = 40  # sec
-                self.queue._ODMR_logic.pulsedODMRLogic.pulsed_Run_Button_Clicked(True, tag=caller_tag + "R")
-
-                while self.queue._ODMR_logic.pulsedODMRLogic.pulsed_odmr_refocus_running:
-                    QtTest.QTest.qSleep(500)
-            self.performedRefocus = True
-            self.queue._awg.mcas_dict.stop_awgs()
-            self.last_odmr_refocus = time.time()
-
-        time.sleep(1)
-        # QtTest.QTest.qSleep(1000)
-        self.queue._gated_counter.set_counter()
-
-        self.odmr_frequency_drift_ok = True  # just to test, if sequence is running
-        return self.odmr_frequency_drift_ok  # just to test, if sequence is running
-        # self.queue.odmr.file_name = self.file_name
-        # delta_t = time.time() - self.last_odmr
-        # if self.odmr_interval != 0 and (delta_t >= self.odmr_interval) or len(self.data.df) == 0 or initial_odmr:
-        #     if check_odmr_frequency_drift_ok and hasattr(self, 'maximum_odmr_drift'):
-        #         self.add_odmr_script_to_queue(abort, self.odmr_pd)
-        #         current_drift = np.abs(self.queue.tt.current_local_oscillator_freq - self.data.df.iloc[-1, :].local_oscillator_freq)
-        #         if current_drift > self.maximum_odmr_drift:
-        #             #logging.getLogger().info("Too much drift ({} > {}), trying again!".format(current_drift, self.maximum_odmr_drift))
-        #             print("Too much drift ({} > {}), trying again!".format(current_drift, self.maximum_odmr_drift))
-        #             odmr_frequency_drift_ok = False
-        #         else:
-        #             #logging.getLogger().info("Drift is ok  ({} < {})".format(current_drift, self.maximum_odmr_drift))
-        #             print("Drift is ok  ({} < {})".format(current_drift, self.maximum_odmr_drift))
-        #             odmr_frequency_drift_ok = True
-        #         if self.refocus_interval != 0 and self.odmr_count % self.refocus_interval == 0:
-        #             self.add_odmr_script_to_queue(abort, self.odmr_pd_refocus)
-        #     else:
-        #         if self.refocus_interval != 0 and self.odmr_count % self.refocus_interval == 0:
-        #             self.add_odmr_script_to_queue(abort, self.odmr_pd_refocus)
-        #         else:
-        #             self.add_odmr_script_to_queue(abort, self.odmr_pd)
-        #         odmr_frequency_drift_ok = True
-        #     self.odmr_count += 1
-        #     self.last_odmr = time.time()
-        #     if abort.is_set():
-        #         #logging.getLogger().info('do_refocusodmr stopped here1')
-        #         print('do_refocusodmr stopped here1')
-        #     return odmr_frequency_drift_ok
-        # elif check_odmr_frequency_drift_ok:
-        #     if abort.is_set():
-        #         #logging.getLogger().info('do_refocusodmr stopped here2')
-        #         print('do_refocusodmr stopped here2')
-        #     return True
-
-    # def odmr_frequency_drift_ok(self):
-    #     if not hasattr(self, 'maximum_odmr_drift'):
-    #         return True
-    #     if len(self.data.df) > 0:
-    #         current_drift = np.abs(self.queue.tt.current_local_oscillator_freq - self.data.df.iloc[-1,:].local_oscillator_freq)
-    #         if current_drift > self.maximum_odmr_drift:
-    #             logging.getLogger().info("Too much drift ({} > {}), trying again!".format(current_drift, self.maximum_odmr_drift))
-    #             return False
-    #         else:
-    #             logging.getLogger().info("Drift is ok  ({} > {})".format(current_drift, self.maximum_odmr_drift))
-    #             return True
-
     def reinit(self) -> None:
         """Reset counters and timing markers for a fresh run."""
         super(NuclearOPs, self).reinit()
@@ -1566,15 +843,14 @@ class NuclearOPs(DataGeneration):
     ) -> None:
         """Prepare the active sequence and trigger gated-counter acquisition."""
         if not self.debug_mode:
-            print("cun:get_trace:INITIALIZING")
-            print(self.mcas.name)
+            self.queue.log.info(f"cun: get_trace: INITIALIZING {self.mcas.name}")
             # This is only compilation of the sequence, test run for 1 s and stop..
             # In principle we can cut it.
             self.mcas.initialize()  # FIXME might be usefull for something?
 
             # to keep the syntax same to keysight... (important for crossplatform)...
-            print("cun:get_trace:init fininished")
-        print("cun:get_trace:starting a longer trace")
+            self.queue.log.info("cun:get_trace:init fininished")
+        self.queue.log.info("cun:get_trace:starting a longer trace")
 
         ## This is preparing a gated counter and running a sequence.
         self.queue._gated_counter.count(
@@ -1587,89 +863,23 @@ class NuclearOPs(DataGeneration):
             raw_clicks_processing=self.raw_clicks_processing,
             raw_clicks_processing_channels=self.raw_clicks_processing_channels,
         )
-        print("cun:get_trace:measurement finished")
+        self.queue.log.info("cun:get_trace:measurement finished")
 
-    # def setup_rf(self, current_iterator_df):
-    #     t1 = time.time()
-    #     # logging.info('setting up the rf')
-    #     self.mcas = ""
-    #     print("t 1", time.time() - t1)
-    #     t1 = time.time()
-    #     self.mcas = self.ret_mcas(self, current_iterator_df)
-    #     while self.mcas == "":
-    #         # process_events() #TODO gui process events.
-    #         time.sleep(0.01)
-    #     print("t 2", time.time() - t1)
-    #     t1 = time.time()
-    #     self.queue._awg.mcas_dict[self.mcas.name] = self.mcas
-    #     print("t 3", time.time() - t1)
-    #     # logging.info('finished setting up the sequence')
 
     def setup_rf(self, current_iterator_df: pd.DataFrame, hashed: bool = False) -> None:
         """Build and register the RF/QUA sequence for the current iterator row."""
-        # print("current_iterator_df ", current_iterator_df)
+
+        # Drop sweeps from current iterator
         if "sweeps" in current_iterator_df.columns:
-            current_iterator_df = current_iterator_df.drop(["sweeps"], axis=1)
-        # print(current_iterator_df.keys())
+            current_iterator_df = current_iterator_df.drop(labels=["sweeps"], axis=1)
+        
+        # create hash
         hash = base64.b64encode(hashlib.sha1((str(current_iterator_df) + "\n" + str(self.queue._gated_counter.readout_duration)).encode()).digest())
-        # Added self.queue._gated_counter.readout_duration such that the hash recognizes a change in readout duration and will update n_values in the sequence accordingly
+        
         self.sequence_name = "nuclear_op_hash_{}".format(hash)
-        if False:
-            # if hashed: - here is the hashing of the sequence for a faster writing, - not used here.
-            if not self.sequence_name in self.queue._awg.mcas_dict:
-                self.queue._awg.mcas_dict.stop_awgs()
-                self.mcas = ""
-
-                self.mcas = self.ret_mcas(self, current_iterator_df, self.sequence_name)
-                while self.mcas == "":
-                    print("loading sequence in NuclearOPs...")
-                    QtTest.QTest.qSleep(10)
-                print("done loading")
-
-                self.queue._awg.mcas_dict[self.sequence_name] = self.mcas
-
-            elif self.sequence_name in self.queue._awg.mcas_dict and self.mcas == None:  # and sequence_name in self.queue._awg.mcas_dict:
-                self.queue._awg.mcas_dict.stop_awgs()
-                self.mcas = ""
-
-                self.mcas = self.ret_mcas(self, current_iterator_df, self.sequence_name)
-                while self.mcas == "":
-                    print("loading sequence in NuclearOPs...2")
-                    QtTest.QTest.qSleep(10)
-                print("done loading2")
-
-                self.queue._awg.mcas_dict[self.sequence_name] = self.mcas
-
-            # self.mcas = self.queue._awg.mcas_dict[sequence_name]
-            # This means that this is a new cun? so better to reassemble the sequence, isn't?
-
-            # elif self.mcas.name != self.sequence_name:
-            #    # What is this case? - maybe if we changed the sequence on the go? Can you comment when you see error if this is commented?
-            #    print("Using the weird mcas setup...")
-            #    self.queue._awg.mcas_dict.stop_awgs()
-            #    self.mcas = self.queue._awg.mcas_dict[self.sequence_name]
-            else:
-                print("Don't need to set up new RF.")
-
-        else:
-            # This is usual.
-            # self.queue._awg.mcas_dict.stop_awgs()
-            # In the normal path the sequence is rebuilt for the current iterator
-            # row and stored in the AWG/OPX dictionary under its generated name.
-            self.queue.log.info("cun:setup_rf:This time is the qua writing...")
-            self.queue._awg.stop_awgs()
-            self.mcas = self.ret_mcas(self, current_iterator_df)
-            # Writing the sequence...
-            # while self.mcas=='':
-            # process_events() #TODO gui process events.
-            # QtTest.QTest.qSleep(10)
-            # self.sequence_name = self.mcas.name
-            self.queue._awg.mcas_dict[self.mcas.name] = self.mcas
 
         self.performedRefocus = False
 
-        # pi3d.mcas_dict[sequence_name].initialize()
-        # pi3d.mcas_dict[sequence_name].start_awgs()
 
     def analyze(
         self,
@@ -1808,5 +1018,3 @@ class NuclearOPs(DataGeneration):
                     del seq
         except:
             pass
-
-    ###################### OPX test functions ####################
