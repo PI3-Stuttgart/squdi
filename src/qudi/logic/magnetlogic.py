@@ -68,11 +68,15 @@ class MagnetLogic(LogicBase):
         self.log.debug("set up counter")
         apdChannels = self._tagger._counter["channels"]
         # convert ms into ps
-        self.ctr = self._tagger.counter(bin_width=int(int_time * 1e9), n_values=1, channels=apdChannels)
+        self.ctr = self._tagger.counter(
+            bin_width=int(int_time * 1e9), n_values=1, channels=apdChannels
+        )
 
         self.pixelIntegrationTimer = QtCore.QTimer()
         self.pixelIntegrationTimer.setSingleShot(True)
-        self.pixelIntegrationTimer.timeout.connect(self._scan_pixel, QtCore.Qt.QueuedConnection)
+        self.pixelIntegrationTimer.timeout.connect(
+            self._scan_pixel, QtCore.Qt.QueuedConnection
+        )
         # After setting up the counter, you need to wait at least one bin width, otherwise you get only zeros.
         # Setting up the counter takes a little bit less than 100 ns
         buffer = 100
@@ -141,7 +145,9 @@ class MagnetLogic(LogicBase):
             self.log.debug("aborting scan")
             return
         if len(self._scanning_line) > 0:  # if we still have pixels to scan
-            self._rampForPixel = True  # the ramp of the magnet was initiated by this script
+            self._rampForPixel = (
+                True  # the ramp of the magnet was initiated by this script
+            )
             # choose next pixel
             self.pixel = self._scanning_line[0]
             self.log.debug(f"current pixel is {self.pixel}")
@@ -170,7 +176,9 @@ class MagnetLogic(LogicBase):
             return
         if self._rampForPixel:  # only do sth if ramp was initiated for the pixel
             if self.thread() is not QtCore.QThread.currentThread():
-                self.log.debug("_start_pixelIntegrationTimer, thread is not currentThread")
+                self.log.debug(
+                    "_start_pixelIntegrationTimer, thread is not currentThread"
+                )
                 QtCore.QMetaObject.invokeMethod(
                     self.pixelIntegrationTimer,
                     "start",
@@ -238,9 +246,11 @@ class MagnetLogic(LogicBase):
         phi = np.arctan2(y, x)
         phi_deg = np.rad2deg(phi) if phi > 0 else np.rad2deg(phi) + 360
         return np.array([radius, np.rad2deg(theta), phi_deg])
-    
+
     @staticmethod
-    def rotate_vector(vector: Sequence[float], theta_SnV: float, phi_SnV: float‚) -> np.ndarray:
+    def rotate_vector(
+        vector: Sequence[float], theta_SnV: float, phi_SnV: float
+    ) -> np.ndarray:
         """Rotate a vector from the lab frame into the configured SnV frame."""
 
         theta_SnV = np.radians(theta_SnV)
@@ -272,7 +282,6 @@ class MagnetLogic(LogicBase):
         vector = np.asarray(vector)
         return R @ vector
 
-
     def stop_scan(self):
         """Aborts the scan.
 
@@ -286,7 +295,9 @@ class MagnetLogic(LogicBase):
         return
 
     def set_psw_status(self, status):
-        self.log.debug(f"{__name__}, {inspect.stack()[0][3]}: passing psw status {status}")
+        self.log.debug(
+            f"{__name__}, {inspect.stack()[0][3]}: passing psw status {status}"
+        )
         self.sigChangePswStatus.emit(status)
         return
 
