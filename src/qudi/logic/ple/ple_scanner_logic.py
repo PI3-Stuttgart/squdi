@@ -461,9 +461,17 @@ class PLEScannerLogic(ScanningProbeLogic):
         self._frequency_calibration_data.to_netcdf(filename)
 
         voltage = self._frequency_calibration_data.voltage.values
-        freq = self._frequency_calibration_data.frequency_thz.values
+        freq = self._frequency_calibration_data.frequency_ghz.values
         voltage_fit = np.linspace(voltage.min(), voltage.max(), 400)
-        freq_fit = self._evaluate_frequency_fit_thz(voltage_fit)
+        zero_voltage_offset_thz = float(
+            self._frequency_calibration_data.attrs.get(
+                "frequency_at_zero_voltage_thz",
+                self._evaluate_frequency_fit_thz(0.0),
+            )
+        )
+        freq_fit = (
+            self._evaluate_frequency_fit_thz(voltage_fit * 1e3) - zero_voltage_offset_thz
+        ) * 1e3
 
         plt.figure(figsize=(8, 6))
         plt.scatter(voltage, freq, label="Measured Data", color="blue", s=30, zorder=3)
@@ -476,8 +484,11 @@ class PLEScannerLogic(ScanningProbeLogic):
             zorder=1,
         )
         plt.xlabel("Voltage [V]")
-        plt.ylabel("Frequency [THz]")
-        plt.title("PLE Voltage to Frequency Calibration")
+        plt.ylabel("Frequency [GHz]")
+        plt.title(
+            "PLE Voltage to Frequency Calibration\n"
+            f"0 V offset: {zero_voltage_offset_thz:.9f} THz"
+        )
         plt.grid()
         plt.legend()
         plt.savefig(filename_plot)
@@ -513,8 +524,21 @@ class PLEScannerLogic(ScanningProbeLogic):
                 dataset.attrs.get("poly_coefficients", []), dtype=float
             )
             if self._frequency_calibration_coefficients.size == 0:
-                voltage = dataset.voltage.values
-                frequency_thz = dataset.frequency_thz.values
+                voltage = np.asarray(dataset.voltage.values, dtype=float)
+                if dataset.voltage.attrs.get("units") == "V":
+                    voltage = voltage * 1e3
+
+                if "frequency_thz" in dataset.data_vars:
+                    frequency_thz = np.asarray(dataset.frequency_thz.values, dtype=float)
+                elif "frequency_ghz" in dataset.data_vars:
+                    zero_voltage_offset_thz = float(
+                        dataset.attrs["frequency_at_zero_voltage_thz"]
+                    )
+                    frequency_thz = zero_voltage_offset_thz + np.asarray(
+                        dataset.frequency_ghz.values, dtype=float
+                    ) / 1e3
+                else:
+                    raise ValueError("Calibration file contains no usable frequency data.")
                 self._fit_frequency_calibration(voltage, frequency_thz)
             self._frequency_calibration_voltage_range = (
                 self._get_frequency_calibration_voltage_range()
@@ -585,15 +609,27 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         frequencies_thz = np.asarray(frequencies_thz, dtype=float)
         self._fit_frequency_calibration(voltages, frequencies_thz)
+        zero_voltage_offset_thz = float(self._evaluate_frequency_fit_thz(0.0))
         self._frequency_offset_thz = float(
             self._evaluate_frequency_fit_thz(
                 np.mean(self._frequency_calibration_voltage_range)
             )
         )
         relative_frequency_hz = self._relative_frequency_axis_hz_from_voltage(voltages)
+        relative_frequency_ghz = (frequencies_thz - zero_voltage_offset_thz) * 1e3
+        voltages_v = voltages / 1e3
 
         self._frequency_calibration_data = xr.Dataset(
             data_vars=dict(
+                frequency_ghz=xr.Variable(
+                    "voltage",
+                    relative_frequency_ghz,
+                    attrs=dict(
+                        units="GHz",
+                        long_name="Relative Frequency",
+                        zero_reference="fit_at_0V",
+                    ),
+                ),
                 frequency_thz=xr.Variable(
                     "voltage",
                     frequencies_thz,
@@ -607,18 +643,21 @@ class PLEScannerLogic(ScanningProbeLogic):
             ),
             coords=dict(
                 voltage=xr.Variable(
-                    "voltage", voltages, attrs=dict(units="V", long_name="Voltage")
+                    "voltage", voltages_v, attrs=dict(units="V", long_name="Voltage")
                 ),
             ),
             attrs=dict(
                 scan_axis=self._scan_axis,
                 frequency_offset_thz=float(self._frequency_offset_thz),
+                frequency_at_zero_voltage_thz=zero_voltage_offset_thz,
                 poly_coefficients=list(
                     np.asarray(self._frequency_calibration_coefficients, dtype=float)
                 ),
                 calibration_points=int(self._frequency_calibration_points),
                 calibration_averages=int(self._frequency_calibration_averages),
                 scan_range=list(scan_range),
+                saved_voltage_unit="V",
+                internal_voltage_unit="mV",
             ),
         )
         self.save_frequency_calibration_data()
