@@ -84,11 +84,12 @@ class NuclearOPs(DataGeneration):
         self.state = "idle"
         self._state = self.state
 
-
         # Options
         self.lock_laser_to_wavemeter: bool = False
+
         self.do_ple_refocus_A1: bool = False
-        self.
+        self.ple_refocus_interval: int = 60
+
         self.do_confocal_refocus = False
         self.measure_A1_power: bool = False
         self.measure_A2_power: bool = False
@@ -99,7 +100,6 @@ class NuclearOPs(DataGeneration):
         self.hashed = False
         self.start_pause_time = 2.75
         self.end_pause_time = 6.25
-
 
         # FIXME: Go through all that and set it correctly from QUDI
         self.A1LaserPower = 1  # nW
@@ -210,23 +210,20 @@ class NuclearOPs(DataGeneration):
                     )
 
                 if self.raw_clicks_processing:
-                    return (
-                        zpl_counters
-                        + [
-                            "average_counts",
-                            "events",
-                            "start_time",
-                            "end_time",
-                            "ple_A2",
-                            "ple_A1",
-                            "confocal_x",
-                            "confocal_y",
-                            "confocal_z",
-                            "A2_Power",
-                            "windows_ps",
-                            "delays_ps",
-                        ]
-                    )
+                    return zpl_counters + [
+                        "average_counts",
+                        "events",
+                        "start_time",
+                        "end_time",
+                        "ple_A2",
+                        "ple_A1",
+                        "confocal_x",
+                        "confocal_y",
+                        "confocal_z",
+                        "A2_Power",
+                        "windows_ps",
+                        "delays_ps",
+                    ]
 
                 else:
                     return (
@@ -335,7 +332,6 @@ class NuclearOPs(DataGeneration):
             # Whats difference between envs/qudi/lib/threading and envs/qudi/lib/subprocess?
             # self.run_measurement(*args, **kwargs)
 
-
     def checktime(self, abort: Any) -> None:
         """Pause execution during the configured nightly quiet-time window."""
         idx = 0
@@ -353,7 +349,6 @@ class NuclearOPs(DataGeneration):
         if idx > 0:
             print("Continue after sleeping")
 
-
     def check_manual_pause(self, abort: Any) -> None:
         """Wait while manual pause is enabled unless an abort is requested."""
         while self.manual_pause:
@@ -363,7 +358,6 @@ class NuclearOPs(DataGeneration):
 
     def run_measurement(self, abort: Any, **kwargs: Any) -> None:
         """Execute the main measurement loop used during normal queue operation."""
-
 
         self.queue.log.info("cun: NuclearOps run measurement")
 
@@ -380,7 +374,6 @@ class NuclearOPs(DataGeneration):
             # Setup gated counter
             self.queue._gated_counter.set_counter()
 
-
             # Lock laser to wavemeter if specified and not continously updated by PLE refocus
             if self.lock_laser_to_wavemeter and not self.do_ple_refocus_A1:
                 self.queue._wavemeter.start_lock(use_current_wavelength=True)
@@ -389,15 +382,12 @@ class NuclearOPs(DataGeneration):
                 if abort.is_set():
                     break
 
-                while True:   
+                while True:
                     if abort.is_set():
                         break
 
                     # we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
-                    self.check_manual_pause(
-                        abort
-                    ) 
-
+                    self.check_manual_pause(abort)
 
                     # TODO: Implement in the futur clean
                     # while self.queue._counter.heating: # This is during the SNSPDs are recycled.
@@ -423,7 +413,7 @@ class NuclearOPs(DataGeneration):
 
                     if "B_amp" in self.current_iterator_df.keys():
                         self.do_ramp_magnet()
-                   
+
                     self.queue.log.info("Cun: Starting measurement sequence")
                     self.setup_rf(self.current_iterator_df, hashed=self.hashed)
 
@@ -433,7 +423,7 @@ class NuclearOPs(DataGeneration):
                     # Save relevant data from transition tracker to data set
                     self.data.set_observations(
                         [OrderedDict(mw_mixing_frequency=self.queue._transition_tracker.mw_mixing_frequency_L)] * self.number_of_simultaneous_measurements
-                    ) 
+                    )
                     self.data.set_observations(
                         [OrderedDict(mw_mixing_frequency=self.queue._transition_tracker.mw_mixing_frequency_R)] * self.number_of_simultaneous_measurements
                     )
@@ -453,8 +443,7 @@ class NuclearOPs(DataGeneration):
 
                     self.data.set_observations([OrderedDict(start_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
 
-                    # start measurement 
-                    self.log
+                    # start measurement
                     self.get_trace(
                         abort,
                         delay_ps_list=self.delay_ps_list,
@@ -464,7 +453,7 @@ class NuclearOPs(DataGeneration):
                         break
 
                     self.data.set_observations([OrderedDict(end_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
-                    
+
                     if self.save_smartly:  # non zero to the data
                         # FIXME:  TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
                         dd = self.ana_trace.trace
@@ -478,15 +467,13 @@ class NuclearOPs(DataGeneration):
                     else:
                         self.data.set_observations([OrderedDict(trace=self.ana_trace.trace)] * self.number_of_simultaneous_measurements)
 
-
                     if abort.is_set():
                         break
 
                     repeat_measurement = self.analyze()
-                    
+
                     if abort.is_set():
                         break
-
 
                     if self.do_ple_refocus_A1:
                         self.refocus_ple_A1(abort=abort)
@@ -499,16 +486,14 @@ class NuclearOPs(DataGeneration):
                 if hasattr(self, "_pld"):
                     self.pld.new_data_arrived()
                     self.queue.log.info("Cun: New data arrived")
-                
+
                 if abort.is_set():
                     break
 
                 self.save()
 
-
-
         except Exception as e:
-            
+
             self.queue.log.error("cun ERROR: Nuclear op failed in run measurement", e)
             abort.set()
             self.update_current_str()
@@ -528,7 +513,6 @@ class NuclearOPs(DataGeneration):
 
             if os.path.exists(self.save_dir) and not os.listdir(self.save_dir):
                 os.rmdir(self.save_dir)
-
 
             self.queue.log.info("cun: Finished function run_measurement")
             self.queue._wavemeter.stop_lock()
@@ -609,7 +593,7 @@ class NuclearOPs(DataGeneration):
     @property
     def sweeps(self) -> Any:
         return self.parameters["sweeps"]
-    
+
     def do_ramp_magnet(self) -> None:
         if self.use_defect_frame:
             B_vec_SnV = np.array(
@@ -653,7 +637,7 @@ class NuclearOPs(DataGeneration):
 
         self.queue.log.info("--------- doing ple refocus ---------")
 
-        success = self._run_refocus_ple_SnV_sequence(abort)
+        success = self._run_refocus_ple_A1_sequence(abort)
 
         if success:
             self.last_ple_refocus = time.time()
@@ -843,9 +827,9 @@ class NuclearOPs(DataGeneration):
     ) -> None:
         """Prepare the active sequence and trigger gated-counter acquisition."""
         if not self.debug_mode:
-            self.queue.log.info(f"cun: get_trace: INITIALIZING {self.mcas.name}")
             # This is only compilation of the sequence, test run for 1 s and stop..
             # In principle we can cut it.
+            self.queue.log.info(f"cun: get_trace: initializing: {self.mcas.name}")
             self.mcas.initialize()  # FIXME might be usefull for something?
 
             # to keep the syntax same to keysight... (important for crossplatform)...
@@ -865,21 +849,33 @@ class NuclearOPs(DataGeneration):
         )
         self.queue.log.info("cun:get_trace:measurement finished")
 
-
     def setup_rf(self, current_iterator_df: pd.DataFrame, hashed: bool = False) -> None:
         """Build and register the RF/QUA sequence for the current iterator row."""
 
         # Drop sweeps from current iterator
         if "sweeps" in current_iterator_df.columns:
             current_iterator_df = current_iterator_df.drop(labels=["sweeps"], axis=1)
-        
+
         # create hash
         hash = base64.b64encode(hashlib.sha1((str(current_iterator_df) + "\n" + str(self.queue._gated_counter.readout_duration)).encode()).digest())
-        
+
         self.sequence_name = "nuclear_op_hash_{}".format(hash)
 
-        self.performedRefocus = False
+        # This is usual.
+        # self.queue._awg.mcas_dict.stop_awgs()
+        # In the normal path the sequence is rebuilt for the current iterator
+        # row and stored in the AWG/OPX dictionary under its generated name.
+        self.queue.log.info("cun:setup_rf:This time is the qua writing...")
+        self.queue._awg.stop_awgs()
+        self.mcas = self.ret_mcas(self, current_iterator_df)
+        # Writing the sequence...
+        # while self.mcas=='':
+        # process_events() #TODO gui process events.
+        # QtTest.QTest.qSleep(10)
+        # self.sequence_name = self.mcas.name
+        self.queue._awg.mcas_dict[self.mcas.name] = self.mcas
 
+        self.performedRefocus = False
 
     def analyze(
         self,
