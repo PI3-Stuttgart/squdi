@@ -45,9 +45,17 @@ import qudi.logic.qudip_enhanced.data_handling as data_handling
 import base64
 import hashlib
 from collections import OrderedDict
+from typing import Any, Dict, Optional, Sequence
 
 
 class NuclearOPs(DataGeneration):
+    """High-level measurement runner used by queue userscripts.
+
+    ``NuclearOPs`` coordinates sequence generation, hardware setup, trace
+    acquisition, analysis, refocus actions, and result persistence. Long-running
+    methods accept a cooperative ``abort`` event so the queue can stop them
+    cleanly without forcing thread termination.
+    """
 
     # TODO use the qudi state machine instead maybe?
     state = ret_property_list_element(
@@ -68,7 +76,8 @@ class NuclearOPs(DataGeneration):
 
     __TITLE_DATE_FORMAT__ = "%Y%m%dh%Hm%Ms%S"
 
-    def __init__(self):  # TODO - revert back here from the self.queue.
+    def __init__(self) -> None:  # TODO - revert back here from the self.queue.
+        """Initialize measurement defaults and runtime state."""
 
         super().__init__()
         self.state = "idle"
@@ -144,13 +153,14 @@ class NuclearOPs(DataGeneration):
         # activate connectors..
 
     @property
-    def ana_trace(self):
+    def ana_trace(self) -> Any:
+        """Shortcut to the gated-counter trace object exposed by the queue."""
         # return np.array([0]) #FIXME
 
         return self.queue._gated_counter.trace  # self.queue.gated_counter.trace
 
     @property
-    def analyze_type(self):
+    def analyze_type(self) -> Any:
         try:
             return self.ana_trace.analyze_type
         except Exception:
@@ -158,19 +168,20 @@ class NuclearOPs(DataGeneration):
             traceback.print_exception(exc_type, exc_value, exc_tb)
 
     @analyze_type.setter
-    def analyze_type(self, val):
+    def analyze_type(self, val: Any) -> None:
         self.ana_trace.analyze_type = val
 
     @property
-    def number_of_simultaneous_measurements(self):
+    def number_of_simultaneous_measurements(self) -> int:
         return self.ana_trace.number_of_simultaneous_measurements
 
     @number_of_simultaneous_measurements.setter
-    def number_of_simultaneous_measurements(self, val):
+    def number_of_simultaneous_measurements(self, val: int) -> None:
         self.ana_trace.number_of_simultaneous_measurements = val
 
     @property  # this comes form data generation.
-    def observation_names(self):
+    def observation_names(self) -> Sequence[str]:
+        """Return the observation columns produced by the current run mode."""
         try:
             if hasattr(self, "_observation_names"):
                 return self._observation_names
@@ -290,7 +301,8 @@ class NuclearOPs(DataGeneration):
             traceback.print_exception(exc_type, exc_value, exc_tb)
 
     @property
-    def dtypes(self):
+    def dtypes(self) -> Dict[str, Any]:
+        """Return dtype hints for the observations stored in the data object."""
         print('Nuclear OPS called "def dtypes"')
         if not hasattr(self, "_dtypes"):
             if self.save_smartly:
@@ -359,10 +371,11 @@ class NuclearOPs(DataGeneration):
         return self._dtypes
 
     @property
-    def number_of_results(self):
+    def number_of_results(self) -> int:
         return self.ana_trace.number_of_results
 
-    def run(self, *args, **kwargs):
+    def run(self, *args: Any, **kwargs: Any) -> None:
+        """Start either the normal measurement thread or the debug sequence."""
         self._md = self.queue._awg.mcas_dict
         if getattr(self, "debug_mode", False):
             # self.run_debug_sequence(*args, **kwargs)
@@ -382,7 +395,8 @@ class NuclearOPs(DataGeneration):
 
     # def run_iteration(self, current_iterator):
 
-    def checktime(self, abort):
+    def checktime(self, abort: Any) -> None:
+        """Pause execution during the configured nightly quiet-time window."""
         idx = 0
         t = datetime.datetime.now()
         current_time = int(t.hour) + int(t.minute) / 60
@@ -398,13 +412,17 @@ class NuclearOPs(DataGeneration):
         if idx > 0:
             print("Continue after sleeping")
 
-    def check_manual_pause(self, abort):
+    def check_manual_pause(self, abort: Any) -> None:
+        """Wait while manual pause is enabled unless an abort is requested."""
         while self.manual_pause:
             if abort.is_set():
                 break
             QtTest.QTest.qSleep(1000)
 
-    def rotate_vector(self, vector, theta_SnV, phi_SnV):
+    def rotate_vector(
+        self, vector: Sequence[float], theta_SnV: float, phi_SnV: float
+    ) -> np.ndarray:
+        """Rotate a vector from the lab frame into the configured SnV frame."""
 
         theta_SnV = np.radians(theta_SnV)
         phi_SnV = np.radians(phi_SnV)
@@ -436,7 +454,7 @@ class NuclearOPs(DataGeneration):
         vector = np.asarray(vector)
         return R @ vector
 
-    def spherical_to_carthesian(self, spherical):
+    def spherical_to_carthesian(self, spherical: Sequence[float]) -> np.ndarray:
         """Turns spherical coordinates into carthesian coordinates.
 
         @param array spherical: spherical coordinates in [r, theta, phi]
@@ -455,7 +473,7 @@ class NuclearOPs(DataGeneration):
 
         return carthesian
 
-    def cartesian_to_spherical(self, cartesian):
+    def cartesian_to_spherical(self, cartesian: Sequence[float]) -> np.ndarray:
         """
         Converts a list of Cartesian coordinates to spherical coordinates using NumPy.
 
@@ -478,7 +496,8 @@ class NuclearOPs(DataGeneration):
         phi_deg = np.rad2deg(phi) if phi > 0 else np.rad2deg(phi) + 360
         return np.array([radius, np.rad2deg(theta), phi_deg])
 
-    def run_measurement(self, abort, **kwargs):
+    def run_measurement(self, abort: Any, **kwargs: Any) -> None:
+        """Execute the main measurement loop used during normal queue operation."""
 
         # if self.debug_mode:
         #     # Simulates the QUA program for the specified duration
@@ -513,6 +532,8 @@ class NuclearOPs(DataGeneration):
             # start_trigger_delay_ps_list = self.delay_ps_list ,window_ps_list = self.window_ps_list) - this is for the pulse streamer.
             # enumerator=enumerate(self.iterator())
             # iterator_list=list(self.iterator()) # seems to laag imensely
+            # The iterator walks through the parameter dataframe that defines the
+            # measurement grid for the current userscript.
             for idx, _ in enumerate(self.iterator()):  # range(len(iterator_list)):
                 if abort.is_set():
                     break
@@ -877,7 +898,8 @@ class NuclearOPs(DataGeneration):
             self.queue._dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
 
     @property
-    def session_meas_count(self):
+    def session_meas_count(self) -> int:
+        """Return how many measurements were completed during this session."""
         if len(self.data.df) == 0 or len(self.iterator_df_done) == 0:
             return 0
         else:
@@ -885,7 +907,8 @@ class NuclearOPs(DataGeneration):
                 self.data.df[(self.data.df.start_time < self.start_time) & (self.data.df.start_time > datetime.datetime(1900, 1, 1))]
             )
 
-    def run_debug_sequence(self, abort, **kwargs):
+    def run_debug_sequence(self, abort: Any, **kwargs: Any) -> None:
+        """Run the sequence in debug/simulation mode instead of live acquisition."""
         ## Here maybe is for the simulation mode...
 
         if any([key in kwargs for key in ["iff", "init_from_file"]]):
@@ -927,27 +950,30 @@ class NuclearOPs(DataGeneration):
 
     def dowork(
         self,
-    ):
+    ) -> None:
+        """Legacy placeholder hook kept for experimentation."""
         pass
         # QtTest.QTest.qSleep(1000)
 
-    def confocal_pos_moving_average(self, n):
+    def confocal_pos_moving_average(self, n: int) -> pd.DataFrame:
+        """Return a moving average over the stored confocal refocus positions."""
         # FIXME ?
         return self.df_refocus_pos[["confocal_x", "confocal_y", "confocal_z"]].rolling(n, win_type="boxcar", center=True).sum().dropna() / n
 
     @property
-    def refocus_moving_average_num(self):
+    def refocus_moving_average_num(self) -> int:
         return getattr(self, "_refocus_moving_average_num", 10)
 
     @refocus_moving_average_num.setter
-    def refocus_moving_average_num(self, val):
+    def refocus_moving_average_num(self, val: int) -> None:
         self._refocus_moving_average_num = val
 
     @property
-    def sweeps(self):
+    def sweeps(self) -> Any:
         return self.parameters["sweeps"]
 
-    def do_refocus_ple(self, abort):
+    def do_refocus_ple(self, abort: Any) -> None:
+        """Run configured PLE refocus steps when the interval threshold is met."""
         delta_t = time.time() - self.last_ple_refocus
 
         if delta_t >= self.ple_refocus_interval:
@@ -966,7 +992,8 @@ class NuclearOPs(DataGeneration):
                 QtTest.QTest.qSleep(1000)
         return
 
-    def set_laser_power(self, abort):
+    def set_laser_power(self, abort: Any) -> None:
+        """Adjust or stabilize configured laser powers before acquisition."""
         if "A2_power" in self.current_iterator_df:
             a2power = float(max(self.current_iterator_df["A2_power"]))
         else:
@@ -1017,7 +1044,8 @@ class NuclearOPs(DataGeneration):
             self.queue._awg.mcas_dict.stop_awgs()
         return
 
-    def set_bias_voltage(self, abort):
+    def set_bias_voltage(self, abort: Any) -> None:
+        """Apply the iterator-defined bias voltage and wait for settling."""
         if "applied_voltage" in self.current_iterator_df:
             volt = float(max(self.current_iterator_df["applied_voltage"])) / self.queue._currentmeasurementlogic.Multiplier
         else:
@@ -1029,7 +1057,7 @@ class NuclearOPs(DataGeneration):
         QtTest.QTest.qSleep(1000)
         return
 
-    def do_refocus_pleA2(self, abort):  # CHANGED! commented what belonged to wavemeter
+    def do_refocus_pleA2(self, abort: Any) -> None:  # CHANGED! commented what belonged to wavemeter
         # if self.wavemeter_lock and self.queue.wavemeter.wm_id!=0:
         #    self.queue.wavemeter.unlock_frequency()
         #    time.sleep(0.1)
@@ -1522,14 +1550,21 @@ class NuclearOPs(DataGeneration):
     #             logging.getLogger().info("Drift is ok  ({} > {})".format(current_drift, self.maximum_odmr_drift))
     #             return True
 
-    def reinit(self):
+    def reinit(self) -> None:
+        """Reset counters and timing markers for a fresh run."""
         super(NuclearOPs, self).reinit()
         self.odmr_count = 0
         self.additional_recalibration_interval_count = 0
         self.last_odmr = time.time()
         self.last_rabi_refocus = time.time()
 
-    def get_trace(self, abort, delay_ps_list=None, window_ps_list=None):
+    def get_trace(
+        self,
+        abort: Any,
+        delay_ps_list: Optional[Sequence[float]] = None,
+        window_ps_list: Optional[Sequence[float]] = None,
+    ) -> None:
+        """Prepare the active sequence and trigger gated-counter acquisition."""
         if not self.debug_mode:
             print("cun:get_trace:INITIALIZING")
             print(self.mcas.name)
@@ -1570,7 +1605,8 @@ class NuclearOPs(DataGeneration):
     #     print("t 3", time.time() - t1)
     #     # logging.info('finished setting up the sequence')
 
-    def setup_rf(self, current_iterator_df, hashed=False):
+    def setup_rf(self, current_iterator_df: pd.DataFrame, hashed: bool = False) -> None:
+        """Build and register the RF/QUA sequence for the current iterator row."""
         # print("current_iterator_df ", current_iterator_df)
         if "sweeps" in current_iterator_df.columns:
             current_iterator_df = current_iterator_df.drop(["sweeps"], axis=1)
@@ -1618,6 +1654,8 @@ class NuclearOPs(DataGeneration):
         else:
             # This is usual.
             # self.queue._awg.mcas_dict.stop_awgs()
+            # In the normal path the sequence is rebuilt for the current iterator
+            # row and stored in the AWG/OPX dictionary under its generated name.
             self.queue.log.info("cun:setup_rf:This time is the qua writing...")
             self.queue._awg.stop_awgs()
             self.mcas = self.ret_mcas(self, current_iterator_df)
@@ -1633,7 +1671,13 @@ class NuclearOPs(DataGeneration):
         # pi3d.mcas_dict[sequence_name].initialize()
         # pi3d.mcas_dict[sequence_name].start_awgs()
 
-    def analyze(self, data=None, ana_trace=None, start_idx=None):
+    def analyze(
+        self,
+        data: Optional[Any] = None,
+        ana_trace: Optional[Any] = None,
+        start_idx: Optional[int] = None,
+    ) -> Optional[bool]:
+        """Analyze the current trace object and write observations into ``data``."""
         if ana_trace is None:
             ana_trace = self.ana_trace
             if self.analyze_type != ana_trace.analyze_type:
@@ -1665,7 +1709,8 @@ class NuclearOPs(DataGeneration):
             # logging.getLogger().info(ana_trace.analyze_type)
             return False
 
-    def reanalyze(self, do_while_run=False, **kwargs):
+    def reanalyze(self, do_while_run: bool = False, **kwargs: Any) -> None:
+        """Re-run the stored trace analysis over existing dataframe entries."""
         if self.state == "run" and not do_while_run:
             print(
                 "Measurement is running.\nReanalyzation will write to data.df and may interfere with the running measurement doing the same.\nIf you want to reanalyze anyway, pass argument do_while_run=True"
@@ -1696,7 +1741,8 @@ class NuclearOPs(DataGeneration):
             ana_trace.trace = _I_["trace"]
             self.analyze(ana_trace=ana_trace, start_idx=idx)
 
-    def save(self):
+    def save(self) -> None:
+        """Persist measurement results and supporting metadata to disk."""
         pass
         if len(self.iterator_df_done) > 0 and not (hasattr(self, "do_save") and not self.do_save):
             Thread1 = threading.Thread(target=super(NuclearOPs, self).save, kwargs={"notify": False})
@@ -1709,7 +1755,8 @@ class NuclearOPs(DataGeneration):
             # TODO
             # has to switch to qudi log. logging.getLogger().info("saved nuclear to '{} ({:.3f})".format(self.save_dir, time.time() - t0))
 
-    def save_sequence_file(self):
+    def save_sequence_file(self) -> None:
+        """Dump the generated sequence description into ``awg-file.txt``."""
         pass
         seq_message = []
         if hasattr(self.mcas, "sequences"):
@@ -1742,10 +1789,9 @@ class NuclearOPs(DataGeneration):
                         fp.write(json.dumps(page))
                         fp.write("\n-------------------------------------------------------------------\n")
 
-    def reset_settings(self):
+    def reset_settings(self) -> None:
         """
-        Here only settings are changed that are not automatically changed during run()
-        :return:
+        Reset persistent configuration values that are not restored by ``run()``.
         """
         self.additional_recalibration_interval = 0
         self.ret_mcas = None
