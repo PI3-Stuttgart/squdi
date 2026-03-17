@@ -7,7 +7,7 @@ import sys, os
 import imp
 
 # from gui.queue.Queue import queue_gui
-from queue import Queue
+from queue import Empty, Queue
 from PySide2.QtCore import Signal as pyqtSignal
 from qudi.logic.qudip_enhanced import *
 from qudi.logic import magnetlogic
@@ -162,12 +162,15 @@ class queue_logic(GenericLogic):
         self._threadlock = Mutex()
         self.script_history = []
         self.timer = QTimer(self)
+        self.thread = None
+        self._shutting_down = False
 
         self.timer.setInterval(3000)
         self.timer.timeout.connect(self.mainloop_handler)
         self._user_script_folder = None
 
     def on_activate(self):
+        self._shutting_down = False
 
         # self._awg = self.mcas_holder()
         self._awg = self.opx_holder()
@@ -196,8 +199,20 @@ class queue_logic(GenericLogic):
         self.tt.load_rabi_parameters()
 
     def on_deactivate(self):
-        self.timer.stop()
-        # FIXME destroy me gently
+        if self._shutting_down:
+            return
+
+        self._shutting_down = True
+        self.log.info("Shutting down queue logic.")
+
+        if hasattr(self, "timer"):
+            self.timer.stop()
+
+        self._set_stop_request()
+        self._clear_pending_queue(update_gui=False, keep_current=True)
+
+        if hasattr(self, "_gui"):
+            self._gui = None
 
     @property
     def md(self):
@@ -372,13 +387,20 @@ class queue_logic(GenericLogic):
         # self.timer.start()
 
     def mainloop_handler(self):
+        if not hasattr(self, "q"):
+            return
 
         # print('mainloop NOPS QUEUE watcher..')
-        if self.thread.stop_request.is_set():
+        if self.thread is not None and self.thread.stop_request.is_set():
             print("stop request")
-            self.q.queue.clear()
-            self.script_queue.list = []
+            self._clear_pending_queue(update_gui=not self._shutting_down, keep_current=True)
+            if self._shutting_down or hasattr(self, "current_script"):
+                return
             self.thread.stop_request.clear()
+            return
+
+        if self._shutting_down:
+            return
 
         try:
             if hasattr(self, "cun") and self.cun is not None:
@@ -394,14 +416,15 @@ class queue_logic(GenericLogic):
                     # print('There is a cun but it is workin, check you later...')
                     # we need to wait...
             else:
+                if self.q.empty():
+                    return
                 print("starting a new measurements")
                 self.start_next_measurement()
                 # waiting for the measurement to finish.
 
         except Exception as e:
             print(e)
-            self.q.queue.clear()
-            self.script_queue.list = []
+            self._clear_pending_queue(update_gui=not self._shutting_down, keep_current=True)
             exc_type, exc_value, exc_tb = sys.exc_info()
             traceback.print_exception(exc_type, exc_value, exc_tb)
             self.finish_measurement()
@@ -411,20 +434,29 @@ class queue_logic(GenericLogic):
         """
 
     def start_next_measurement(self):
-        self.current_script = self.q.get()
-        self.thread.stop_request.clear()  # this is necessary although it shouldn't be.
+        if self._shutting_down:
+            return False
+
+        try:
+            self.current_script = self.q.get_nowait()
+        except Empty:
+            return False
+
+        stop_request = self.thread.stop_request if self.thread is not None else multiprocess.Event()
+        stop_request.clear()  # this is necessary although it shouldn't be.
         self.log.info(
             "Starting Userscript {}...{}".format(
                 self.current_script["module_name"][10:],
-                self.thread.stop_request.is_set(),
+                stop_request.is_set(),
             )
         )
         sys.modules[self.current_script["module_name"]].run_fun(
-            self.thread.stop_request, queue=self, **self.current_script["pd"]
+            stop_request, queue=self, **self.current_script["pd"]
         )  ## Creates a nuclear and runs it.!!!
         print("entering waiting loop in queue...")
 
         ### Here the queue should wait for the measurement to be finished...# TODO signal replacement for the future...
+        return True
 
     def wait_for_a_measurement(self):
         """
@@ -507,6 +539,38 @@ class queue_logic(GenericLogic):
         self.thread = threading.Thread(target=self.run_new)
         self.thread.stop_request = multiprocess.Event()
         self.thread.start()
+
+    def _set_stop_request(self):
+        if self.thread is not None:
+            self.thread.stop_request.set()
+
+    def _clear_pending_queue(self, update_gui=True, keep_current=False):
+        if hasattr(self, "q"):
+            while True:
+                try:
+                    self.q.get_nowait()
+                except Empty:
+                    break
+                else:
+                    self.q.task_done()
+
+        if not hasattr(self, "_script_queue"):
+            return
+
+        remaining_steps = []
+        if keep_current and hasattr(self, "current_script") and len(self._script_queue) > 0:
+            remaining_steps = [self._script_queue[0]]
+
+        if update_gui:
+            self.script_queue.list = remaining_steps
+        else:
+            self._script_queue._list = list(remaining_steps)
+            self._script_queue_table_data = collections.OrderedDict(
+                [
+                    ("name", [step.name for step in remaining_steps]),
+                    ("pd", [step.pd for step in remaining_steps]),
+                ]
+            )
 
     def set_user_script_list(self):
         file_list = []
@@ -610,7 +674,12 @@ class queue_logic(GenericLogic):
     def remove_last_script(self):
         if self.q.qsize() > 0:
             del self.script_queue[-1]
-            self.q.get()
+            try:
+                self.q.get_nowait()
+            except Empty:
+                pass
+            else:
+                self.q.task_done()
 
     def create_odmr(self):
 
@@ -624,7 +693,7 @@ class queue_logic(GenericLogic):
         return task_name
 
     def set_stop_request(self):
-        self.thread.stop_request.set()
+        self._set_stop_request()
 
     def write_standard_awg_sequences(self):
         self.add_to_queue(

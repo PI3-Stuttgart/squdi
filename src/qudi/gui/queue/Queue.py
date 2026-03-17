@@ -153,6 +153,9 @@ class queue_gui(GuiBase):
 
     def __init__(self, config, title=None, parent=None, no_qt=None, gui=True, **kwargs):
         super(queue_gui, self).__init__(config=config, **kwargs)
+        self._mw = None
+        self._queue_logic = None
+        self._deactivating = False
 
     def init_gui(self):
         self._mw.setWindowTitle("nuclear ops queue")
@@ -183,6 +186,7 @@ class queue_gui(GuiBase):
         self._queue_logic.update_queue_list.connect(self.update_script_queue_table_data)
 
     def on_activate(self):
+        self._deactivating = False
         self._mw = QueueMainWindow()
         self._queue_logic = self.queue_logic()
         self.init_gui()
@@ -195,6 +199,13 @@ class queue_gui(GuiBase):
         self._mw.raise_()
 
     def on_deactivate(self):
+        if self._deactivating:
+            return
+
+        self._deactivating = True
+        mw = self._mw
+        queue_logic = self._queue_logic
+
         try:
             self.update_user_script_folder_text_field_signal.disconnect(self.update_user_script_folder_text_field_signal_emitted)
         except Exception:
@@ -211,60 +222,77 @@ class queue_gui(GuiBase):
             pass
 
         try:
-            self._mw.selected_user_script_combo_box.currentIndexChanged.disconnect(self.update_selected_user_script_from_combo_box)
+            if mw is not None:
+                mw.selected_user_script_combo_box.currentIndexChanged.disconnect(self.update_selected_user_script_from_combo_box)
         except Exception:
             pass
 
         try:
-            self._mw.remove_next_script_button.clicked.disconnect(self._queue_logic.remove_last_script)
+            if mw is not None and queue_logic is not None:
+                mw.remove_next_script_button.clicked.disconnect(queue_logic.remove_last_script)
         except Exception:
             pass
 
         try:
-            self._mw.set_stop_request_button.clicked.disconnect(self._queue_logic.set_stop_request)
+            if mw is not None and queue_logic is not None:
+                mw.set_stop_request_button.clicked.disconnect(queue_logic.set_stop_request)
         except Exception:
             pass
 
         try:
-            self._mw.add_to_queue_button.clicked.disconnect(self.add_to_queue)
+            if mw is not None:
+                mw.add_to_queue_button.clicked.disconnect(self.add_to_queue)
         except Exception:
             pass
 
         try:
-            self._mw.add_rco_button.clicked.disconnect(self._queue_logic.add_rco)
+            if mw is not None and queue_logic is not None:
+                mw.add_rco_button.clicked.disconnect(queue_logic.add_rco)
         except Exception:
             pass
 
         try:
-            self._mw.evaluate_button.clicked.disconnect(self._queue_logic.evaluate)
+            if mw is not None and queue_logic is not None:
+                mw.evaluate_button.clicked.disconnect(queue_logic.evaluate)
         except Exception:
             pass
 
         try:
-            self._mw.write_standard_awg_sequences_button.clicked.disconnect(self._queue_logic.write_standard_awg_sequences)
+            if mw is not None and queue_logic is not None:
+                mw.write_standard_awg_sequences_button.clicked.disconnect(queue_logic.write_standard_awg_sequences)
         except Exception:
             pass
 
         try:
-            self._mw.user_script_folder_pushButton.clicked.disconnect(self.open_user_script_folder_file_dialog)
+            if mw is not None:
+                mw.user_script_folder_pushButton.clicked.disconnect(self.open_user_script_folder_file_dialog)
         except Exception:
             pass
 
         try:
-            self._queue_logic.update_selected_user_script_combo_box_signal.disconnect(self.update_selected_user_script_combo_box)
+            if queue_logic is not None:
+                queue_logic.update_selected_user_script_combo_box_signal.disconnect(self.update_selected_user_script_combo_box)
         except Exception:
             pass
 
         try:
-            self._queue_logic.update_queue_list.disconnect(self.update_script_queue_table_data)
+            if queue_logic is not None:
+                queue_logic.update_queue_list.disconnect(self.update_script_queue_table_data)
         except Exception:
             pass
 
         try:
-            self._mw.blockSignals(True)
-            self._mw.hide()
-            self._mw.close()
-            self._mw.deleteLater()
+            if queue_logic is not None and getattr(queue_logic, "_gui", None) is self:
+                queue_logic._gui = None
+        except Exception:
+            pass
+
+        try:
+            if mw is not None:
+                mw.blockSignals(True)
+                mw.hide()
+                mw.close()
+                mw.deleteLater()
         except Exception:
             pass
 
@@ -272,12 +300,16 @@ class queue_gui(GuiBase):
         self._queue_logic = None
 
     def add_to_queue(self, stupid_argument_emitted_by_qt_signal):
+        if self._queue_logic is None:
+            return
         self._queue_logic.add_to_queue()
 
     def update_selected_user_script_combo_box(self, val):
         self.update_selected_user_script_combo_box_signal.emit(val)
 
     def update_selected_user_script_combo_box_signal_emitted(self, val):
+        if self._mw is None or self._deactivating:
+            return
         self._mw.selected_user_script_combo_box.blockSignals(True)
         if "user_script_list" in val:
             self._mw.selected_user_script_combo_box.clear()
@@ -286,12 +318,16 @@ class queue_gui(GuiBase):
         self._mw.selected_user_script_combo_box.blockSignals(False)
 
     def update_selected_user_script_from_combo_box(self):
+        if self._mw is None or self._queue_logic is None or self._deactivating:
+            return
         self._queue_logic.selected_user_script = str(self._mw.selected_user_script_combo_box.currentText())
 
     def update_script_queue_table_data(self, val):
         self.update_script_queue_table_data_signal.emit(val)
 
     def update_script_queue_table_data_signal_emitted(self, val):
+        if self._mw is None or self._deactivating:
+            return
         self._mw.script_queue_table.blockSignals(True)
         self._mw.script_queue_table.clear_table_contents()
         self._mw.script_queue_table.set_column_names(["name", "pd"])
@@ -310,6 +346,8 @@ class queue_gui(GuiBase):
         self.update_user_script_folder_text_field_signal.emit(val)
 
     def update_user_script_folder_text_field_signal_emitted(self, val):
+        if self._mw is None or self._deactivating:
+            return
         self._mw.user_script_folder_text_field.blockSignals(True)
         self._mw.user_script_folder_text_field.setText(val)
         self._mw.user_script_folder_text_field.blockSignals(False)
