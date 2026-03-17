@@ -103,7 +103,11 @@ class OPX(Base):  # hardware, awg,
         ls_curr_do: list = [
             key for key, value in self.cw_do_states.items() if value == "on"
         ]
-        dict_curr_ao = {key: value for key, value in self.cw_ao_values.items()}
+        dict_curr_ao = {
+            key: value
+            for key, value in self.cw_ao_values.items()
+            if key not in ["SPCM1", "SPCM2"]
+        }
         # check if any output should be set, if not stop the current qm program
         if not ls_curr_do and not dict_curr_ao:
             if self.cw_job:
