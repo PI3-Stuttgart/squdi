@@ -652,6 +652,13 @@ class PLEScanGui(GuiBase):
         if "range" in settings:
             x_range = settings["range"][self.scan_axis]
             display_range = self._display_region_from_voltage_region(x_range)
+            if not np.all(np.isfinite(display_range)):
+                self.log.warning(
+                    "Ignoring invalid PLE display range %s and falling back to scanner range %s.",
+                    display_range,
+                    x_range,
+                )
+                display_range = x_range
 
             self._mw.startDoubleSpinBox.setValue(display_range[0])
             self._mw.stopDoubleSpinBox.setValue(display_range[1])
