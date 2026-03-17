@@ -329,17 +329,14 @@ class queue_logic(GenericLogic):
 
     @property
     def last_running_script_name(self):
-        sm = self.script_module_names
-        if hasattr(self, "current_script"):
-            if not self.current_script["module_name"] in sm:
-                raise Exception("Error: {}, {}".format(sm, self.current_script))
-            else:
-                return self.current_script["module_name"]
-        else:
-            if len(sm) > 0:
-                return sm[-1]
-            else:
-                return -1
+        if not hasattr(self, "current_script"):
+            return -1
+
+        module_name = self.current_script["module_name"]
+        if module_name not in sys.modules:
+            return -1
+
+        return module_name
 
     @property
     def cun_modules(self):
@@ -348,10 +345,7 @@ class queue_logic(GenericLogic):
             return None
         if hasattr(sys.modules[lrs], "nuclear"):
             return sys.modules[lrs]
-        else:
-            for smi in self.script_module_names[::-1]:
-                if hasattr(sys.modules[smi], "nuclear"):
-                    return sys.modules[smi]
+        return None
 
     @property
     def cun(self):
@@ -425,7 +419,7 @@ class queue_logic(GenericLogic):
             return
 
         try:
-            if hasattr(self, "cun") and self.cun is not None:
+            if hasattr(self, "current_script") and self.cun is not None:
                 # print('has already the CUN, check its state.')
                 if self.cun.state not in ["run", "sequence_testing"]:
                     print("its finished, fininishing ")
@@ -502,12 +496,17 @@ class queue_logic(GenericLogic):
             pass
 
     def finish_measurement(self):
+        if not hasattr(self, "current_script"):
+            self.log.debug("finish_measurement called without an active current_script.")
+            return
+
+        module_name = self.current_script["module_name"]
         try:
             self.script_queue.pop(0)
             self.script_history.append(self.current_script)
             self.log.info(
                 "Userscript {} has finished...".format(
-                    self.current_script["module_name"][10:]
+                    module_name[10:]
                 )
             )
             del self.current_script
@@ -516,6 +515,8 @@ class queue_logic(GenericLogic):
         except IndexError:
             print("no more scripts in the queue..")
             return
+        finally:
+            sys.modules.pop(module_name, None)
 
     def run_old(self):
 
