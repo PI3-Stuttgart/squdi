@@ -594,17 +594,14 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         try:
             for voltage in voltages:
-                self.set_target_position(
-                    {self._scan_axis: float(voltage)}, move_blocking=True
-                )
+                self._set_calibration_voltage(float(voltage), move_blocking=True)
                 sleep(float(self._frequency_calibration_settle_time))
                 frequencies_thz.append(self._sample_wavemeter_frequency_thz())
                 sleep(float(0.5))
         finally:
             if isinstance(original_target, dict) and self._scan_axis in original_target:
-                self.set_target_position(
-                    {self._scan_axis: original_target[self._scan_axis]},
-                    move_blocking=True,
+                self._set_calibration_voltage(
+                    original_target[self._scan_axis], move_blocking=True
                 )
 
         frequencies_thz = np.asarray(frequencies_thz, dtype=float)
@@ -799,6 +796,14 @@ class PLEScannerLogic(ScanningProbeLogic):
 
     def update_number_of_repeats(self, number_of_repeats):
         self._number_of_repeats = number_of_repeats
+
+    def _set_calibration_voltage(self, voltage, move_blocking=True):
+        ax_constr = self.scanner_constraints.axes[self._scan_axis]
+        target = dict(self._scanner().get_target())
+        target[self._scan_axis] = ax_constr.clip_value(float(voltage))
+        new_pos = self._scanner().move_absolute(target, blocking=move_blocking)
+        self.sigScannerTargetChanged.emit(new_pos, self.module_uuid)
+        return new_pos
 
     def set_target_position(self, pos_dict, caller_id=None, move_blocking=False):
         with self._thread_lock:
