@@ -46,6 +46,10 @@ from time import sleep
 from qudi.util.datastorage import TextDataStorage
 from qudi.util.datafitting import FitContainer, FitConfigurationsModel
 import numpy as np
+import os
+import xarray as xr
+import matplotlib.pyplot as plt
+from datetime import datetime
 
 
 class PLEScannerLogic(ScanningProbeLogic):
@@ -60,6 +64,21 @@ class PLEScannerLogic(ScanningProbeLogic):
     )  # FIX it to make more generatal and talk to the Wavemeter interfafce
     _calibration_factor = 1  # calibrate the wavelength
     _wavelength_range = [0, 0]
+    _frequency_calibration_path = ConfigOption(
+        name="frequency_calibration_path", default=None, missing="nothing"
+    )
+    _frequency_calibration_points = ConfigOption(
+        name="frequency_calibration_points", default=11, missing="nothing"
+    )
+    _frequency_calibration_averages = ConfigOption(
+        name="frequency_calibration_averages", default=5, missing="nothing"
+    )
+    _frequency_calibration_settle_time = ConfigOption(
+        name="frequency_calibration_settle_time", default=0.2, missing="nothing"
+    )
+    _frequency_calibration_poly_degree = ConfigOption(
+        name="frequency_calibration_poly_degree", default=2, missing="nothing"
+    )
 
     #! We should refactor it to the hardware scanner interface
     _scan_axis = ConfigOption(name="scan_axis", default="a")
@@ -105,6 +124,7 @@ class PLEScannerLogic(ScanningProbeLogic):
     sigSetScannerTarget = QtCore.Signal(dict)
     sigUpdateAccumulated = QtCore.Signal(object, object)
     sigScanningDone = QtCore.Signal()
+    sigFrequencyCalibrationUpdated = QtCore.Signal(object)
 
     def __init__(self, config, **kwargs):
         super(PLEScannerLogic, self).__init__(config=config, **kwargs)
@@ -133,6 +153,11 @@ class PLEScannerLogic(ScanningProbeLogic):
         self._scan_id = 0
         self._fit_results = dict()
         self._fit_results["fluorescence"] = [None] * 1
+        self._frequency_calibration_data = None
+        self._frequency_calibration_coefficients = None
+        self._frequency_offset_thz = None
+        self._frequency_axis_relative_hz = None
+        self._frequency_calibration_file = None
 
     def on_activate(self):
         """Initialisation performed during activation of the module."""
@@ -180,6 +205,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         self.__scan_poll_timer = QtCore.QTimer()
         self.__scan_poll_timer.setSingleShot(True)
         self.__scan_poll_timer.timeout.connect(self.__scan_poll_loop, QtCore.Qt.QueuedConnection)
+        self.load_latest_frequency_calibration()
 
         return
 
@@ -220,6 +246,252 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         return 0, self.wavelength_stop - self.wavelength_start
 
+    @property
+    def has_frequency_calibration(self):
+        return self._frequency_calibration_coefficients is not None
+
+    @property
+    def frequency_offset_thz(self):
+        return self._frequency_offset_thz
+
+    @property
+    def frequency_calibration_dir(self):
+        if self._frequency_calibration_path:
+            return self._frequency_calibration_path
+        return os.path.join(self.module_default_data_dir, "ple_frequency_calibration")
+
+    def _read_wavemeter_frequency_thz(self):
+        reading = self._wavemeter().get_current_wavelength(kind="freq")
+        if reading is None:
+            raise ValueError("Wavemeter returned no reading.")
+
+        reading = float(reading)
+        if reading <= 0:
+            raise ValueError(f"Invalid wavemeter reading: {reading}")
+
+        # Different wavemeter backends in this codebase return either wavelength
+        # in nm, absolute frequency in Hz, or directly a THz-like value.
+        if reading > 1e9:
+            return reading / 1e12
+        if reading > 1e3:
+            return reading / 1e3
+        return self.speed_of_light / (reading * 1e-9) / 1e12
+
+    def _sample_wavemeter_frequency_thz(self, averages=None):
+        averages = self._frequency_calibration_averages if averages is None else averages
+        values = []
+        for _ in range(max(1, int(averages))):
+            values.append(self._read_wavemeter_frequency_thz())
+            sleep(0.05)
+        return float(np.mean(values))
+
+    def _fit_frequency_calibration(self, voltages, frequency_thz):
+        degree = min(int(self._frequency_calibration_poly_degree), len(voltages) - 1)
+        self._frequency_calibration_coefficients = np.polyfit(voltages, frequency_thz, degree)
+
+    def _evaluate_frequency_fit_thz(self, voltage):
+        if self._frequency_calibration_coefficients is None:
+            raise RuntimeError("No frequency calibration available.")
+        return np.polyval(self._frequency_calibration_coefficients, voltage)
+
+    def _relative_frequency_axis_hz_from_voltage(self, voltage_axis):
+        frequency_axis_thz = np.asarray(self._evaluate_frequency_fit_thz(voltage_axis), dtype=float)
+        offset_thz = float(self._evaluate_frequency_fit_thz(np.mean(self.scan_ranges[self._scan_axis])))
+        self._frequency_offset_thz = offset_thz
+        return (frequency_axis_thz - offset_thz) * 1e12
+
+    def get_scan_x_data(self, scan_data=None):
+        if scan_data is None:
+            scan_range = self.scan_ranges[self._scan_axis]
+            resolution = int(self.scan_resolution[self._scan_axis])
+        else:
+            scan_range = scan_data.scan_range[0]
+            resolution = int(scan_data.scan_resolution[0])
+
+        voltage_axis = np.linspace(scan_range[0], scan_range[1], resolution)
+        if not self.has_frequency_calibration:
+            return voltage_axis
+        return self._relative_frequency_axis_hz_from_voltage(voltage_axis)
+
+    def get_scan_x_range(self, scan_data=None):
+        x_data = self.get_scan_x_data(scan_data)
+        return float(x_data[0]), float(x_data[-1])
+
+    def get_scan_x_label(self):
+        if self.has_frequency_calibration:
+            return "Frequency", "Hz"
+        axis = self.scanner_constraints.axes[self._scan_axis]
+        return axis.name.title(), axis.unit
+
+    def display_to_voltage(self, value):
+        if not self.has_frequency_calibration:
+            return float(value)
+
+        scan_range = self.scan_ranges[self._scan_axis]
+        voltage_axis = np.linspace(scan_range[0], scan_range[1], 2000)
+        frequency_axis_hz = self._relative_frequency_axis_hz_from_voltage(voltage_axis)
+        order = np.argsort(frequency_axis_hz)
+        return float(np.interp(value, frequency_axis_hz[order], voltage_axis[order]))
+
+    def voltage_to_display(self, value):
+        if not self.has_frequency_calibration:
+            return float(value)
+        return float(self._relative_frequency_axis_hz_from_voltage(np.asarray([value]))[0])
+
+    def get_frequency_calibration_metadata(self):
+        metadata = {
+            "frequency_axis_mode": "calibrated_hz" if self.has_frequency_calibration else "scanner_axis",
+            "frequency_axis_label": self.get_scan_x_label()[0],
+            "frequency_axis_unit": self.get_scan_x_label()[1],
+        }
+        if self.has_frequency_calibration:
+            metadata.update(
+                {
+                    "frequency_axis_offset_thz": self._frequency_offset_thz,
+                    "frequency_calibration_file": self._frequency_calibration_file,
+                    "frequency_calibration_coefficients": list(self._frequency_calibration_coefficients),
+                }
+            )
+        return metadata
+
+    def save_frequency_calibration_data(self):
+        if self._frequency_calibration_data is None:
+            self.log.warning("No PLE frequency calibration data to save.")
+            return
+
+        os.makedirs(self.frequency_calibration_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(
+            self.frequency_calibration_dir,
+            f"ple_{self._scan_axis}_frequency_calibration_{timestamp}.h5",
+        )
+        filename_plot = os.path.join(
+            self.frequency_calibration_dir,
+            f"ple_{self._scan_axis}_frequency_calibration_{timestamp}.png",
+        )
+
+        self._frequency_calibration_data.to_netcdf(filename)
+
+        voltage = self._frequency_calibration_data.voltage.values
+        freq = self._frequency_calibration_data.frequency_thz.values
+        voltage_fit = np.linspace(voltage.min(), voltage.max(), 400)
+        freq_fit = self._evaluate_frequency_fit_thz(voltage_fit)
+
+        plt.figure(figsize=(8, 6))
+        plt.scatter(voltage, freq, label="Measured Data", color="blue", s=30, zorder=3)
+        plt.plot(voltage_fit, freq_fit, label="Calibration Fit", color="orange", linewidth=1, zorder=1)
+        plt.xlabel("Voltage [V]")
+        plt.ylabel("Frequency [THz]")
+        plt.title("PLE Voltage to Frequency Calibration")
+        plt.grid()
+        plt.legend()
+        plt.savefig(filename_plot)
+        plt.close()
+
+        self._frequency_calibration_file = filename
+        self.log.info(f"PLE frequency calibration saved to {filename}")
+
+    def load_latest_frequency_calibration(self):
+        if not os.path.isdir(self.frequency_calibration_dir):
+            return
+
+        files = [
+            file
+            for file in os.listdir(self.frequency_calibration_dir)
+            if file.startswith(f"ple_{self._scan_axis}_frequency_calibration_")
+            and file.endswith(".h5")
+        ]
+        if not files:
+            return
+
+        latest_file = max(
+            files,
+            key=lambda f: os.path.getctime(os.path.join(self.frequency_calibration_dir, f)),
+        )
+        file_path = os.path.join(self.frequency_calibration_dir, latest_file)
+        dataset = xr.load_dataset(file_path)
+        self._frequency_calibration_data = dataset
+        self._frequency_calibration_coefficients = np.asarray(
+            dataset.attrs.get("poly_coefficients", []), dtype=float
+        )
+        if self._frequency_calibration_coefficients.size == 0:
+            voltage = dataset.voltage.values
+            frequency_thz = dataset.frequency_thz.values
+            self._fit_frequency_calibration(voltage, frequency_thz)
+        offset_attr = dataset.attrs.get("frequency_offset_thz")
+        if offset_attr is None:
+            scan_range = dataset.attrs.get("scan_range", self.scan_ranges[self._scan_axis])
+            center_voltage = float(np.mean(scan_range))
+            self._frequency_offset_thz = float(self._evaluate_frequency_fit_thz(center_voltage))
+        else:
+            self._frequency_offset_thz = float(offset_attr)
+        self._frequency_calibration_file = file_path
+        self.sigFrequencyCalibrationUpdated.emit(self.get_frequency_calibration_metadata())
+
+    @QtCore.Slot()
+    def calibrate_frequency_axis(self):
+        if self.module_state() != "idle":
+            self.log.warning("Cannot calibrate PLE frequency axis while a scan is running.")
+            return
+        if not self._wavemeter():
+            self.log.warning("No wavemeter connected, cannot calibrate PLE frequency axis.")
+            return
+
+        scan_range = self.scan_ranges[self._scan_axis]
+        voltages = np.linspace(
+            scan_range[0], scan_range[1], int(self._frequency_calibration_points)
+        )
+        original_target = self.scanner_target
+        frequencies_thz = []
+
+        try:
+            for voltage in voltages:
+                self.set_target_position(
+                    {self._scan_axis: float(voltage)}, move_blocking=True
+                )
+                sleep(float(self._frequency_calibration_settle_time))
+                frequencies_thz.append(
+                    self._sample_wavemeter_frequency_thz()
+                )
+        finally:
+            if isinstance(original_target, dict) and self._scan_axis in original_target:
+                self.set_target_position(
+                    {self._scan_axis: original_target[self._scan_axis]},
+                    move_blocking=True,
+                )
+
+        frequencies_thz = np.asarray(frequencies_thz, dtype=float)
+        self._fit_frequency_calibration(voltages, frequencies_thz)
+        relative_frequency_hz = self._relative_frequency_axis_hz_from_voltage(voltages)
+
+        self._frequency_calibration_data = xr.Dataset(
+            data_vars=dict(
+                frequency_thz=xr.Variable(
+                    "voltage", frequencies_thz, attrs=dict(units="THz", long_name="Absolute Frequency")
+                ),
+                relative_frequency_hz=xr.Variable(
+                    "voltage",
+                    relative_frequency_hz,
+                    attrs=dict(units="Hz", long_name="Relative Frequency"),
+                ),
+            ),
+            coords=dict(
+                voltage=xr.Variable(
+                    "voltage", voltages, attrs=dict(units="V", long_name="Voltage")
+                ),
+            ),
+            attrs=dict(
+                scan_axis=self._scan_axis,
+                frequency_offset_thz=float(self._frequency_offset_thz),
+                poly_coefficients=list(np.asarray(self._frequency_calibration_coefficients, dtype=float)),
+                calibration_points=int(self._frequency_calibration_points),
+                calibration_averages=int(self._frequency_calibration_averages),
+                scan_range=list(scan_range),
+            ),
+        )
+        self.save_frequency_calibration_data()
+        self.sigFrequencyCalibrationUpdated.emit(self.get_frequency_calibration_metadata())
+
     def get_average(self, scan_data):
         averaged_data = {}
         for channel, data in scan_data.accumulated.items():
@@ -247,8 +519,7 @@ class PLEScannerLogic(ScanningProbeLogic):
             return
 
         y_data = self.get_average(self.scan_data)[self._channel] if averaged else self.scan_data.data[self._channel]
-        x_range = self.scan_ranges[self._scan_axis]
-        x_data = np.linspace(*x_range, self.scan_resolution[self._scan_axis])
+        x_data = self.get_scan_x_data(self.scan_data)
         try:
             fit_config, fit_result = self._fit_container.fit_data(fit_config, x_data, y_data)
         except:

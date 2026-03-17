@@ -237,11 +237,13 @@ class PleDataLogic(LogicBase):
             data = scan_data.data[channel]
         else:
             data = data_averaged
+        scan_logic = self._scan_logic()
         axis = scan_data.scan_axes[0]
         scanner_pos = self._scan_logic().scanner_target
 
         # Scale axes and data
-        scan_range_x = (scan_data.scan_range[0][0], scan_data.scan_range[0][1])
+        x_axis = np.asarray(scan_logic.get_scan_x_data(scan_data), dtype=float)
+        scan_range_x = (float(np.nanmin(x_axis)), float(np.nanmax(x_axis)))
         si_prefix_x = ScaledFloat(scan_range_x[1]-scan_range_x[0]).scale
         si_factor_x = ScaledFloat(scan_range_x[1]-scan_range_x[0]).scale_val
         si_prefix_data = ScaledFloat(np.nanmax(data)-np.nanmin(data)).scale
@@ -251,9 +253,6 @@ class PleDataLogic(LogicBase):
         fig, ax = plt.subplots()
 
         # Create image plot
-        x_axis = np.linspace(scan_data.scan_range[0][0],
-                             scan_data.scan_range[0][1],
-                             scan_data.scan_resolution[0])
         x_axis = x_axis[~np.isnan(data)]
         data = data[~np.isnan(data)]
 
@@ -269,10 +268,11 @@ class PleDataLogic(LogicBase):
                     self.add_fit_params_to_figure(ax, self.fit_container)
 
         # Axes labels
-        if scan_data.axes_units[axis]:
-            x_label = axis + f' position ({si_prefix_x}{scan_data.axes_units[axis]})'
+        x_label_base, x_unit = scan_logic.get_scan_x_label()
+        if x_unit:
+            x_label = f'{x_label_base} ({si_prefix_x}{x_unit})'
         else:
-            x_label = axis + f' position ({si_prefix_x})'
+            x_label = f'{x_label_base} ({si_prefix_x})'
         if scan_data.channel_units[channel]:
             y_label = f'{channel} ({si_prefix_data}{scan_data.channel_units[channel]})'
         else:
@@ -289,7 +289,7 @@ class PleDataLogic(LogicBase):
         # ax.get_yaxis().tick_left()
 
         # draw the scanner position if defined
-        pos_x = scanner_pos[axis]
+        pos_x = scan_logic.voltage_to_display(scanner_pos[axis])
         if pos_x > np.min(x_axis) and pos_x < np.max(x_axis):
             trans_xmark = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
             ax.annotate('',
@@ -332,6 +332,7 @@ class PleDataLogic(LogicBase):
                 parameters["pixel frequency"] = scan_data.scan_frequency
                 parameters[f"scanner target at start"] = scan_data.scanner_target_at_start
                 parameters['measurement start'] = str(scan_data._timestamp)
+                parameters.update(self._scan_logic().get_frequency_calibration_metadata())
                 
 
                 
@@ -447,7 +448,9 @@ class PleDataLogic(LogicBase):
         fig, ax = plt.subplots()
 
         # Scale axes and data
-        scan_range_x = (scan_data.scan_range[0][1], scan_data.scan_range[0][0])
+        scan_logic = self._scan_logic()
+        x_range = scan_logic.get_scan_x_range(scan_data)
+        scan_range_x = (x_range[1], x_range[0])
         scan_range_y =  (0, image_arr.shape[1])
         si_prefix_x = ScaledFloat(scan_range_x[1]-scan_range_x[0]).scale
         si_factor_x = ScaledFloat(scan_range_x[1]-scan_range_x[0]).scale_val
@@ -469,7 +472,8 @@ class PleDataLogic(LogicBase):
                                     *np.asarray(scan_range_y)/si_factor_y))
 
         ax.set_aspect("auto")
-        ax.set_xlabel(scan_axes[0] + f' position ({si_prefix_x}{scan_data.axes_units[scan_axes[0]]})')
+        x_label_base, x_unit = scan_logic.get_scan_x_label()
+        ax.set_xlabel(f'{x_label_base} ({si_prefix_x}{x_unit})' if x_unit else f'{x_label_base} ({si_prefix_x})')
         ax.set_ylabel("Line #")
         ax.spines['bottom'].set_position(('outward', 10))
         ax.spines['left'].set_position(('outward', 10))

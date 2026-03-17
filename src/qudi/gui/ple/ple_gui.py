@@ -114,6 +114,11 @@ class PLEScanGui(GuiBase):
         channel = channels[self._scanning_logic._channel]
 
         self._mw = PLEScanMainWindow(self.axis, channel)
+        self._mw.actionCalibrate_frequency_axis = QtWidgets.QAction(
+            "Calibrate frequency axis", self._mw
+        )
+        self._mw.menu_Options.addAction(self._mw.actionCalibrate_frequency_axis)
+        self._mw.toolBar.addAction(self._mw.actionCalibrate_frequency_axis)
 
         self._save_dialog = SaveDialog(self._mw)
         # self._mw.show()
@@ -128,6 +133,9 @@ class PLEScanGui(GuiBase):
         self._scanning_logic.sigRepeatScan.connect(self.scan_repeated, QtCore.Qt.QueuedConnection)
 
         self._scanning_logic.sigScanStateChanged.connect(self.scan_state_updated, QtCore.Qt.QueuedConnection)
+        self._scanning_logic.sigFrequencyCalibrationUpdated.connect(
+            self.frequency_calibration_updated, QtCore.Qt.QueuedConnection
+        )
         # self._scanning_logic.sigScannerTargetChanged.connect(
         #    self.scanner_target_updated, QtCore.Qt.QueuedConnection
         # )
@@ -186,6 +194,9 @@ class PLEScanGui(GuiBase):
             lambda: self._optimize_logic().toggle_ple_tracking(self._mw.actionTrackPLE.isChecked()),
             QtCore.Qt.QueuedConnection,
         )
+        self._mw.actionCalibrate_frequency_axis.triggered.connect(
+            self._scanning_logic.calibrate_frequency_axis, QtCore.Qt.QueuedConnection
+        )
         self.scanner_target_updated()
         # self.scan_state_updated(
         #     self._scanning_logic.module_state() != 'idle'
@@ -196,6 +207,9 @@ class PLEScanGui(GuiBase):
         #                         )
 
         self.restore_scanner_settings()
+        self.frequency_calibration_updated(
+            self._scanning_logic.get_frequency_calibration_metadata()
+        )
         self._init_ui_connectors()
         self._init_static_widgets()
         self._init_optimizer_settings()
@@ -239,6 +253,9 @@ class PLEScanGui(GuiBase):
         self._mw.actionToggle_scan.triggered.disconnect()
         self._scanning_logic.sigRepeatScan.disconnect()
         self._scanning_logic.sigScanStateChanged.disconnect(self.scan_state_updated)
+        self._scanning_logic.sigFrequencyCalibrationUpdated.disconnect(
+            self.frequency_calibration_updated
+        )
         self._scanning_logic.sigScanSettingsChanged.disconnect(self.scanner_settings_updated)
 
         self.sigToggleOptimize.disconnect()
@@ -265,6 +282,7 @@ class PLEScanGui(GuiBase):
 
         self._mw.action_Save.triggered.disconnect()
         self._mw.actionSave.triggered.disconnect()
+        self._mw.actionCalibrate_frequency_axis.triggered.disconnect()
 
         self._save_window_geometry(self._mw)
         self._mw.close()
@@ -496,8 +514,8 @@ class PLEScanGui(GuiBase):
             {
                 "range": {
                     self.scan_axis: (
-                        int(self._mw.startDoubleSpinBox.value()),
-                        int(self._mw.stopDoubleSpinBox.value()),
+                        self._voltage_value_from_display(self._mw.startDoubleSpinBox.value()),
+                        self._voltage_value_from_display(self._mw.stopDoubleSpinBox.value()),
                     )
                 }
             }
@@ -534,6 +552,30 @@ class PLEScanGui(GuiBase):
         self._mw.activateWindow()
         self._mw.raise_()
 
+    def _display_region_from_voltage_region(self, region):
+        return tuple(self._scanning_logic.voltage_to_display(val) for val in region)
+
+    def _voltage_region_from_display_region(self, region):
+        return tuple(self._scanning_logic.display_to_voltage(val) for val in region)
+
+    def _display_value_from_voltage(self, value):
+        return self._scanning_logic.voltage_to_display(value)
+
+    def _voltage_value_from_display(self, value):
+        return self._scanning_logic.display_to_voltage(value)
+
+    @QtCore.Slot(object)
+    def frequency_calibration_updated(self, metadata):
+        label, unit = self._scanning_logic.get_scan_x_label()
+        self._mw.ple_widget.set_x_axis(label, unit)
+        self._mw.ple_averaged_widget.set_x_axis(label, unit)
+        self._mw.matrix_widget.set_x_axis(label, unit)
+        suffix = unit if unit else self.axis.unit
+        self._mw.startDoubleSpinBox.setSuffix(suffix)
+        self._mw.stopDoubleSpinBox.setSuffix(suffix)
+        self._mw.constDoubleSpinBox.setSuffix(suffix)
+        self.scanner_settings_updated({"range": self._scanning_logic.scan_ranges})
+
     @QtCore.Slot()
     def region_value_changed_averaged_data(self):
         region = self._mw.ple_averaged_widget.selected_region.getRegion()
@@ -542,8 +584,8 @@ class PLEScanGui(GuiBase):
         self._mw.stopDoubleSpinBox.setValue(region[1])
         self._mw.ple_widget.selected_region.setRegion(region)
 
-        region = (int(region[0]), int(region[1]))
-        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: region}})
+        voltage_region = self._voltage_region_from_display_region(region)
+        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: voltage_region}})
 
     @QtCore.Slot()
     def region_value_changed(self):
@@ -554,8 +596,8 @@ class PLEScanGui(GuiBase):
         self._mw.ple_averaged_widget.selected_region.setRegion(region)
         self._mw.ple_widget.target_point.setValue(region[0])
 
-        region = (int(region[0]), int(region[1]))
-        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: region}})
+        voltage_region = self._voltage_region_from_display_region(region)
+        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: voltage_region}})
 
     @QtCore.Slot()
     def sliders_values_are_changing_averaged_data(self):
@@ -609,23 +651,32 @@ class PLEScanGui(GuiBase):
             self._mw.resolutionDoubleSpinBox.setValue(settings["resolution"][self.scan_axis])
         if "range" in settings:
             x_range = settings["range"][self.scan_axis]
+            display_range = self._display_region_from_voltage_region(x_range)
 
-            self._mw.startDoubleSpinBox.setValue(x_range[0])
-            self._mw.stopDoubleSpinBox.setValue(x_range[1])
-            self._mw.constDoubleSpinBox.setRange(*x_range)
+            self._mw.startDoubleSpinBox.setValue(display_range[0])
+            self._mw.stopDoubleSpinBox.setValue(display_range[1])
+            self._mw.constDoubleSpinBox.setRange(*display_range)
 
             # self._mw.startDoubleSpinBox.update_value()
 
             y_range = (0, self._scanning_logic._number_of_repeats)
-            self._mw.matrix_widget.set_plot_range(x_range=x_range)  # , y_range = y_range)
+            self._mw.matrix_widget.set_plot_range(x_range=display_range)  # , y_range = y_range)
 
-            self._mw.ple_widget.selected_region.setRegion(x_range)
-            self._mw.ple_widget.target_point.setValue(self._scanning_logic.scanner_target[self._scanning_logic._scan_axis])
-            self._mw.ple_widget.plot_widget.setRange(xRange=x_range)
+            self._mw.ple_widget.selected_region.setRegion(display_range)
+            self._mw.ple_widget.target_point.setValue(
+                self._display_value_from_voltage(
+                    self._scanning_logic.scanner_target[self._scanning_logic._scan_axis]
+                )
+            )
+            self._mw.ple_widget.plot_widget.setRange(xRange=display_range)
 
-            self._mw.ple_averaged_widget.selected_region.setRegion(x_range)
-            self._mw.ple_averaged_widget.target_point.setValue(self._scanning_logic.scanner_target[self._scanning_logic._scan_axis])
-            self._mw.ple_averaged_widget.plot_widget.setRange(xRange=x_range)
+            self._mw.ple_averaged_widget.selected_region.setRegion(display_range)
+            self._mw.ple_averaged_widget.target_point.setValue(
+                self._display_value_from_voltage(
+                    self._scanning_logic.scanner_target[self._scanning_logic._scan_axis]
+                )
+            )
+            self._mw.ple_averaged_widget.plot_widget.setRange(xRange=display_range)
 
         if "frequency" in settings:
             self._mw.frequencyDoubleSpinBox.setValue(settings["frequency"][self.scan_axis])
@@ -647,7 +698,9 @@ class PLEScanGui(GuiBase):
 
         # target = self._mw.ple_widget.target_point.value()
 
-        target_pos = {self._scanning_logic._scan_axis: int(target)}
+        target_pos = {
+            self._scanning_logic._scan_axis: self._voltage_value_from_display(target)
+        }
 
         # self.scanner_target_updated(pos_dict=target_pos, caller_id=None)
 
@@ -669,17 +722,18 @@ class PLEScanGui(GuiBase):
         if not isinstance(pos_dict, dict):
             pos_dict = self._scanning_logic.scanner_target
 
-        # FIX update the crosshairs here
-        # self._mw.ple_widget.target_point.blockSignals(True)
-        # self._mw.constDoubleSpinBox.blockSignals(True)
-
-        # self._mw.ple_widget.target_point.setValue(pos_dict[self._scanning_logic._scan_axis])
-        # self._mw.ple_averaged_widget.target_point.setValue(pos_dict[self._scanning_logic._scan_axis])
-        # self._mw.constDoubleSpinBox.setValue(pos_dict[self._scanning_logic._scan_axis])
-
-        # self._mw.constDoubleSpinBox.blockSignals(False)
-        # self._mw.ple_widget.target_point.blockSignals(False)
-        # self.scanner_control_dockwidget.set_target(pos_dict)
+        display_value = self._display_value_from_voltage(
+            pos_dict[self._scanning_logic._scan_axis]
+        )
+        self._mw.ple_widget.target_point.blockSignals(True)
+        self._mw.ple_averaged_widget.target_point.blockSignals(True)
+        self._mw.constDoubleSpinBox.blockSignals(True)
+        self._mw.ple_widget.target_point.setValue(display_value)
+        self._mw.ple_averaged_widget.target_point.setValue(display_value)
+        self._mw.constDoubleSpinBox.setValue(display_value)
+        self._mw.constDoubleSpinBox.blockSignals(False)
+        self._mw.ple_averaged_widget.target_point.blockSignals(False)
+        self._mw.ple_widget.target_point.blockSignals(False)
 
     @QtCore.Slot(bool, object, object)
     def scan_state_updated(self, is_running, scan_data=None, caller_id=None):
@@ -775,9 +829,12 @@ class PLEScanGui(GuiBase):
                 self.optimizer_dockwidget.set_1d_position(next(iter(optimal_position.values())), scan_axs)
 
                 # FIX!! not general AT ALL
-                self._mw.ple_widget.target_point.setValue(optimal_position[self._scanning_logic._scan_axis])
-                self._mw.ple_averaged_widget.target_point.setValue(optimal_position[self._scanning_logic._scan_axis])
-                self._mw.constDoubleSpinBox.setValue(optimal_position[self._scanning_logic._scan_axis])
+                display_value = self._display_value_from_voltage(
+                    optimal_position[self._scanning_logic._scan_axis]
+                )
+                self._mw.ple_widget.target_point.setValue(display_value)
+                self._mw.ple_averaged_widget.target_point.setValue(display_value)
+                self._mw.constDoubleSpinBox.setValue(display_value)
 
         if fit_data is not None and np.any("full_fit_res" in fit_data) and np.any("fit_data" in fit_data) and isinstance(optimal_position, dict):
             data = fit_data["fit_data"]
@@ -809,10 +866,14 @@ class PLEScanGui(GuiBase):
         @param ScanData scan_data:
         """
 
-        self._mw.ple_widget.set_scan_data(scan_data.data, scan_data)
+        x_data = self._scanning_logic.get_scan_x_data(scan_data)
+        x_range = self._scanning_logic.get_scan_x_range(scan_data)
+        self._mw.ple_widget.set_scan_data(scan_data.data, scan_data, x_data=x_data)
 
         if scan_data.accumulated is not None:
-            self._mw.matrix_widget.set_scan_data(scan_data.accumulated, scan_data)
+            self._mw.matrix_widget.set_scan_data(
+                scan_data.accumulated, scan_data, x_range=x_range
+            )
             averaged_data = {}
             for channel, data in scan_data.accumulated.items():
                 data_new = data[~np.all(data == 0, axis=1)]
@@ -823,7 +884,9 @@ class PLEScanGui(GuiBase):
                     averaged_data[channel] = np.sum(mask * data_new, axis=0) / np.sum(mask, axis=0)
                 else:
                     averaged_data[channel] = data.mean(axis=0)
-            self._mw.ple_averaged_widget.set_scan_data(averaged_data, scan_data)
+            self._mw.ple_averaged_widget.set_scan_data(
+                averaged_data, scan_data, x_data=x_data
+            )
 
     @QtCore.Slot(object)
     def _update_accumulated_scan(self, accumulated_data, scan_data):
