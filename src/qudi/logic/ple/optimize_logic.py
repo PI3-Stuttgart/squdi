@@ -370,8 +370,13 @@ class PLEOptimizeScannerLogic(LogicBase):
                     # Abort optimize if fit failed
                     self._last_fit_results = fit_res
                     if (fit_data is None) or (fit_res is None) or (fit_res is not None and fit_res.rsquared < self._min_r_squared):
-                        self.log.warning("Stopping optimization due to failed fit.")
-                        self.stop_optimize()
+                        try:
+                            self._scan_logic().set_target_position(opt_pos)
+                        except Exception:
+                            self.log.exception("Failed to restore scanner position after failed fit.")
+
+                            self.log.warning("Stopping optimization due to failed fit.")
+                            self.stop_optimize()
                         return
 
                     if fit_data is not None:

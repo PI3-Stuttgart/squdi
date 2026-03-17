@@ -76,7 +76,11 @@ class ScriptQueueList(collections.abc.MutableSequence):
 
     def check(self, val):
         if not isinstance(val, self.oktypes):
-            raise TypeError("list item {} is not allowed, as it can not be found in {}".format(val, self.oktypes))
+            raise TypeError(
+                "list item {} is not allowed, as it can not be found in {}".format(
+                    val, self.oktypes
+                )
+            )
 
     # def check_duplicate(self, v):
     #     duplicates = [item.name for item in self.list if item.name == v.name]
@@ -123,13 +127,17 @@ class queue_logic(GenericLogic):
     # declare connections
     mcas_holder = Connector(interface="McasDictHolderInterface")
     opx_holder = Connector(interface="OPX")
-    transition_tracker = Connector(interface="TransitionTracker")  # Should be a name of the class
+    transition_tracker = Connector(
+        interface="TransitionTracker"
+    )  # Should be a name of the class
     confocal = Connector(interface="ScanningProbeLogic")
     gated_counter = Connector("GatedCounter")  # Should be name of the class.
     optimizer = Connector("ScanningOptimizeLogic")
     fastcounter = Connector(interface="TT")
     PLE_logic = Connector(interface="PLEOptimizeScannerLogic")  # only for refocuses...
-    magnet_logic = Connector(interface="MagnetLogic")  ## Adding magnet logic to the queue
+    magnet_logic = Connector(
+        interface="MagnetLogic"
+    )  ## Adding magnet logic to the queue
     # odmr_logic= Connector("ODMRLogic_holder")
     # currentmeasurementlogic= Connector("CurrentMeasurementLogic")
     # biaslogic= Connector("BiasLogic")
@@ -140,7 +148,9 @@ class queue_logic(GenericLogic):
     dlc_pro_620 = Connector(interface="DlProLaser")
     power_conversion = Connector(interface="AomPowerCalibration")
     process_setpoint_combiner = Connector(interface="ProcessSetpointCombinerInterfuse")
-    switches = Connector(interface="SwitchCombinerInterfuse")  # for controlling the switches in the setup, e.g. for switching between confocal and widefield.
+    switches = Connector(
+        interface="SwitchCombinerInterfuse"
+    )  # for controlling the switches in the setup, e.g. for switching between confocal and widefield.
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
     update_queue_list = pyqtSignal(collections.OrderedDict)
@@ -214,13 +224,13 @@ class queue_logic(GenericLogic):
         if hasattr(self, "_gui"):
             self._gui = None
 
-    @property
-    def md(self):
-        return self._mcas_dict  #
+        @property
+        def md(self):
+            return self._mcas_dict  #
 
-    @property
-    def gui(self):
-        return self._gui
+        @property
+        def gui(self):
+            return self._gui
 
     # def restart_timetagger(self):
     #     import TimeTaggerHandler
@@ -262,7 +272,11 @@ class queue_logic(GenericLogic):
     def persistent_file_name(self, model):
         if hasattr(model, "pi3d_dump_filename"):
             return self.log_dir + model.pi3d_dump_filename
-        return self.log_dir + str(model.__class__).replace(">", "").replace("<", "") + ".pyd"  # windows does not allow '>' and '<' in filenames
+        return (
+            self.log_dir
+            + str(model.__class__).replace(">", "").replace("<", "")
+            + ".pyd"
+        )  # windows does not allow '>' and '<' in filenames
 
     #
     def restore(self, model, fp=None):
@@ -270,7 +284,9 @@ class queue_logic(GenericLogic):
 
         if os.access(filename, os.F_OK):
 
-            self.log.info("Restoring state of " + model.__str__() + "\nfrom " + filename + "..")
+            self.log.info(
+                "Restoring state of " + model.__str__() + "\nfrom " + filename + ".."
+            )
 
             try:
                 a = pickle.load(open(filename, "rb"))
@@ -286,7 +302,11 @@ class queue_logic(GenericLogic):
     def dump(self, model):
         filename = self.persistent_file_name(model)
         self.log.info(
-            "attempting to save state of " + model.__str__() + "\nto " + filename + "..",
+            "attempting to save state of "
+            + model.__str__()
+            + "\nto "
+            + filename
+            + "..",
         )
         try:
             fil = open(filename, "wb")
@@ -393,7 +413,9 @@ class queue_logic(GenericLogic):
         # print('mainloop NOPS QUEUE watcher..')
         if self.thread is not None and self.thread.stop_request.is_set():
             print("stop request")
-            self._clear_pending_queue(update_gui=not self._shutting_down, keep_current=True)
+            self._clear_pending_queue(
+                update_gui=not self._shutting_down, keep_current=True
+            )
             if self._shutting_down or hasattr(self, "current_script"):
                 return
             self.thread.stop_request.clear()
@@ -424,7 +446,9 @@ class queue_logic(GenericLogic):
 
         except Exception as e:
             print(e)
-            self._clear_pending_queue(update_gui=not self._shutting_down, keep_current=True)
+            self._clear_pending_queue(
+                update_gui=not self._shutting_down, keep_current=True
+            )
             exc_type, exc_value, exc_tb = sys.exc_info()
             traceback.print_exception(exc_type, exc_value, exc_tb)
             self.finish_measurement()
@@ -442,7 +466,11 @@ class queue_logic(GenericLogic):
         except Empty:
             return False
 
-        stop_request = self.thread.stop_request if self.thread is not None else multiprocess.Event()
+        stop_request = (
+            self.thread.stop_request
+            if self.thread is not None
+            else multiprocess.Event()
+        )
         stop_request.clear()  # this is necessary although it shouldn't be.
         self.log.info(
             "Starting Userscript {}...{}".format(
@@ -465,7 +493,9 @@ class queue_logic(GenericLogic):
         """
         if hasattr(self, "cun"):
             while self.cun.state == "run":
-                QtTest.QTest.qSleep(1000)  # This is Qt version for time.sleep to prevent freezinng. also doesnt work for PySide2.
+                QtTest.QTest.qSleep(
+                    1000
+                )  # This is Qt version for time.sleep to prevent freezinng. also doesnt work for PySide2.
             else:
                 print("new measurement can be started")
         else:
@@ -475,7 +505,11 @@ class queue_logic(GenericLogic):
         try:
             self.script_queue.pop(0)
             self.script_history.append(self.current_script)
-            self.log.info("Userscript {} has finished...".format(self.current_script["module_name"][10:]))
+            self.log.info(
+                "Userscript {} has finished...".format(
+                    self.current_script["module_name"][10:]
+                )
+            )
             del self.current_script
             self.q.task_done()
 
@@ -517,7 +551,9 @@ class queue_logic(GenericLogic):
 
                 if hasattr(self, "cun"):
                     while self.cun.state == "run":
-                        QtTest.QTest.qSleep(1000)  # 1000  # This is Qt version for time.sleep to prevent freezinng.
+                        QtTest.QTest.qSleep(
+                            1000
+                        )  # 1000  # This is Qt version for time.sleep to prevent freezinng.
                         print("waaaaaaaiiittt")
                     else:
                         print("new measurement can be started")
@@ -526,7 +562,11 @@ class queue_logic(GenericLogic):
 
                 self.script_history.append(self.current_script)
                 self.script_queue.pop(0)
-                self.log.info("Userscript {} has finished...".format(self.current_script["module_name"][10:]))
+                self.log.info(
+                    "Userscript {} has finished...".format(
+                        self.current_script["module_name"][10:]
+                    )
+                )
                 del self.current_script
                 self.q.task_done()
             except Exception:  # Not running the measurement.
@@ -558,7 +598,11 @@ class queue_logic(GenericLogic):
             return
 
         remaining_steps = []
-        if keep_current and hasattr(self, "current_script") and len(self._script_queue) > 0:
+        if (
+            keep_current
+            and hasattr(self, "current_script")
+            and len(self._script_queue) > 0
+        ):
             remaining_steps = [self._script_queue[0]]
 
         if update_gui:
@@ -600,10 +644,14 @@ class queue_logic(GenericLogic):
     def selected_user_script(self, val):
         if val != "":
             if val not in self.user_script_list:
-                raise Exception("Script {} not in {}".format(val, self.user_script_list))
+                raise Exception(
+                    "Script {} not in {}".format(val, self.user_script_list)
+                )
             self._selected_user_script = val
             # if hasattr(self, '_gui'):
-            val = collections.OrderedDict([("selected_user_script", self.selected_user_script)])
+            val = collections.OrderedDict(
+                [("selected_user_script", self.selected_user_script)]
+            )
             self.update_selected_user_script_combo_box_signal.emit(val)
             # self.gui.update_selected_user_script_combo_box(val)
 
@@ -642,7 +690,9 @@ class queue_logic(GenericLogic):
         try:
             module_name = self.init_task(name, folder)
             self.q.put({"module_name": module_name, "pd": pd})
-            self.script_queue.append(ScriptQueueStep(module_name[10:], self.user_script_params))
+            self.script_queue.append(
+                ScriptQueueStep(module_name[10:], self.user_script_params)
+            )
         except Exception:
             print("Queuelogic: Could not add script to queue.")
             exc_type, exc_value, exc_tb = sys.exc_info()

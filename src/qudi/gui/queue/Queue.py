@@ -207,6 +207,11 @@ class queue_gui(GuiBase):
         queue_logic = self._queue_logic
 
         try:
+            self._queue_logic.set_stop_request()
+        except Exception:
+            pass
+
+        try:
             self.update_user_script_folder_text_field_signal.disconnect(self.update_user_script_folder_text_field_signal_emitted)
         except Exception:
             pass

@@ -62,6 +62,8 @@ class NuclearOPs(DataGeneration):
     def __init__(self):  # TODO - revert back here from the self.queue.
 
         super().__init__()
+        self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE = 60
+
         ## TODO give all the handles for the interfaces from queue here...
         # TODO for future ODMR refocus parameters.
         self.odmr_pd = dict(
@@ -846,8 +848,8 @@ class NuclearOPs(DataGeneration):
             #     time.sleep(0.1)
             print("cun:Finished run_measurement")
             self.queue._wavemeter.stop_lock()
-            self.sleep(2)
-            self.queue._dlc_pro_620.set_pc_voltage(60)
+            time.sleep(2)
+            self.queue._dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
 
     @property
     def session_meas_count(self):
@@ -1124,9 +1126,9 @@ class NuclearOPs(DataGeneration):
         REPUMP_TIME_S = 1.0
         OPTIMIZER_POLL_S = 0.2
         AFTER_OPTIMIZER_WAIT_S = 3.0
-        # BEFORE_CW_STOP_WAIT_S = 0.1
-        # BEFORE_DEVIATION_WAIT_S = 1.0
-        # AFTER_DEVIATION_WAIT_S = 1.0
+        BEFORE_CW_STOP_WAIT_S = 1
+        BEFORE_DEVIATION_WAIT_S = 1.0
+        AFTER_DEVIATION_WAIT_S = 1.0
         LOCK_SETTLE_TIME_S = 3.0
 
         q = self.queue
@@ -1144,6 +1146,7 @@ class NuclearOPs(DataGeneration):
             return False
 
         q._wavemeter.stop_lock()
+        q._dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
         q._awg.stop_awgs()
 
         # Green repump
@@ -1170,23 +1173,25 @@ class NuclearOPs(DataGeneration):
             return False
 
         wavelength = q._wavemeter.read_single_point()[0][0] * 1e9
-        # actual_voltage = int(q._dlc_pro_620.get_pc_voltage_act() * 1000)
+        actual_voltage = int(q._dlc_pro_620.get_pc_voltage_act() * 1000)
 
-        # if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
-        #     return False
+        if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
+            return False
 
+        q._process_setpoint_combiner.set_setpoint("LaserScanner_red", 0)
+        q._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage)
         # q._awg.stop_cw_mode()
 
         # if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
-        #    return False
-
-        # q._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage + 400)
-
-        # if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
         #     return False
 
+        if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
+            return False
+
         q.tt.update_ple(wavelength)
-        q._wavemeter.start_lock(wavelength=wavelength)
+        q._wavemeter.start_lock(wavelength)
+        q.log.info(f"PLE refocus complete. Locked to wavelength: {wavelength:.2f} nm")
+        # q._wavemeter.start_lock(wavelength=wavelength)
 
         if not wait_or_abort(LOCK_SETTLE_TIME_S):
             return False
@@ -1575,7 +1580,7 @@ class NuclearOPs(DataGeneration):
         else:
             # This is usual.
             # self.queue._awg.mcas_dict.stop_awgs()
-            print("cun:setup_rf:This time is the qua writing...")
+            self.queue.log.info("cun:setup_rf:This time is the qua writing...")
             self.queue._awg.stop_awgs()
             self.mcas = self.ret_mcas(self, current_iterator_df)
             # Writing the sequence...
