@@ -74,7 +74,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         name="frequency_calibration_averages", default=5, missing="nothing"
     )
     _frequency_calibration_settle_time = ConfigOption(
-        name="frequency_calibration_settle_time", default=0.2, missing="nothing"
+        name="frequency_calibration_settle_time", default=3, missing="nothing"
     )
     _frequency_calibration_poly_degree = ConfigOption(
         name="frequency_calibration_poly_degree", default=2, missing="nothing"
@@ -167,13 +167,19 @@ class PLEScannerLogic(ScanningProbeLogic):
             self._wavemeter().start_acquisition()
         self._fit_config_model = FitConfigurationsModel(parent=self)
         self._fit_config_model.load_configs(self._fit_config)
-        self._fit_container = FitContainer(parent=self, config_model=self._fit_config_model)
+        self._fit_container = FitContainer(
+            parent=self, config_model=self._fit_config_model
+        )
         self.fit_region = self._fit_region
         self.sigSetScannerTarget.connect(self.set_target_position)
         constr = self.scanner_constraints
-        self._channel = list(constr.channels.keys())[0] if self._channel is None else self._channel
+        self._channel = (
+            list(constr.channels.keys())[0] if self._channel is None else self._channel
+        )
         self._scan_saved_to_hist = True
-        self.log.debug(f"Scanner settings at startup, type {type(self._scan_ranges)} {self._scan_ranges, self._scan_resolution}")
+        self.log.debug(
+            f"Scanner settings at startup, type {type(self._scan_ranges)} {self._scan_ranges, self._scan_resolution}"
+        )
         # scanner settings loaded from StatusVar or defaulted
         new_settings = self.check_sanity_scan_settings(self.scan_settings)
         if new_settings != self.scan_settings:
@@ -183,7 +189,9 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         if not self._min_poll_interval:
             # defaults to maximum scan frequency of scanner
-            self._min_poll_interval = 1 / np.max([constr.axes[ax].frequency_range for ax in constr.axes])
+            self._min_poll_interval = 1 / np.max(
+                [constr.axes[ax].frequency_range for ax in constr.axes]
+            )
 
         """
         if not isinstance(self._scan_ranges, dict):
@@ -201,11 +209,18 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         if not self._min_poll_interval:
             # defaults to maximum scan frequency of scanner
-            self._min_poll_interval = 1 / np.max([self.scanner_constraints.axes[ax].frequency_range for ax in self.scanner_constraints.axes])
+            self._min_poll_interval = 1 / np.max(
+                [
+                    self.scanner_constraints.axes[ax].frequency_range
+                    for ax in self.scanner_constraints.axes
+                ]
+            )
 
         self.__scan_poll_timer = QtCore.QTimer()
         self.__scan_poll_timer.setSingleShot(True)
-        self.__scan_poll_timer.timeout.connect(self.__scan_poll_loop, QtCore.Qt.QueuedConnection)
+        self.__scan_poll_timer.timeout.connect(
+            self.__scan_poll_loop, QtCore.Qt.QueuedConnection
+        )
         self.load_latest_frequency_calibration()
 
         return
@@ -228,19 +243,29 @@ class PLEScannerLogic(ScanningProbeLogic):
         if self._wavemeter():
             for i in range(5):
                 start, stop = self.run_calibration()
-                self.scan_ranges_wavemeter[1] = (self.scan_ranges_wavemeter[1] + stop) / 2
+                self.scan_ranges_wavemeter[1] = (
+                    self.scan_ranges_wavemeter[1] + stop
+                ) / 2
         else:
             self.log.warning("No wavemeter connected, cannot calibrate scan ranges.")
             # self._scan_ranges.update({"a": [i*1e3 for i in self.scan_ranges_wavemeter]}) #in GHzs
-        self._calibration_factor = 1e12 * self.scan_ranges_wavemeter[-1] / self._scan_ranges[self._scan_axis][-1]
+        self._calibration_factor = (
+            1e12
+            * self.scan_ranges_wavemeter[-1]
+            / self._scan_ranges[self._scan_axis][-1]
+        )
 
     def run_calibration(self):
-        self.set_target_position({self._scan_axis: self.scan_ranges[self._scan_axis][0]}, move_blocking=True)
+        self.set_target_position(
+            {self._scan_axis: self.scan_ranges[self._scan_axis][0]}, move_blocking=True
+        )
         new_pos = self._scanner().get_target()
         sleep(2)  # in mu sec
         self.wavelength_start = self._wavemeter().get_current_wavelength()
 
-        self.set_target_position({self._scan_axis: self.scan_ranges[self._scan_axis][-1]}, move_blocking=True)
+        self.set_target_position(
+            {self._scan_axis: self.scan_ranges[self._scan_axis][-1]}, move_blocking=True
+        )
         new_pos = self._scanner().get_target()
         sleep(2)  # in mu sec
         self.wavelength_stop = self._wavemeter().get_current_wavelength()
@@ -283,8 +308,12 @@ class PLEScannerLogic(ScanningProbeLogic):
 
     def _get_frequency_offset_thz(self):
         if self._frequency_offset_thz is None:
-            center_voltage = float(np.mean(self._get_frequency_calibration_voltage_range()))
-            self._frequency_offset_thz = float(self._evaluate_frequency_fit_thz(center_voltage))
+            center_voltage = float(
+                np.mean(self._get_frequency_calibration_voltage_range())
+            )
+            self._frequency_offset_thz = float(
+                self._evaluate_frequency_fit_thz(center_voltage)
+            )
         if not np.isfinite(self._frequency_offset_thz):
             raise ValueError("Frequency calibration offset is invalid.")
         return float(self._frequency_offset_thz)
@@ -314,7 +343,9 @@ class PLEScannerLogic(ScanningProbeLogic):
         return self.speed_of_light / (reading * 1e-9) / 1e12
 
     def _sample_wavemeter_frequency_thz(self, averages=None):
-        averages = self._frequency_calibration_averages if averages is None else averages
+        averages = (
+            self._frequency_calibration_averages if averages is None else averages
+        )
         values = []
         for _ in range(max(1, int(averages))):
             values.append(self._read_wavemeter_frequency_thz())
@@ -323,7 +354,9 @@ class PLEScannerLogic(ScanningProbeLogic):
 
     def _fit_frequency_calibration(self, voltages, frequency_thz):
         degree = min(int(self._frequency_calibration_poly_degree), len(voltages) - 1)
-        self._frequency_calibration_coefficients = np.polyfit(voltages, frequency_thz, degree)
+        self._frequency_calibration_coefficients = np.polyfit(
+            voltages, frequency_thz, degree
+        )
 
     def _evaluate_frequency_fit_thz(self, voltage):
         if self._frequency_calibration_coefficients is None:
@@ -331,7 +364,9 @@ class PLEScannerLogic(ScanningProbeLogic):
         return np.polyval(self._frequency_calibration_coefficients, voltage)
 
     def _relative_frequency_axis_hz_from_voltage(self, voltage_axis):
-        frequency_axis_thz = np.asarray(self._evaluate_frequency_fit_thz(voltage_axis), dtype=float)
+        frequency_axis_thz = np.asarray(
+            self._evaluate_frequency_fit_thz(voltage_axis), dtype=float
+        )
         offset_thz = self._get_frequency_offset_thz()
         return (frequency_axis_thz - offset_thz) * 1e12
 
@@ -379,14 +414,18 @@ class PLEScannerLogic(ScanningProbeLogic):
     def voltage_to_display(self, value):
         if not self.has_frequency_calibration:
             return float(value)
-        display_value = float(self._relative_frequency_axis_hz_from_voltage(np.asarray([value]))[0])
+        display_value = float(
+            self._relative_frequency_axis_hz_from_voltage(np.asarray([value]))[0]
+        )
         if not np.isfinite(display_value):
             return float(value)
         return display_value
 
     def get_frequency_calibration_metadata(self):
         metadata = {
-            "frequency_axis_mode": "calibrated_hz" if self.has_frequency_calibration else "scanner_axis",
+            "frequency_axis_mode": (
+                "calibrated_hz" if self.has_frequency_calibration else "scanner_axis"
+            ),
             "frequency_axis_label": self.get_scan_x_label()[0],
             "frequency_axis_unit": self.get_scan_x_label()[1],
         }
@@ -396,7 +435,9 @@ class PLEScannerLogic(ScanningProbeLogic):
                     "frequency_axis_offset_thz": self._frequency_offset_thz,
                     "frequency_calibration_voltage_range": self._get_frequency_calibration_voltage_range(),
                     "frequency_calibration_file": self._frequency_calibration_file,
-                    "frequency_calibration_coefficients": list(self._frequency_calibration_coefficients),
+                    "frequency_calibration_coefficients": list(
+                        self._frequency_calibration_coefficients
+                    ),
                 }
             )
         return metadata
@@ -426,7 +467,14 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         plt.figure(figsize=(8, 6))
         plt.scatter(voltage, freq, label="Measured Data", color="blue", s=30, zorder=3)
-        plt.plot(voltage_fit, freq_fit, label="Calibration Fit", color="orange", linewidth=1, zorder=1)
+        plt.plot(
+            voltage_fit,
+            freq_fit,
+            label="Calibration Fit",
+            color="orange",
+            linewidth=1,
+            zorder=1,
+        )
         plt.xlabel("Voltage [V]")
         plt.ylabel("Frequency [THz]")
         plt.title("PLE Voltage to Frequency Calibration")
@@ -453,7 +501,9 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         latest_file = max(
             files,
-            key=lambda f: os.path.getctime(os.path.join(self.frequency_calibration_dir, f)),
+            key=lambda f: os.path.getctime(
+                os.path.join(self.frequency_calibration_dir, f)
+            ),
         )
         file_path = os.path.join(self.frequency_calibration_dir, latest_file)
         try:
@@ -466,15 +516,23 @@ class PLEScannerLogic(ScanningProbeLogic):
                 voltage = dataset.voltage.values
                 frequency_thz = dataset.frequency_thz.values
                 self._fit_frequency_calibration(voltage, frequency_thz)
-            self._frequency_calibration_voltage_range = self._get_frequency_calibration_voltage_range()
+            self._frequency_calibration_voltage_range = (
+                self._get_frequency_calibration_voltage_range()
+            )
             offset_attr = dataset.attrs.get("frequency_offset_thz")
             if offset_attr is None:
-                center_voltage = float(np.mean(self._get_frequency_calibration_voltage_range()))
-                self._frequency_offset_thz = float(self._evaluate_frequency_fit_thz(center_voltage))
+                center_voltage = float(
+                    np.mean(self._get_frequency_calibration_voltage_range())
+                )
+                self._frequency_offset_thz = float(
+                    self._evaluate_frequency_fit_thz(center_voltage)
+                )
             else:
                 self._frequency_offset_thz = float(offset_attr)
 
-            if (not self.has_frequency_calibration) or (not np.isfinite(self._frequency_offset_thz)):
+            if (not self.has_frequency_calibration) or (
+                not np.isfinite(self._frequency_offset_thz)
+            ):
                 raise ValueError("Loaded frequency calibration is invalid.")
         except Exception:
             self.log.exception("Ignoring invalid PLE frequency calibration file:")
@@ -482,15 +540,21 @@ class PLEScannerLogic(ScanningProbeLogic):
             return
 
         self._frequency_calibration_file = file_path
-        self.sigFrequencyCalibrationUpdated.emit(self.get_frequency_calibration_metadata())
+        self.sigFrequencyCalibrationUpdated.emit(
+            self.get_frequency_calibration_metadata()
+        )
 
     @QtCore.Slot()
     def calibrate_frequency_axis(self):
         if self.module_state() != "idle":
-            self.log.warning("Cannot calibrate PLE frequency axis while a scan is running.")
+            self.log.warning(
+                "Cannot calibrate PLE frequency axis while a scan is running."
+            )
             return
         if not self._wavemeter():
-            self.log.warning("No wavemeter connected, cannot calibrate PLE frequency axis.")
+            self.log.warning(
+                "No wavemeter connected, cannot calibrate PLE frequency axis."
+            )
             return
 
         scan_range = tuple(self.scanner_constraints.axes[self._scan_axis].value_range)
@@ -499,7 +563,10 @@ class PLEScannerLogic(ScanningProbeLogic):
         )
         original_target = dict(self.scanner_target)
         frequencies_thz = []
-        self._frequency_calibration_voltage_range = (float(min(scan_range)), float(max(scan_range)))
+        self._frequency_calibration_voltage_range = (
+            float(min(scan_range)),
+            float(max(scan_range)),
+        )
 
         try:
             for voltage in voltages:
@@ -507,9 +574,7 @@ class PLEScannerLogic(ScanningProbeLogic):
                     {self._scan_axis: float(voltage)}, move_blocking=True
                 )
                 sleep(float(self._frequency_calibration_settle_time))
-                frequencies_thz.append(
-                    self._sample_wavemeter_frequency_thz()
-                )
+                frequencies_thz.append(self._sample_wavemeter_frequency_thz())
         finally:
             if isinstance(original_target, dict) and self._scan_axis in original_target:
                 self.set_target_position(
@@ -520,14 +585,18 @@ class PLEScannerLogic(ScanningProbeLogic):
         frequencies_thz = np.asarray(frequencies_thz, dtype=float)
         self._fit_frequency_calibration(voltages, frequencies_thz)
         self._frequency_offset_thz = float(
-            self._evaluate_frequency_fit_thz(np.mean(self._frequency_calibration_voltage_range))
+            self._evaluate_frequency_fit_thz(
+                np.mean(self._frequency_calibration_voltage_range)
+            )
         )
         relative_frequency_hz = self._relative_frequency_axis_hz_from_voltage(voltages)
 
         self._frequency_calibration_data = xr.Dataset(
             data_vars=dict(
                 frequency_thz=xr.Variable(
-                    "voltage", frequencies_thz, attrs=dict(units="THz", long_name="Absolute Frequency")
+                    "voltage",
+                    frequencies_thz,
+                    attrs=dict(units="THz", long_name="Absolute Frequency"),
                 ),
                 relative_frequency_hz=xr.Variable(
                     "voltage",
@@ -543,23 +612,30 @@ class PLEScannerLogic(ScanningProbeLogic):
             attrs=dict(
                 scan_axis=self._scan_axis,
                 frequency_offset_thz=float(self._frequency_offset_thz),
-                poly_coefficients=list(np.asarray(self._frequency_calibration_coefficients, dtype=float)),
+                poly_coefficients=list(
+                    np.asarray(self._frequency_calibration_coefficients, dtype=float)
+                ),
                 calibration_points=int(self._frequency_calibration_points),
                 calibration_averages=int(self._frequency_calibration_averages),
                 scan_range=list(scan_range),
             ),
         )
         self.save_frequency_calibration_data()
-        self.sigFrequencyCalibrationUpdated.emit(self.get_frequency_calibration_metadata())
+        self.sigFrequencyCalibrationUpdated.emit(
+            self.get_frequency_calibration_metadata()
+        )
         self.set_full_scan_ranges()
         self.sigScannerTargetChanged.emit(self.scanner_target, self.module_uuid)
 
     def set_full_scan_ranges(self):
         if self.has_frequency_calibration:
             scan_range = {
-                ax: axis.value_range for ax, axis in self.scanner_constraints.axes.items()
+                ax: axis.value_range
+                for ax, axis in self.scanner_constraints.axes.items()
             }
-            scan_range[self._scan_axis] = self._get_frequency_calibration_voltage_range()
+            scan_range[self._scan_axis] = (
+                self._get_frequency_calibration_voltage_range()
+            )
             return self.set_scan_range(scan_range)
         return super().set_full_scan_ranges()
 
@@ -571,7 +647,9 @@ class PLEScannerLogic(ScanningProbeLogic):
                 last_row = data_new[-1, :]
                 mask = np.ones_like(data_new, dtype=bool)  # Initialize a full True mask
                 mask[-1, :] = last_row != 0
-                averaged_data[channel] = np.sum(mask * data_new, axis=0) / np.sum(mask, axis=0)
+                averaged_data[channel] = np.sum(mask * data_new, axis=0) / np.sum(
+                    mask, axis=0
+                )
             else:
                 averaged_data[channel] = data.mean(axis=0)
         return averaged_data
@@ -582,17 +660,26 @@ class PLEScannerLogic(ScanningProbeLogic):
         Execute the currently configured fit on the measurement data. Optionally on passed data
         """
 
-        if fit_config != "No Fit" and fit_config not in self._fit_config_model.configuration_names:
+        if (
+            fit_config != "No Fit"
+            and fit_config not in self._fit_config_model.configuration_names
+        ):
             self.log.error(f'Unknown fit configuration "{fit_config}" encountered.')
             return
 
         if self.scan_data is None:
             return
 
-        y_data = self.get_average(self.scan_data)[self._channel] if averaged else self.scan_data.data[self._channel]
+        y_data = (
+            self.get_average(self.scan_data)[self._channel]
+            if averaged
+            else self.scan_data.data[self._channel]
+        )
         x_data = self.get_scan_x_data(self.scan_data)
         try:
-            fit_config, fit_result = self._fit_container.fit_data(fit_config, x_data, y_data)
+            fit_config, fit_result = self._fit_container.fit_data(
+                fit_config, x_data, y_data
+            )
         except:
             self.log.exception("Data fitting failed:")
             return
@@ -638,12 +725,18 @@ class PLEScannerLogic(ScanningProbeLogic):
 
             if self.accumulated is None:
 
-                self.accumulated = {channel: data_i[np.newaxis, :] for channel, data_i in self.scan_data.data.items()}
+                self.accumulated = {
+                    channel: data_i[np.newaxis, :]
+                    for channel, data_i in self.scan_data.data.items()
+                }
 
             else:
                 if len(list(self.scan_data.data.values())[0]) > 0:
                     self.accumulated = {
-                        channel: np.vstack((self.accumulated[channel], data_i))[-self._number_of_repeats :] for channel, data_i in self.scan_data.data.items()
+                        channel: np.vstack((self.accumulated[channel], data_i))[
+                            -self._number_of_repeats :
+                        ]
+                        for channel, data_i in self.scan_data.data.items()
                     }
                 else:
                     return
@@ -686,13 +779,18 @@ class PLEScannerLogic(ScanningProbeLogic):
 
                 new_pos[ax] = ax_constr[ax].clip_value(pos)
                 if pos != new_pos[ax]:
-                    self.log.warning('Scanner position target value out of bounds for axis "{0}". ' "Clipping value to {1:.3e}.".format(ax, new_pos[ax]))
+                    self.log.warning(
+                        'Scanner position target value out of bounds for axis "{0}". '
+                        "Clipping value to {1:.3e}.".format(ax, new_pos[ax])
+                    )
 
             new_pos = self._scanner().move_absolute(new_pos, blocking=move_blocking)
             if any(pos != new_pos[ax] for ax, pos in pos_dict.items()):
                 caller_id = None
             # self.log.debug(f"Logic set target with id {caller_id} to new: {new_pos}")
-            self.sigScannerTargetChanged.emit(new_pos, self.module_uuid if caller_id is None else caller_id)
+            self.sigScannerTargetChanged.emit(
+                new_pos, self.module_uuid if caller_id is None else caller_id
+            )
             return new_pos
 
     def toggle_scan(self, start, scan_axes, caller_id=None):
@@ -711,7 +809,9 @@ class PLEScannerLogic(ScanningProbeLogic):
         with self._thread_lock:
 
             if self.module_state() != "idle":
-                self.sigScanStateChanged.emit(True, self.scan_data, self._curr_caller_id)
+                self.sigScanStateChanged.emit(
+                    True, self.scan_data, self._curr_caller_id
+                )
                 return 0
 
             scan_axes = tuple(scan_axes)
@@ -735,12 +835,18 @@ class PLEScannerLogic(ScanningProbeLogic):
 
             self._update_scan_settings(scan_axes, new_settings)
             # Calculate poll time to check for scan completion. Use line scan time estimate.
-            line_points = self._scan_resolution[scan_axes[0]] if len(scan_axes) > 1 else 1
+            line_points = (
+                self._scan_resolution[scan_axes[0]] if len(scan_axes) > 1 else 1
+            )
             # self.__scan_poll_interval = max(self._min_poll_interval,
             #                                 line_points / self._scan_frequency[scan_axes[0]])
-            self.__scan_poll_timer.setInterval(int(round(self._scan_poll_interval)))  # * 1000)))
+            self.__scan_poll_timer.setInterval(
+                int(round(self._scan_poll_interval))
+            )  # * 1000)))
             print("test_2")
-            if self._scanner().start_scan() < 0:  # TODO Current interface states that bool is returned from start_scan
+            if (
+                self._scanner().start_scan() < 0
+            ):  # TODO Current interface states that bool is returned from start_scan
 
                 self.module_state.unlock()
                 self.sigScanStateChanged.emit(False, None, self._curr_caller_id)
@@ -757,12 +863,18 @@ class PLEScannerLogic(ScanningProbeLogic):
             self.sigScanStateChanged.emit(True, self.scan_data, self._curr_caller_id)
 
             if self.module_state() == "idle":
-                self.sigScanStateChanged.emit(False, self.scan_data, self._curr_caller_id)
+                self.sigScanStateChanged.emit(
+                    False, self.scan_data, self._curr_caller_id
+                )
                 return 0
 
             self.__stop_timer()
 
-            err = self._scanner().stop_scan() if self._scanner().module_state() != "idle" else 0
+            err = (
+                self._scanner().stop_scan()
+                if self._scanner().module_state() != "idle"
+                else 0
+            )
 
             self.module_state.unlock()
 
@@ -791,7 +903,9 @@ class PLEScannerLogic(ScanningProbeLogic):
             new = int(settings["resolution"][ax_index])
             if self._scan_resolution[ax] != new:
                 self._scan_resolution[ax] = new
-                self.sigScanSettingsChanged.emit({"resolution": {ax: self._scan_resolution[ax]}})
+                self.sigScanSettingsChanged.emit(
+                    {"resolution": {ax: self._scan_resolution[ax]}}
+                )
 
         # Update scan frequency if needed
         new = float(settings["frequency"])
@@ -815,19 +929,26 @@ class PLEScannerLogic(ScanningProbeLogic):
 
                     self.stop_scan()
 
-                    if hasattr(self._scanner(), "_triggered_ao"):  #  and self._repeated > 0:
+                    if hasattr(
+                        self._scanner(), "_triggered_ao"
+                    ):  #  and self._repeated > 0:
                         self.sigScanningDone.emit()
                         self.sigRepeatScan.emit(False, self._toggled_scan_axes)
                         self._repeated = 0
                         return
 
-                    if (self._curr_caller_id == self._scan_id) or (self._curr_caller_id == self.module_uuid):
+                    if (self._curr_caller_id == self._scan_id) or (
+                        self._curr_caller_id == self.module_uuid
+                    ):
                         self._repeated += 1
                         self.display_repeated += 1
 
                         self.stack_data()
 
-                        if self._number_of_repeats > self._repeated or self._number_of_repeats == 0:
+                        if (
+                            self._number_of_repeats > self._repeated
+                            or self._number_of_repeats == 0
+                        ):
                             self.sigRepeatScan.emit(True, self._toggled_scan_axes)
                         else:
                             # if self._scanner()._scanned_lines > self._scanner().lines_to_scan or self._number_of_repeats == 0:
@@ -838,7 +959,9 @@ class PLEScannerLogic(ScanningProbeLogic):
 
                 # TODO Added the following line as a quick test; Maybe look at it with more caution if correct
                 # self._scanner().sigNextDataChunk.emit()
-                self.sigScanStateChanged.emit(True, self.scan_data, self._curr_caller_id)
+                self.sigScanStateChanged.emit(
+                    True, self.scan_data, self._curr_caller_id
+                )
 
                 # Queue next call to this slot
                 self.__scan_poll_timer.start()
@@ -850,12 +973,16 @@ class PLEScannerLogic(ScanningProbeLogic):
 
     def __start_timer(self):
         if self.thread() is not QtCore.QThread.currentThread():
-            QtCore.QMetaObject.invokeMethod(self.__scan_poll_timer, "start", QtCore.Qt.BlockingQueuedConnection)
+            QtCore.QMetaObject.invokeMethod(
+                self.__scan_poll_timer, "start", QtCore.Qt.BlockingQueuedConnection
+            )
         else:
             self.__scan_poll_timer.start()
 
     def __stop_timer(self):
         if self.thread() is not QtCore.QThread.currentThread():
-            QtCore.QMetaObject.invokeMethod(self.__scan_poll_timer, "stop", QtCore.Qt.BlockingQueuedConnection)
+            QtCore.QMetaObject.invokeMethod(
+                self.__scan_poll_timer, "stop", QtCore.Qt.BlockingQueuedConnection
+            )
         else:
             self.__scan_poll_timer.stop()
