@@ -29,7 +29,7 @@ import time
 from typing import Union, Optional, List, Tuple, Sequence, Any, Dict
 
 import numpy as np
-from scipy.constants import lambda2nu
+from scipy.constants import c, lambda2nu
 from PySide2 import QtCore
 
 from qudi.core.configoption import ConfigOption
@@ -96,6 +96,8 @@ class HighFinesseWavemeter(DataInStreamInterface):
 
         # stored hardware constraints
         self._constraints: Optional[DataInStreamConstraints] = None
+        self._measurement_timing: Optional[float] = None
+        self._lock_target_frequency_hz: Optional[float] = None
 
     def on_activate(self) -> None:
         # configure wavemeter channels
@@ -129,6 +131,7 @@ class HighFinesseWavemeter(DataInStreamInterface):
             channel_buffer_size=ScalarConstraint(default=1024**2, bounds=(128, 1024**3), increment=1, enforce_int=True),  # 8 MB  # max = 8 GB
             sample_rate=ScalarConstraint(default=sample_rate, bounds=(0.01, 1e3)),
         )
+        self._measurement_timing = 1 / sample_rate if sample_rate else None
 
     def set_dll_set_voltage(channel=1):
         self._proxy().set_laser_piezo_voltage(channel)
@@ -161,6 +164,148 @@ class HighFinesseWavemeter(DataInStreamInterface):
             time.sleep(0.01)
 
         self._proxy().toggle_locking(False)
+
+    # Compatibility helpers for older wavemeter logic modules expecting the
+    # legacy WavemeterInterface API.
+    def _compat_ensure_running(self) -> None:
+        if self.module_state() == "idle":
+            self.start_stream()
+
+    def _compat_wait_for_samples(self, min_samples: int = 1, timeout: float = 2.0) -> None:
+        self._compat_ensure_running()
+        deadline = time.time() + timeout
+        while self.available_samples < min_samples:
+            if time.time() >= deadline:
+                raise TimeoutError("Timed out while waiting for wavemeter data.")
+            time.sleep(0.01)
+
+    def _compat_get_latest_channel_value(self, channel_index: int = 0) -> Tuple[float, float, int]:
+        self._compat_wait_for_samples()
+        with self._lock:
+            number_of_channels = len(self.active_channels)
+            if channel_index >= number_of_channels:
+                raise IndexError("Requested wavemeter channel index is not available.")
+            available_samples = self.available_samples
+            buffer_index = number_of_channels * (available_samples - 1)
+            value = float(self._data_buffer[buffer_index + channel_index])
+            timestamp = float(self._timestamp_buffer[available_samples - 1])
+            switch_channel = self._active_switch_channels[channel_index]
+        return value, timestamp, switch_channel
+
+    def _compat_value_to_frequency_hz(self, value: float, switch_channel: int) -> float:
+        if self._channel_units[switch_channel] == "Hz":
+            return float(value)
+        return float(lambda2nu(value))
+
+    def _compat_value_to_wavelength_m(self, value: float, switch_channel: int) -> float:
+        if self._channel_units[switch_channel] == "Hz":
+            return float(c / value)
+        return float(value)
+
+    def start_acquisition(self) -> int:
+        try:
+            self._compat_ensure_running()
+        except Exception:
+            self.log.exception("Failed to start wavemeter acquisition.")
+            return -1
+        return 0
+
+    def stop_acquisition(self) -> int:
+        try:
+            if self.module_state() == "locked":
+                self.stop_stream()
+        except Exception:
+            self.log.exception("Failed to stop wavemeter acquisition.")
+            return -1
+        return 0
+
+    def get_current_wavelength(self, kind: str = "air") -> float:
+        value, _, switch_channel = self._compat_get_latest_channel_value(0)
+        frequency_hz = self._compat_value_to_frequency_hz(value, switch_channel)
+        wavelength_m = self._compat_value_to_wavelength_m(value, switch_channel)
+
+        mode = kind.lower()
+        if mode in {"freq", "hz"}:
+            return float(frequency_hz)
+        if mode == "thz":
+            return float(frequency_hz / 1e12)
+        if mode == "m":
+            return float(wavelength_m)
+        # Legacy wavemeter callers expect wavelength-like values in nm.
+        return float(wavelength_m * 1e9)
+
+    def get_current_wavelength2(self, kind: str = "air") -> float:
+        try:
+            value, _, switch_channel = self._compat_get_latest_channel_value(1)
+        except (IndexError, TimeoutError):
+            return -2.0
+
+        frequency_hz = self._compat_value_to_frequency_hz(value, switch_channel)
+        wavelength_m = self._compat_value_to_wavelength_m(value, switch_channel)
+        mode = kind.lower()
+        if mode in {"freq", "hz"}:
+            return float(frequency_hz)
+        if mode == "thz":
+            return float(frequency_hz / 1e12)
+        if mode == "m":
+            return float(wavelength_m)
+        return float(wavelength_m * 1e9)
+
+    def get_current_frequency(self) -> float:
+        return self.get_current_wavelength(kind="freq")
+
+    def set_lock_frequency(self, frequency: float) -> None:
+        self._lock_target_frequency_hz = float(frequency)
+
+    def lock_frequency(self) -> None:
+        if self._lock_target_frequency_hz is None:
+            self._lock_target_frequency_hz = self.get_current_frequency()
+        wavelength_nm = c / self._lock_target_frequency_hz * 1e9
+        self.start_lock(wavelength=wavelength_nm)
+
+    def unlock_frequency(self) -> None:
+        self.stop_lock()
+
+    def get_timing(self) -> float:
+        if self._measurement_timing is not None:
+            return float(self._measurement_timing)
+        sample_rate = self.sample_rate
+        return float(1 / sample_rate) if sample_rate else 0.0
+
+    def set_timing(self, timing: float) -> int:
+        self._measurement_timing = float(timing)
+        return 0
+
+    def empty_buffer(self) -> None:
+        with self._lock:
+            if self._data_buffer is not None:
+                self._data_buffer.fill(0)
+            if self._timestamp_buffer is not None:
+                self._timestamp_buffer.fill(0)
+            self._current_buffer_position = 0
+            self._buffer_overflow = False
+
+    def get_wavelength_buffer(self) -> np.ndarray:
+        try:
+            self._compat_wait_for_samples()
+        except TimeoutError:
+            return np.array([[self.get_current_wavelength(kind="THz"), 0.0]])
+
+        with self._lock:
+            available_samples = self.available_samples
+            if available_samples < 1:
+                return np.array([[self.get_current_wavelength(kind="THz"), 0.0]])
+
+            number_of_channels = len(self.active_channels)
+            switch_channel = self._active_switch_channels[0]
+            values = self._data_buffer[: available_samples * number_of_channels : number_of_channels].copy()
+            timestamps = self._timestamp_buffer[:available_samples].copy()
+
+        if self._channel_units[switch_channel] == "Hz":
+            wavelengths_thz = values / 1e12
+        else:
+            wavelengths_thz = lambda2nu(values) / 1e12
+        return np.column_stack((wavelengths_thz, timestamps))
 
     @property
     def constraints(self) -> DataInStreamConstraints:
