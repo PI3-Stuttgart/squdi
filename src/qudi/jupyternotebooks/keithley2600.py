@@ -661,7 +661,9 @@ class SMU26xx:
         # Use a marker prefix to detect stale instrument output from prior commands.
         cmd = 'errorcode, message = errorqueue.next()\nprint("QERR", errorcode, message)'
         last_response = None
-        for _ in range(3):
+        # Drain queue entries until we reach code==0.
+        # Ignore stale -286 ("Script Aborted by User") entries that can remain from interrupted runs.
+        for _ in range(20):
             response = self.__instrument.query(str(cmd)).rstrip('\r\n')
             last_response = response
             if self.__debug:
@@ -677,12 +679,21 @@ class SMU26xx:
                     raise ValueError(
                         'Unexpected error queue payload from SMU: "' + str(response) + '"'
                     )
+                if code_value == 0:
+                    return
+
+                if int(code_value) == -286 and 'Script Aborted by User' in str(message):
+                    if self.__debug:
+                        print('Ignoring stale Keithley error -286 (Script Aborted by User)')
+                    # Keep draining queue
+                    continue
+
                 if code_value != 0:
                     # if we have an error code something happened and we should raise an error
                     raise ValueError(
                         'The SMU said: "' + str(message) + '"  /  Keithley-Error-Code: ' + str(code)
                     )
-                return
+                continue
 
             # If we are here the reply is not an error-queue response (stale output), clear and retry.
             try:
@@ -690,7 +701,9 @@ class SMU26xx:
             except Exception:
                 pass
 
-        raise ValueError('Unexpected response while checking SMU error queue: "' + str(last_response) + '"')
+        raise ValueError(
+            'Unexpected or non-empty response while checking SMU error queue: "' + str(last_response) + '"'
+        )
 
     def write_lua(self, cmd, check_for_errors=True):
         """
