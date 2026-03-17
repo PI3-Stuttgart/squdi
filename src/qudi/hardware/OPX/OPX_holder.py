@@ -54,6 +54,7 @@ class OPX(Base):  # hardware, awg,
         self.cw_job = None
         self.cw_do_states = {}
         self.cw_ao_values = {}
+        self.prev_LaserScanner_red_voltge = 0
 
     def on_activate(self) -> None:
         """Loads QM config and establishs connection to OPX+"""
@@ -83,10 +84,8 @@ class OPX(Base):  # hardware, awg,
 
     def run_cw_mode(self) -> None:
         """Runs a continuous wave program on the OPX that sets the digital and analog outputs as specified in the dictionaries."""
-
         ls_curr_do: list = [key for key, value in self.cw_do_states.items() if value == "on"]
         dict_curr_ao = {key: value for key, value in self.cw_ao_values.items() if value != 0.0}
-
         # check if any output should be set, if not stop the current qm program
         if not ls_curr_do and not dict_curr_ao:
             if self.cw_job:
@@ -94,10 +93,14 @@ class OPX(Base):  # hardware, awg,
         else:
             duration = 1 * u.us
             with program() as cw_program:
-                with infinite_loop_():
-                    if "LaserScanner_red" in dict_curr_ao.keys():
-                        set_dc_offset("LaserScanner_red", "single", dict_curr_ao["LaserScanner_red"])
+                if ("LaserScanner_red" in dict_curr_ao.keys()) and (dict_curr_ao["LaserScanner_red"] != self.prev_LaserScanner_red_voltge):
+                    self.log.warning(
+                        f"Setting LaserScanner_red voltage to {dict_curr_ao['LaserScanner_red']} V (Prev voltage: {self.prev_LaserScanner_red_voltge} V)"
+                    )
+                    self.prev_LaserScanner_red_voltge = dict_curr_ao["LaserScanner_red"]
+                    set_dc_offset("LaserScanner_red", "single", dict_curr_ao["LaserScanner_red"] * 0.5)
                     dict_curr_ao.pop("LaserScanner_red", None)
+                with infinite_loop_():
                     for ao, power in dict_curr_ao.items():
                         # checks if same element also uses digital output
                         pulse = "pulse" if ao in ls_curr_do else "power"

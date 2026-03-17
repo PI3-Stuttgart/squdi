@@ -196,16 +196,43 @@ class queue_logic(GenericLogic):
         self.tt.load_rabi_parameters()
 
     def on_deactivate(self):
-        self.timer.stop()
-        # FIXME destroy me gently
+        try:
+            self.timer.stop()
+        except Exception:
+            pass
 
-    @property
-    def md(self):
-        return self._mcas_dict  #
+        try:
+            if hasattr(self, "thread") and hasattr(self.thread, "stop_request"):
+                self.thread.stop_request.set()
+        except Exception:
+            pass
 
-    @property
-    def gui(self):
-        return self._gui
+        # Try to stop currently running NuclearOps cleanly
+        try:
+            if hasattr(self, "cun") and self.cun is not None:
+                self.log.info("Stopping active NuclearOps measurement.")
+                self.cun.stop()
+        except Exception:
+            self.log.exception("Failed to stop current NuclearOps instance cleanly.")
+
+        # Clear pending queue entries
+        try:
+            self.q.queue.clear()
+        except Exception:
+            pass
+
+        try:
+            self.script_queue.list = []
+        except Exception:
+            pass
+
+        @property
+        def md(self):
+            return self._mcas_dict  #
+
+        @property
+        def gui(self):
+            return self._gui
 
     # def restart_timetagger(self):
     #     import TimeTaggerHandler
