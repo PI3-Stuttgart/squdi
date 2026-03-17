@@ -602,20 +602,32 @@ class PLEScanGui(GuiBase):
     @QtCore.Slot()
     def sliders_values_are_changing_averaged_data(self):
         value = self._mw.ple_averaged_widget.target_point.value()
+        self._mw.constDoubleSpinBox.blockSignals(True)
+        self._mw.ple_widget.target_point.blockSignals(True)
         self._mw.constDoubleSpinBox.setValue(value)
         self._mw.ple_widget.target_point.setValue(value)
+        self._mw.ple_widget.target_point.blockSignals(False)
+        self._mw.constDoubleSpinBox.blockSignals(False)
 
     @QtCore.Slot()
     def sliders_values_are_changing(self):
         value = self._mw.ple_widget.target_point.value()
+        self._mw.constDoubleSpinBox.blockSignals(True)
+        self._mw.ple_averaged_widget.target_point.blockSignals(True)
         self._mw.constDoubleSpinBox.setValue(value)
         self._mw.ple_averaged_widget.target_point.setValue(value)
+        self._mw.ple_averaged_widget.target_point.blockSignals(False)
+        self._mw.constDoubleSpinBox.blockSignals(False)
 
     @QtCore.Slot()
     def const_changed(self):
         value = self._mw.constDoubleSpinBox.value()
+        self._mw.ple_widget.target_point.blockSignals(True)
+        self._mw.ple_averaged_widget.target_point.blockSignals(True)
         self._mw.ple_widget.target_point.setValue(value)
         self._mw.ple_averaged_widget.target_point.setValue(value)
+        self._mw.ple_averaged_widget.target_point.blockSignals(False)
+        self._mw.ple_widget.target_point.blockSignals(False)
 
     @QtCore.Slot()
     def restore_scanner_settings(self):

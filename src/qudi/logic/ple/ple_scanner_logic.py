@@ -77,7 +77,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         name="frequency_calibration_settle_time", default=3, missing="nothing"
     )
     _frequency_calibration_poly_degree = ConfigOption(
-        name="frequency_calibration_poly_degree", default=2, missing="nothing"
+        name="frequency_calibration_poly_degree", default=1, missing="nothing"
     )
 
     #! We should refactor it to the hardware scanner interface
@@ -575,6 +575,7 @@ class PLEScannerLogic(ScanningProbeLogic):
                 )
                 sleep(float(self._frequency_calibration_settle_time))
                 frequencies_thz.append(self._sample_wavemeter_frequency_thz())
+                sleep(float(0.5))
         finally:
             if isinstance(original_target, dict) and self._scan_axis in original_target:
                 self.set_target_position(
