@@ -156,6 +156,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         self._frequency_calibration_data = None
         self._frequency_calibration_coefficients = None
         self._frequency_offset_thz = None
+        self._frequency_calibration_voltage_range = None
         self._frequency_axis_relative_hz = None
         self._frequency_calibration_file = None
 
@@ -260,6 +261,25 @@ class PLEScannerLogic(ScanningProbeLogic):
             return self._frequency_calibration_path
         return os.path.join(self.module_default_data_dir, "ple_frequency_calibration")
 
+    def _get_frequency_calibration_voltage_range(self):
+        if self._frequency_calibration_voltage_range is not None:
+            return tuple(self._frequency_calibration_voltage_range)
+        if self._frequency_calibration_data is not None:
+            scan_range = self._frequency_calibration_data.attrs.get("scan_range")
+            if scan_range is not None:
+                return float(min(scan_range)), float(max(scan_range))
+            if "voltage" in self._frequency_calibration_data.coords:
+                voltage = self._frequency_calibration_data.voltage.values
+                return float(np.min(voltage)), float(np.max(voltage))
+        axis_range = self.scanner_constraints.axes[self._scan_axis].value_range
+        return float(min(axis_range)), float(max(axis_range))
+
+    def _get_frequency_offset_thz(self):
+        if self._frequency_offset_thz is None:
+            center_voltage = float(np.mean(self._get_frequency_calibration_voltage_range()))
+            self._frequency_offset_thz = float(self._evaluate_frequency_fit_thz(center_voltage))
+        return float(self._frequency_offset_thz)
+
     def _read_wavemeter_frequency_thz(self):
         reading = self._wavemeter().get_current_wavelength(kind="freq")
         if reading is None:
@@ -296,8 +316,7 @@ class PLEScannerLogic(ScanningProbeLogic):
 
     def _relative_frequency_axis_hz_from_voltage(self, voltage_axis):
         frequency_axis_thz = np.asarray(self._evaluate_frequency_fit_thz(voltage_axis), dtype=float)
-        offset_thz = float(self._evaluate_frequency_fit_thz(np.mean(self.scan_ranges[self._scan_axis])))
-        self._frequency_offset_thz = offset_thz
+        offset_thz = self._get_frequency_offset_thz()
         return (frequency_axis_thz - offset_thz) * 1e12
 
     def get_scan_x_data(self, scan_data=None):
@@ -327,7 +346,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         if not self.has_frequency_calibration:
             return float(value)
 
-        scan_range = self.scan_ranges[self._scan_axis]
+        scan_range = self._get_frequency_calibration_voltage_range()
         voltage_axis = np.linspace(scan_range[0], scan_range[1], 2000)
         frequency_axis_hz = self._relative_frequency_axis_hz_from_voltage(voltage_axis)
         order = np.argsort(frequency_axis_hz)
@@ -348,6 +367,7 @@ class PLEScannerLogic(ScanningProbeLogic):
             metadata.update(
                 {
                     "frequency_axis_offset_thz": self._frequency_offset_thz,
+                    "frequency_calibration_voltage_range": self._get_frequency_calibration_voltage_range(),
                     "frequency_calibration_file": self._frequency_calibration_file,
                     "frequency_calibration_coefficients": list(self._frequency_calibration_coefficients),
                 }
@@ -418,10 +438,10 @@ class PLEScannerLogic(ScanningProbeLogic):
             voltage = dataset.voltage.values
             frequency_thz = dataset.frequency_thz.values
             self._fit_frequency_calibration(voltage, frequency_thz)
+        self._frequency_calibration_voltage_range = self._get_frequency_calibration_voltage_range()
         offset_attr = dataset.attrs.get("frequency_offset_thz")
         if offset_attr is None:
-            scan_range = dataset.attrs.get("scan_range", self.scan_ranges[self._scan_axis])
-            center_voltage = float(np.mean(scan_range))
+            center_voltage = float(np.mean(self._get_frequency_calibration_voltage_range()))
             self._frequency_offset_thz = float(self._evaluate_frequency_fit_thz(center_voltage))
         else:
             self._frequency_offset_thz = float(offset_attr)
@@ -437,12 +457,13 @@ class PLEScannerLogic(ScanningProbeLogic):
             self.log.warning("No wavemeter connected, cannot calibrate PLE frequency axis.")
             return
 
-        scan_range = self.scan_ranges[self._scan_axis]
+        scan_range = tuple(self.scanner_constraints.axes[self._scan_axis].value_range)
         voltages = np.linspace(
             scan_range[0], scan_range[1], int(self._frequency_calibration_points)
         )
-        original_target = self.scanner_target
+        original_target = dict(self.scanner_target)
         frequencies_thz = []
+        self._frequency_calibration_voltage_range = (float(min(scan_range)), float(max(scan_range)))
 
         try:
             for voltage in voltages:
@@ -462,6 +483,9 @@ class PLEScannerLogic(ScanningProbeLogic):
 
         frequencies_thz = np.asarray(frequencies_thz, dtype=float)
         self._fit_frequency_calibration(voltages, frequencies_thz)
+        self._frequency_offset_thz = float(
+            self._evaluate_frequency_fit_thz(np.mean(self._frequency_calibration_voltage_range))
+        )
         relative_frequency_hz = self._relative_frequency_axis_hz_from_voltage(voltages)
 
         self._frequency_calibration_data = xr.Dataset(
@@ -491,6 +515,17 @@ class PLEScannerLogic(ScanningProbeLogic):
         )
         self.save_frequency_calibration_data()
         self.sigFrequencyCalibrationUpdated.emit(self.get_frequency_calibration_metadata())
+        self.set_full_scan_ranges()
+        self.sigScannerTargetChanged.emit(self.scanner_target, self.module_uuid)
+
+    def set_full_scan_ranges(self):
+        if self.has_frequency_calibration:
+            scan_range = {
+                ax: axis.value_range for ax, axis in self.scanner_constraints.axes.items()
+            }
+            scan_range[self._scan_axis] = self._get_frequency_calibration_voltage_range()
+            return self.set_scan_range(scan_range)
+        return super().set_full_scan_ranges()
 
     def get_average(self, scan_data):
         averaged_data = {}
