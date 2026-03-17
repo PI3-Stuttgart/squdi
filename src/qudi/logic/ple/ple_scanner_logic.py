@@ -470,7 +470,8 @@ class PLEScannerLogic(ScanningProbeLogic):
             )
         )
         freq_fit = (
-            self._evaluate_frequency_fit_thz(voltage_fit * 1e3) - zero_voltage_offset_thz
+            self._evaluate_frequency_fit_thz(voltage_fit * 1e3)
+            - zero_voltage_offset_thz
         ) * 1e3
 
         plt.figure(figsize=(8, 6))
@@ -529,16 +530,21 @@ class PLEScannerLogic(ScanningProbeLogic):
                     voltage = voltage * 1e3
 
                 if "frequency_thz" in dataset.data_vars:
-                    frequency_thz = np.asarray(dataset.frequency_thz.values, dtype=float)
+                    frequency_thz = np.asarray(
+                        dataset.frequency_thz.values, dtype=float
+                    )
                 elif "frequency_ghz" in dataset.data_vars:
                     zero_voltage_offset_thz = float(
                         dataset.attrs["frequency_at_zero_voltage_thz"]
                     )
-                    frequency_thz = zero_voltage_offset_thz + np.asarray(
-                        dataset.frequency_ghz.values, dtype=float
-                    ) / 1e3
+                    frequency_thz = (
+                        zero_voltage_offset_thz
+                        + np.asarray(dataset.frequency_ghz.values, dtype=float) / 1e3
+                    )
                 else:
-                    raise ValueError("Calibration file contains no usable frequency data.")
+                    raise ValueError(
+                        "Calibration file contains no usable frequency data."
+                    )
                 self._fit_frequency_calibration(voltage, frequency_thz)
             self._frequency_calibration_voltage_range = (
                 self._get_frequency_calibration_voltage_range()
@@ -584,12 +590,12 @@ class PLEScannerLogic(ScanningProbeLogic):
         scan_range = tuple(self.scanner_constraints.axes[self._scan_axis].value_range)
         voltages = np.linspace(
             scan_range[0], scan_range[1], int(self._frequency_calibration_points)
-        )
+        )[-1]
         original_target = dict(self.scanner_target)
         frequencies_thz = []
         self._frequency_calibration_voltage_range = (
-            float(min(scan_range)),
-            float(max(scan_range)),
+            float(min(voltages)),
+            float(max(voltages)),
         )
 
         try:
