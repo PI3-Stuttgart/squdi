@@ -404,30 +404,37 @@ class queue_logic(GenericLogic):
         if not hasattr(self, "q"):
             return
 
+        stop_requested = (
+            self.thread is not None and self.thread.stop_request.is_set()
+        )
+
         # print('mainloop NOPS QUEUE watcher..')
-        if self.thread is not None and self.thread.stop_request.is_set():
+        if stop_requested:
             print("stop request")
             self._clear_pending_queue(
                 update_gui=not self._shutting_down, keep_current=True
             )
-            if self._shutting_down or hasattr(self, "current_script"):
+            if self._shutting_down:
                 return
-            self.thread.stop_request.clear()
-            return
+            if not hasattr(self, "current_script"):
+                self.thread.stop_request.clear()
+                return
 
         if self._shutting_down:
             return
 
         try:
-            if hasattr(self, "current_script") and self.cun is not None:
-                # print('has already the CUN, check its state.')
-                if self.cun.state not in ["run", "sequence_testing"]:
+            if hasattr(self, "current_script"):
+                cun = self.cun
+                if cun is None or cun.state not in ["run", "sequence_testing"]:
                     print("its finished, fininishing ")
                     self.finish_measurement()
+                    if stop_requested:
+                        self.thread.stop_request.clear()
+                        return
                     self.start_next_measurement()
-                    # self.wait_for_a_measurement()
                 else:
-                    print("CUN state is " + self.cun.state + " doing nothing...")
+                    print("CUN state is " + cun.state + " doing nothing...")
                     pass
                     # print('There is a cun but it is workin, check you later...')
                     # we need to wait...
