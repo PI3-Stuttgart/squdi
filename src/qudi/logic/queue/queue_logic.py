@@ -427,13 +427,13 @@ class queue_logic(GenericLogic):
         try:
             if hasattr(self, "cun") and self.cun is not None:
                 # print('has already the CUN, check its state.')
-                if self.cun._state not in ["run", "sequence_testing"]:
+                if self.cun.state not in ["run", "sequence_testing"]:
                     print("its finished, fininishing ")
                     self.finish_measurement()
                     self.start_next_measurement()
                     # self.wait_for_a_measurement()
                 else:
-                    print("CUN state is " + self.cun._state + " doing nothing...")
+                    print("CUN state is " + self.cun.state + " doing nothing...")
                     pass
                     # print('There is a cun but it is workin, check you later...')
                     # we need to wait...
