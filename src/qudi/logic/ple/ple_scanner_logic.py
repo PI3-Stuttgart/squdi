@@ -590,7 +590,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         scan_range = tuple(self.scanner_constraints.axes[self._scan_axis].value_range)
         voltages = np.linspace(
             scan_range[0], scan_range[1], int(self._frequency_calibration_points)
-        )[-1]
+        )[:-1]
         original_target = dict(self.scanner_target)
         frequencies_thz = []
         self._frequency_calibration_voltage_range = (
