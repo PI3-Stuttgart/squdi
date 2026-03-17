@@ -106,7 +106,7 @@ class OPX(Base):  # hardware, awg,
         dict_curr_ao = {
             key: value
             for key, value in self.cw_ao_values.items()
-            if key not in ["SPCM1", "SPCM2"]
+            if key not in ["SPCM1", "SPCM2", "RF"]
         }
         # check if any output should be set, if not stop the current qm program
         if not ls_curr_do and not dict_curr_ao:
