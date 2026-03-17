@@ -575,6 +575,9 @@ class PulsedMeasurementLogic(LogicBase):
             self._counter_backend = self._resolve_counter_backend()
             self.set_tagger_settings()
 
+        self.sigCrcSettingsUpdated.emit(self.crc_settings)
+        return self.crc_settings
+
     # Backward-compatible alias for tagger_settings
     @property
     def fast_counter_settings(self):

@@ -17,9 +17,12 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PySide2 import QtCore, QtGui, QtWidgets
+from PySide2 import QtCore, QtWidgets
 
 import qudi.util.uic as uic
+from qudi.util.colordefs import ColorScaleRdBuRev as ColorScale
+from qudi.util.widgets.plotting.colorbar import ColorBarWidget
+from qudi.util.widgets.plotting.plot_item import DataImageItem
 from qudi.core.connector import Connector
 from qudi.core.module import GuiBase
 from qudi.core.statusvariable import StatusVar
@@ -258,13 +261,26 @@ class BFieldSweepMainWindow(QtWidgets.QMainWindow):
 
         self.matrix_plot_dock = QtWidgets.QDockWidget("PLE Matrix vs B Angle", self)
         self.matrix_plot_dock.setObjectName("BFieldSweepMatrixPlotDock")
+        matrix_widget = QtWidgets.QWidget(self.matrix_plot_dock)
+        matrix_layout = QtWidgets.QHBoxLayout(matrix_widget)
+        matrix_layout.setContentsMargins(0, 0, 0, 0)
+        matrix_layout.setSpacing(6)
+
         self.matrix_plot = pg.PlotWidget()
         self.matrix_plot.setLabel("bottom", "Frequency")
         self.matrix_plot.setLabel("left", "B-field angle", units="deg")
         self.matrix_plot.showGrid(x=True, y=True, alpha=0.2)
-        self.matrix_image = pg.ImageItem(axisOrder="row-major")
+        self.matrix_image = DataImageItem(colorscale=ColorScale)
         self.matrix_plot.addItem(self.matrix_image)
-        self.matrix_plot_dock.setWidget(self.matrix_plot)
+        self.matrix_colorbar = ColorBarWidget(colorscale=ColorScale)
+        self.matrix_colorbar.set_label("Signal")
+        self.matrix_colorbar.setSizePolicy(
+            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding
+        )
+
+        matrix_layout.addWidget(self.matrix_plot, 1)
+        matrix_layout.addWidget(self.matrix_colorbar, 0)
+        self.matrix_plot_dock.setWidget(matrix_widget)
 
     def _create_save_dock(self):
         ui_file = os.path.join(os.path.dirname(__file__), "save_path_widget.ui")
@@ -294,6 +310,10 @@ class BFieldSweepGui(GuiBase):
 
         self._mw = BFieldSweepMainWindow()
         self._restore_window_geometry(self._mw)
+        if self._mw.matrix_colorbar.mode is ColorBarWidget.ColorBarMode.PERCENTILE:
+            self._mw.matrix_image.set_percentiles(self._mw.matrix_colorbar.percentiles)
+        else:
+            self._mw.matrix_image.set_percentiles(None)
 
         logic = self._logic()
         defaults = logic.get_default_settings()
@@ -319,6 +339,15 @@ class BFieldSweepGui(GuiBase):
         self._mw.action_start.triggered.connect(self._start_clicked)
         self._mw.action_stop.triggered.connect(self._stop_clicked)
         self._mw.action_save.triggered.connect(self._save_clicked)
+        self._mw.matrix_colorbar.sigModeChanged.connect(
+            self._matrix_colorbar_mode_changed
+        )
+        self._mw.matrix_colorbar.sigLimitsChanged.connect(
+            self._matrix_colorbar_limits_changed
+        )
+        self._mw.matrix_colorbar.sigPercentilesChanged.connect(
+            self._matrix_colorbar_percentiles_changed
+        )
 
         # GUI -> logic
         self.sigStartSweep.connect(logic.start_sweep, QtCore.Qt.QueuedConnection)
@@ -371,6 +400,9 @@ class BFieldSweepGui(GuiBase):
             self._mw.action_start.triggered,
             self._mw.action_stop.triggered,
             self._mw.action_save.triggered,
+            self._mw.matrix_colorbar.sigModeChanged,
+            self._mw.matrix_colorbar.sigLimitsChanged,
+            self._mw.matrix_colorbar.sigPercentilesChanged,
         ):
             try:
                 signal.disconnect()
@@ -539,10 +571,7 @@ class BFieldSweepGui(GuiBase):
             self._mw.bx_actual_curve.setData([], [])
             self._mw.by_actual_curve.setData([], [])
             self._mw.bz_actual_curve.setData([], [])
-            self._mw.matrix_image.setImage(
-                np.array([[np.nan]], dtype=float), autoLevels=True
-            )
-            self._mw.matrix_image.setTransform(QtGui.QTransform())
+            self._mw.matrix_image.set_image(image=None)
             self._mw.fit_center_label.setText("nan")
             self._mw.peak_counts_label.setText("nan")
             return
@@ -649,33 +678,65 @@ class BFieldSweepGui(GuiBase):
             angles.append(angle)
 
         if len(traces) == 0:
-            self._mw.matrix_image.setImage(np.array([[np.nan]], dtype=float), autoLevels=True)
-            self._mw.matrix_image.setTransform(QtGui.QTransform())
+            self._mw.matrix_image.set_image(image=None)
             return
 
         matrix = np.asarray(traces, dtype=float)
-        self._mw.matrix_image.setImage(matrix, autoLevels=True)
-
         x_axis_ref = np.asarray(x_axis_ref, dtype=float)
         angles = np.asarray(angles, dtype=float)
+        if angles.size > 1 and angles[0] > angles[-1]:
+            angles = angles[::-1]
+            matrix = matrix[::-1, :]
+
+        # DataImageItem expects first dimension along x and second along y.
+        image = matrix.T
+        if self._mw.matrix_colorbar.mode is ColorBarWidget.ColorBarMode.PERCENTILE:
+            self._mw.matrix_image.set_image(image=image, autoLevels=False)
+            levels = self._mw.matrix_image.levels
+            if levels is not None:
+                self._mw.matrix_colorbar.set_limits(*levels)
+        else:
+            self._mw.matrix_image.set_image(
+                image=image, autoLevels=False, levels=self._mw.matrix_colorbar.limits
+            )
 
         if x_axis_ref.size > 1:
-            dx = float((x_axis_ref[-1] - x_axis_ref[0]) / (x_axis_ref.size - 1))
+            x_extent = (float(x_axis_ref[0]), float(x_axis_ref[-1]))
         else:
-            dx = 1.0
+            center = float(x_axis_ref[0]) if x_axis_ref.size else 0.0
+            x_extent = (center - 0.5, center + 0.5)
         if angles.size > 1:
-            dy = float((angles[-1] - angles[0]) / (angles.size - 1))
+            y_extent = (float(angles[0]), float(angles[-1]))
         else:
-            dy = 1.0
+            center = float(angles[0]) if angles.size else 0.0
+            y_extent = (center - 0.5, center + 0.5)
 
-        transform = QtGui.QTransform()
-        transform.translate(float(x_axis_ref[0]), float(angles[0]))
-        transform.scale(dx if dx != 0 else 1.0, dy if dy != 0 else 1.0)
-        self._mw.matrix_image.setTransform(transform)
+        self._mw.matrix_image.set_image_extent(
+            (x_extent, y_extent), adjust_for_px_size=True
+        )
 
         self._mw.matrix_plot.setLabel("bottom", "Frequency", units=(x_unit or None))
         self._mw.matrix_plot.setLabel("left", "B-field angle", units="deg")
         self._mw.matrix_plot.enableAutoRange()
+
+    @QtCore.Slot(object)
+    def _matrix_colorbar_mode_changed(self, mode):
+        if mode is ColorBarWidget.ColorBarMode.PERCENTILE:
+            self._matrix_colorbar_percentiles_changed(self._mw.matrix_colorbar.percentiles)
+        else:
+            self._matrix_colorbar_limits_changed(self._mw.matrix_colorbar.limits)
+
+    @QtCore.Slot(tuple)
+    def _matrix_colorbar_limits_changed(self, limits):
+        self._mw.matrix_image.set_percentiles(None)
+        self._mw.matrix_image.setLevels(limits)
+
+    @QtCore.Slot(tuple)
+    def _matrix_colorbar_percentiles_changed(self, percentiles):
+        self._mw.matrix_image.set_percentiles(percentiles)
+        levels = self._mw.matrix_image.levels
+        if levels is not None:
+            self._mw.matrix_colorbar.set_limits(*levels)
 
     @staticmethod
     def _fmt(value, digits, suffix):
