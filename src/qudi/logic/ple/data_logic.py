@@ -299,6 +299,43 @@ class PleDataLogic(LogicBase):
                         arrowprops={'facecolor': '#17becf', 'shrink': 0.05})
         return fig
 
+    def _scan_axis_metadata(self, scan_data):
+        scan_logic = self._scan_logic()
+        axis = scan_data.scan_axes[0]
+        x_label, x_unit = scan_logic.get_scan_x_label()
+        x_data = np.asarray(scan_logic.get_scan_x_data(scan_data), dtype=float)
+        x_range = (
+            float(np.nanmin(x_data)),
+            float(np.nanmax(x_data)),
+        ) if x_data.size else (np.nan, np.nan)
+
+        metadata = {
+            f"{axis} axis name": x_label,
+            f"{axis} axis unit": x_unit,
+            f"{axis} scan range": x_range,
+            f"{axis} axis resolution": int(scan_data.scan_resolution[0]),
+            f"{axis} axis min": x_range[0],
+            f"{axis} axis max": x_range[1],
+        }
+        if scan_logic.has_frequency_calibration:
+            metadata.update(
+                {
+                    f"{axis} raw axis name": axis,
+                    f"{axis} raw axis unit": scan_data.axes_units[axis],
+                    f"{axis} raw scan range": scan_data.scan_range[0],
+                }
+            )
+        return metadata
+
+    def _build_saved_1d_trace(self, scan_data, data):
+        scan_logic = self._scan_logic()
+        x_data = np.asarray(scan_logic.get_scan_x_data(scan_data), dtype=float)
+        y_data = np.asarray(data, dtype=float)
+        valid_mask = ~np.isnan(y_data)
+        x_label, x_unit = scan_logic.get_scan_x_label()
+        column_headers = f"{x_label} ({x_unit}), Signal"
+        return np.column_stack((x_data[valid_mask], y_data[valid_mask])), column_headers
+
     def save_scan(self, scan_data, current_channel=None, fit_container=None, color_range=None, tag='', root_dir=None, control_parameters = dict()):
         self.current_channel = current_channel
         with self._thread_lock:
@@ -328,6 +365,9 @@ class PleDataLogic(LogicBase):
                     parameters[f"{axis} axis resolution"] = resolution
                     parameters[f"{axis} axis min"] = range[0]
                     parameters[f"{axis} axis max"] = range[1]
+
+                if len(scan_data.scan_axes) == 1:
+                    parameters.update(self._scan_axis_metadata(scan_data))
 
                 parameters["pixel frequency"] = scan_data.scan_frequency
                 parameters[f"scanner target at start"] = scan_data.scanner_target_at_start
@@ -359,14 +399,20 @@ class PleDataLogic(LogicBase):
                 # Save data and thumbnail to file
                 parameters.update(control_parameters)
                 for channel, data in scan_data.data.items():
+                    save_data = data
+                    column_headers = 'Image (columns is X, rows is Y)'
+                    if len(scan_data.scan_axes) == 1:
+                        save_data, column_headers = self._build_saved_1d_trace(
+                            scan_data, data
+                        )
                     # data
                     # nametag = '{0}_{1}{2}_image_scan'.format(channel, *scan_data.scan_axes)
                     nametag = self.create_tag_from_scan_data(scan_data, channel)
-                    file_path, _, _ = ds.save_data(data,
+                    file_path, _, _ = ds.save_data(save_data,
                                                    metadata=parameters,
                                                    nametag=nametag if tag == '' else f'{nametag}_{tag}',
                                                    timestamp=timestamp,
-                                                   column_headers='Image (columns is X, rows is Y)')
+                                                   column_headers=column_headers)
                     # thumbnail
                     self.last_saved_files_paths.update(
                         {f"scan_ch_{channel}": file_path},
@@ -400,11 +446,17 @@ class PleDataLogic(LogicBase):
                     )
                     #Averaged PLEs:
                     data_averaged = data.mean(axis=0)
-                    file_path, _, _ = ds.save_data(data_averaged,
+                    averaged_save_data = data_averaged
+                    averaged_headers = 'Image (columns is X, rows is Y)'
+                    if len(scan_data.scan_axes) == 1:
+                        averaged_save_data, averaged_headers = self._build_saved_1d_trace(
+                            scan_data, data_averaged
+                        )
+                    file_path, _, _ = ds.save_data(averaged_save_data,
                                                    metadata=parameters,
                                                    nametag=nametag + "_averaged" if tag == '' else f'_averaged_{nametag}_{tag}',
                                                    timestamp=timestamp,
-                                                   column_headers='Image (columns is X, rows is Y)')
+                                                   column_headers=averaged_headers)
 
                     figure = self.draw_1d_scan_figure(scan_data, channel, data_averaged=data_averaged)
                     ds.save_thumbnail(figure, file_path=file_path.rsplit('.', 1)[0])
@@ -525,9 +577,15 @@ class PleDataLogic(LogicBase):
         # annotate scanner position
         metainfo_str = "Scanner target:\n"
         for axis in scan_axes:
-            val = scanner_pos[axis]
-            unit = scan_data.axes_units[axis]
-            metainfo_str += f"{axis}: {ScaledFloat(val):.3r}{unit}\n"
+            if axis == scan_axes[0] and self._scan_logic().has_frequency_calibration:
+                val = self._scan_logic().voltage_to_display(scanner_pos[axis])
+                _, unit = self._scan_logic().get_scan_x_label()
+                label = self._scan_logic().get_scan_x_label()[0]
+                metainfo_str += f"{label}: {ScaledFloat(val):.3r}{unit}\n"
+            else:
+                val = scanner_pos[axis]
+                unit = scan_data.axes_units[axis]
+                metainfo_str += f"{axis}: {ScaledFloat(val):.3r}{unit}\n"
 
         # annotate the (all axes) scanner start target
         if scan_data.scanner_target_at_start:
