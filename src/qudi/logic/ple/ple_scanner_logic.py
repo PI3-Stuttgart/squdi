@@ -157,7 +157,6 @@ class PLEScannerLogic(ScanningProbeLogic):
         self._frequency_calibration_coefficients = None
         self._frequency_offset_thz = None
         self._frequency_calibration_voltage_range = None
-        self._frequency_axis_relative_hz = None
         self._frequency_calibration_file = None
 
     def on_activate(self):
@@ -660,7 +659,6 @@ class PLEScannerLogic(ScanningProbeLogic):
             )
             return
 
-        scan_range = self._get_scan_axis_range()
         voltage_range = self._get_hardware_voltage_range()
         voltages = np.linspace(
             voltage_range[0],
@@ -699,7 +697,6 @@ class PLEScannerLogic(ScanningProbeLogic):
                 np.mean(self._frequency_calibration_voltage_range)
             )
         )
-        relative_frequency_hz = self._relative_frequency_axis_hz_from_voltage(voltages)
         relative_frequency_ghz = (frequencies_thz - zero_voltage_offset_thz) * 1e3
 
         self._frequency_calibration_data = xr.Dataset(
@@ -718,19 +715,6 @@ class PLEScannerLogic(ScanningProbeLogic):
                     frequencies_thz,
                     attrs=dict(units="THz", long_name="Absolute Frequency"),
                 ),
-                relative_frequency_hz=xr.Variable(
-                    "voltage",
-                    relative_frequency_hz,
-                    attrs=dict(units="Hz", long_name="Relative Frequency"),
-                ),
-                scan_axis_position=xr.Variable(
-                    "voltage",
-                    scan_axis_values,
-                    attrs=dict(
-                        units=self.scanner_constraints.axes[self._scan_axis].unit,
-                        long_name="Scanner Axis Position",
-                    ),
-                ),
             ),
             coords=dict(
                 voltage=xr.Variable(
@@ -739,7 +723,6 @@ class PLEScannerLogic(ScanningProbeLogic):
             ),
             attrs=dict(
                 scan_axis=self._scan_axis,
-                scan_axis_unit=self.scanner_constraints.axes[self._scan_axis].unit,
                 frequency_offset_thz=float(self._frequency_offset_thz),
                 frequency_at_zero_voltage_thz=zero_voltage_offset_thz,
                 poly_coefficients=list(
@@ -747,7 +730,6 @@ class PLEScannerLogic(ScanningProbeLogic):
                 ),
                 calibration_points=int(self._frequency_calibration_points),
                 calibration_averages=int(self._frequency_calibration_averages),
-                scan_range=list(scan_range),
                 hardware_voltage_range_v=list(voltage_range),
                 calibration_input="hardware_voltage_v",
                 saved_voltage_unit="V",
