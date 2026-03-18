@@ -289,7 +289,7 @@ class PleDataLogic(LogicBase):
         # ax.get_yaxis().tick_left()
 
         # draw the scanner position if defined
-        pos_x = scan_logic.voltage_to_display(scanner_pos[axis])
+        pos_x = scan_logic.scan_value_to_display(scanner_pos[axis])
         if pos_x > np.min(x_axis) and pos_x < np.max(x_axis):
             trans_xmark = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
             ax.annotate('',
@@ -578,7 +578,7 @@ class PleDataLogic(LogicBase):
         metainfo_str = "Scanner target:\n"
         for axis in scan_axes:
             if axis == scan_axes[0] and self._scan_logic().has_frequency_calibration:
-                val = self._scan_logic().voltage_to_display(scanner_pos[axis])
+                val = self._scan_logic().scan_value_to_display(scanner_pos[axis])
                 _, unit = self._scan_logic().get_scan_x_label()
                 label = self._scan_logic().get_scan_x_label()[0]
                 metainfo_str += f"{label}: {ScaledFloat(val):.3r}{unit}\n"

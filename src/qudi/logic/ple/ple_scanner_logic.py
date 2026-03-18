@@ -348,7 +348,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         voltage_range = np.asarray(voltage_range, dtype=float)
         return float(np.min(voltage_range)), float(np.max(voltage_range))
 
-    def _get_frequency_calibration_voltage_range(self):
+    def _get_calibration_voltage_range(self):
         if self._frequency_calibration_voltage_range is not None:
             scan_range = tuple(self._frequency_calibration_voltage_range)
             if np.all(np.isfinite(scan_range)) and scan_range[0] != scan_range[1]:
@@ -371,7 +371,7 @@ class PLEScannerLogic(ScanningProbeLogic):
     def _get_frequency_offset_thz(self):
         if self._frequency_offset_thz is None:
             center_voltage = float(
-                np.mean(self._get_frequency_calibration_voltage_range())
+                np.mean(self._get_calibration_voltage_range())
             )
             self._frequency_offset_thz = float(
                 self._evaluate_frequency_fit_thz(center_voltage)
@@ -425,7 +425,7 @@ class PLEScannerLogic(ScanningProbeLogic):
             raise RuntimeError("No frequency calibration available.")
         return np.polyval(self._frequency_calibration_coefficients, voltage)
 
-    def _relative_frequency_axis_hz_from_voltage(self, voltage_axis):
+    def _calibrated_frequency_axis_hz_from_voltage(self, voltage_axis):
         frequency_axis_thz = np.asarray(
             self._evaluate_frequency_fit_thz(voltage_axis), dtype=float
         )
@@ -444,7 +444,7 @@ class PLEScannerLogic(ScanningProbeLogic):
         if not self.has_frequency_calibration:
             return scan_axis_values
         voltage_axis = self._scan_values_to_hardware_voltage(scan_axis_values)
-        x_data = self._relative_frequency_axis_hz_from_voltage(voltage_axis)
+        x_data = self._calibrated_frequency_axis_hz_from_voltage(voltage_axis)
         if not np.all(np.isfinite(x_data)):
             return scan_axis_values
         return x_data
@@ -459,13 +459,13 @@ class PLEScannerLogic(ScanningProbeLogic):
         axis = self.scanner_constraints.axes[self._scan_axis]
         return axis.name.title(), axis.unit
 
-    def display_to_voltage(self, value):
+    def display_to_scan_value(self, value):
         if not self.has_frequency_calibration:
             return float(value)
 
-        voltage_range = self._get_frequency_calibration_voltage_range()
+        voltage_range = self._get_calibration_voltage_range()
         voltage_axis = np.linspace(voltage_range[0], voltage_range[1], 2000)
-        frequency_axis_hz = self._relative_frequency_axis_hz_from_voltage(voltage_axis)
+        frequency_axis_hz = self._calibrated_frequency_axis_hz_from_voltage(voltage_axis)
         scan_axis_values = self._hardware_voltage_to_scan_values(voltage_axis)
         mask = (
             np.isfinite(voltage_axis)
@@ -479,12 +479,12 @@ class PLEScannerLogic(ScanningProbeLogic):
         order = np.argsort(frequency_axis_hz)
         return float(np.interp(value, frequency_axis_hz[order], scan_axis_values[order]))
 
-    def voltage_to_display(self, value):
+    def scan_value_to_display(self, value):
         if not self.has_frequency_calibration:
             return float(value)
         hardware_voltage = self._scan_value_to_hardware_voltage(value)
         display_value = float(
-            self._relative_frequency_axis_hz_from_voltage(
+            self._calibrated_frequency_axis_hz_from_voltage(
                 np.asarray([hardware_voltage])
             )[0]
         )
@@ -504,7 +504,7 @@ class PLEScannerLogic(ScanningProbeLogic):
             metadata.update(
                 {
                     "frequency_axis_offset_thz": self._frequency_offset_thz,
-                    "frequency_calibration_voltage_range": self._get_frequency_calibration_voltage_range(),
+                    "frequency_calibration_voltage_range": self._get_calibration_voltage_range(),
                     "frequency_calibration_file": self._frequency_calibration_file,
                     "frequency_calibration_coefficients": list(
                         self._frequency_calibration_coefficients
@@ -620,11 +620,11 @@ class PLEScannerLogic(ScanningProbeLogic):
                         "Calibration file contains no usable frequency data."
                     )
                 self._fit_frequency_calibration(voltage, frequency_thz)
-            self._frequency_calibration_voltage_range = self._get_frequency_calibration_voltage_range()
+            self._frequency_calibration_voltage_range = self._get_calibration_voltage_range()
             offset_attr = dataset.attrs.get("frequency_offset_thz")
             if offset_attr is None:
                 center_voltage = float(
-                    np.mean(self._get_frequency_calibration_voltage_range())
+                    np.mean(self._get_calibration_voltage_range())
                 )
                 self._frequency_offset_thz = float(
                     self._evaluate_frequency_fit_thz(center_voltage)
@@ -749,7 +749,7 @@ class PLEScannerLogic(ScanningProbeLogic):
                 ax: axis.value_range
                 for ax, axis in self.scanner_constraints.axes.items()
             }
-            voltage_range = self._get_frequency_calibration_voltage_range()
+            voltage_range = self._get_calibration_voltage_range()
             scan_range[self._scan_axis] = tuple(
                 self._hardware_voltage_to_scan_values(voltage_range)
             )

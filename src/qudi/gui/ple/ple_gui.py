@@ -514,8 +514,8 @@ class PLEScanGui(GuiBase):
             {
                 "range": {
                     self.scan_axis: (
-                        self._voltage_value_from_display(self._mw.startDoubleSpinBox.value()),
-                        self._voltage_value_from_display(self._mw.stopDoubleSpinBox.value()),
+                        self._scan_value_from_display(self._mw.startDoubleSpinBox.value()),
+                        self._scan_value_from_display(self._mw.stopDoubleSpinBox.value()),
                     )
                 }
             }
@@ -552,17 +552,17 @@ class PLEScanGui(GuiBase):
         self._mw.activateWindow()
         self._mw.raise_()
 
-    def _display_region_from_voltage_region(self, region):
-        return tuple(self._scanning_logic.voltage_to_display(val) for val in region)
+    def _display_region_from_scan_region(self, region):
+        return tuple(self._scanning_logic.scan_value_to_display(val) for val in region)
 
-    def _voltage_region_from_display_region(self, region):
-        return tuple(self._scanning_logic.display_to_voltage(val) for val in region)
+    def _scan_region_from_display_region(self, region):
+        return tuple(self._scanning_logic.display_to_scan_value(val) for val in region)
 
-    def _display_value_from_voltage(self, value):
-        return self._scanning_logic.voltage_to_display(value)
+    def _display_value_from_scan_value(self, value):
+        return self._scanning_logic.scan_value_to_display(value)
 
-    def _voltage_value_from_display(self, value):
-        return self._scanning_logic.display_to_voltage(value)
+    def _scan_value_from_display(self, value):
+        return self._scanning_logic.display_to_scan_value(value)
 
     @QtCore.Slot(object)
     def frequency_calibration_updated(self, metadata):
@@ -584,8 +584,8 @@ class PLEScanGui(GuiBase):
         self._mw.stopDoubleSpinBox.setValue(region[1])
         self._mw.ple_widget.selected_region.setRegion(region)
 
-        voltage_region = self._voltage_region_from_display_region(region)
-        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: voltage_region}})
+        scan_region = self._scan_region_from_display_region(region)
+        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: scan_region}})
 
     @QtCore.Slot()
     def region_value_changed(self):
@@ -596,8 +596,8 @@ class PLEScanGui(GuiBase):
         self._mw.ple_averaged_widget.selected_region.setRegion(region)
         self._mw.ple_widget.target_point.setValue(region[0])
 
-        voltage_region = self._voltage_region_from_display_region(region)
-        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: voltage_region}})
+        scan_region = self._scan_region_from_display_region(region)
+        self.sigScanSettingsChanged.emit({"range": {self.scan_axis: scan_region}})
 
     @QtCore.Slot()
     def sliders_values_are_changing_averaged_data(self):
@@ -663,7 +663,7 @@ class PLEScanGui(GuiBase):
             self._mw.resolutionDoubleSpinBox.setValue(settings["resolution"][self.scan_axis])
         if "range" in settings:
             x_range = settings["range"][self.scan_axis]
-            display_range = self._display_region_from_voltage_region(x_range)
+            display_range = self._display_region_from_scan_region(x_range)
             if not np.all(np.isfinite(display_range)):
                 self.log.warning(
                     "Ignoring invalid PLE display range %s and falling back to scanner range %s.",
@@ -683,7 +683,7 @@ class PLEScanGui(GuiBase):
 
             self._mw.ple_widget.selected_region.setRegion(display_range)
             self._mw.ple_widget.target_point.setValue(
-                self._display_value_from_voltage(
+                self._display_value_from_scan_value(
                     self._scanning_logic.scanner_target[self._scanning_logic._scan_axis]
                 )
             )
@@ -691,7 +691,7 @@ class PLEScanGui(GuiBase):
 
             self._mw.ple_averaged_widget.selected_region.setRegion(display_range)
             self._mw.ple_averaged_widget.target_point.setValue(
-                self._display_value_from_voltage(
+                self._display_value_from_scan_value(
                     self._scanning_logic.scanner_target[self._scanning_logic._scan_axis]
                 )
             )
@@ -718,7 +718,7 @@ class PLEScanGui(GuiBase):
         # target = self._mw.ple_widget.target_point.value()
 
         target_pos = {
-            self._scanning_logic._scan_axis: self._voltage_value_from_display(target)
+            self._scanning_logic._scan_axis: self._scan_value_from_display(target)
         }
 
         # self.scanner_target_updated(pos_dict=target_pos, caller_id=None)
@@ -741,7 +741,7 @@ class PLEScanGui(GuiBase):
         if not isinstance(pos_dict, dict):
             pos_dict = self._scanning_logic.scanner_target
 
-        display_value = self._display_value_from_voltage(
+        display_value = self._display_value_from_scan_value(
             pos_dict[self._scanning_logic._scan_axis]
         )
         self._mw.ple_widget.target_point.blockSignals(True)
@@ -848,7 +848,7 @@ class PLEScanGui(GuiBase):
                 self.optimizer_dockwidget.set_1d_position(next(iter(optimal_position.values())), scan_axs)
 
                 # FIX!! not general AT ALL
-                display_value = self._display_value_from_voltage(
+                display_value = self._display_value_from_scan_value(
                     optimal_position[self._scanning_logic._scan_axis]
                 )
                 self._mw.ple_widget.target_point.setValue(display_value)
