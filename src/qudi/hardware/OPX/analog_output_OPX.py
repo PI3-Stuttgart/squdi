@@ -26,7 +26,7 @@ from qm import SimulationConfig
 import matplotlib.pyplot as plt
 from typing import Iterable, Mapping, Union, Optional, Tuple, Type, Dict
 
-from qudi.UserScripts.OPX_snippets.OPX_utils import crc
+from qudi.hardware.OPX.OPX_utils import crc
 
 _Real = Union[int, float]
 
@@ -97,7 +97,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
                 _limits[ch] = (
                     -0.5,
                     0.5,
-                ) # default full voltage range OPX+
+                )  # default full voltage range OPX+
 
         self._constraints = ProcessControlConstraints(
             setpoint_channels=_channels,
