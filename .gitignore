@@ -33,4 +33,4 @@
 *.log.*
 /log
 /src/qudi/log
-/src/qudi/userscripts
+/src/qudi/UserScripts/old_other_setups
