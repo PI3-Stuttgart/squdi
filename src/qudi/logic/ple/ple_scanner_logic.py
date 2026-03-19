@@ -432,39 +432,68 @@ class PLEScannerLogic(ScanningProbeLogic):
         offset_thz = self._get_frequency_offset_thz()
         return (frequency_axis_thz - offset_thz) * 1e12
 
-    def voltage_to_calibrated_frequency(self, voltage):
-        """Convert hardware voltage in V to calibrated frequency in Hz."""
-        if not self.has_frequency_calibration:
-            raise RuntimeError("No frequency calibration available.")
+    def _scan_axis_frequency_scale_to_hz(self):
+        unit = str(self.scanner_constraints.axes[self._scan_axis].unit).strip().lower()
+        scale_map = {
+            "hz": 1.0,
+            "khz": 1e3,
+            "mhz": 1e6,
+            "ghz": 1e9,
+            "thz": 1e12,
+        }
+        if unit not in scale_map:
+            raise RuntimeError(
+                f'Scan axis unit "{self.scanner_constraints.axes[self._scan_axis].unit}" '
+                "cannot be interpreted as frequency."
+            )
+        return float(scale_map[unit])
 
+    def voltage_to_frequency(self, voltage):
+        """Convert hardware voltage in V to frequency in Hz."""
         voltage = np.asarray(voltage, dtype=float)
-        frequency_hz = self._calibrated_frequency_axis_hz_from_voltage(voltage)
+        if self.has_frequency_calibration:
+            frequency_hz = self._calibrated_frequency_axis_hz_from_voltage(voltage)
+        else:
+            scale = self._scan_axis_frequency_scale_to_hz()
+            scan_value = self._hardware_voltage_to_scan_values(voltage)
+            frequency_hz = np.asarray(scan_value, dtype=float) * scale
+
         return float(frequency_hz.item()) if frequency_hz.ndim == 0 else frequency_hz
 
-    def calibrated_frequency_to_voltage(self, frequency_hz):
-        """Convert calibrated frequency in Hz to hardware voltage in V."""
-        if not self.has_frequency_calibration:
-            raise RuntimeError("No frequency calibration available.")
-
-        voltage_range = self._get_calibration_voltage_range()
-        voltage_axis = np.linspace(voltage_range[0], voltage_range[1], 2000)
-        calibrated_frequency_axis = self._calibrated_frequency_axis_hz_from_voltage(
-            voltage_axis
-        )
-        mask = np.isfinite(voltage_axis) & np.isfinite(calibrated_frequency_axis)
-        if np.count_nonzero(mask) < 2:
-            raise RuntimeError("Frequency calibration interpolation is invalid.")
-
-        voltage_axis = voltage_axis[mask]
-        calibrated_frequency_axis = calibrated_frequency_axis[mask]
-        order = np.argsort(calibrated_frequency_axis)
+    def frequency_to_voltage(self, frequency_hz):
+        """Convert frequency in Hz to hardware voltage in V."""
         frequency_hz = np.asarray(frequency_hz, dtype=float)
-        voltage = np.interp(
-            frequency_hz,
-            calibrated_frequency_axis[order],
-            voltage_axis[order],
-        )
+        if self.has_frequency_calibration:
+            voltage_range = self._get_calibration_voltage_range()
+            voltage_axis = np.linspace(voltage_range[0], voltage_range[1], 2000)
+            frequency_axis_hz = self._calibrated_frequency_axis_hz_from_voltage(
+                voltage_axis
+            )
+            mask = np.isfinite(voltage_axis) & np.isfinite(frequency_axis_hz)
+            if np.count_nonzero(mask) < 2:
+                raise RuntimeError("Frequency calibration interpolation is invalid.")
+
+            voltage_axis = voltage_axis[mask]
+            frequency_axis_hz = frequency_axis_hz[mask]
+            order = np.argsort(frequency_axis_hz)
+            voltage = np.interp(
+                frequency_hz,
+                frequency_axis_hz[order],
+                voltage_axis[order],
+            )
+        else:
+            scan_value = frequency_hz / self._scan_axis_frequency_scale_to_hz()
+            voltage = self._scan_values_to_hardware_voltage(scan_value)
+
         return float(voltage.item()) if voltage.ndim == 0 else voltage
+
+    def voltage_to_calibrated_frequency(self, voltage):
+        """Backward-compatible alias for voltage_to_frequency()."""
+        return self.voltage_to_frequency(voltage)
+
+    def calibrated_frequency_to_voltage(self, frequency_hz):
+        """Backward-compatible alias for frequency_to_voltage()."""
+        return self.frequency_to_voltage(frequency_hz)
 
     def get_scan_x_data(self, scan_data=None):
         if scan_data is None:
