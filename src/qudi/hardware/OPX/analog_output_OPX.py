@@ -139,8 +139,8 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     def set_setpoint(self, channel: str, value: float) -> None:
         """Set new setpoint for a single channel"""
         self._opx.update_cw_ao(channel, value)
-        if channel == "LaserScanner_red":
-            self.log.warning("Changing the setpoint of the laser scanner")
+        # if channel == "LaserScanner_red":
+        #    self.log.warning("Changing the setpoint of the laser scanner")
 
     def get_setpoint(self, channel: str) -> float:
         """Get current setpoint for a single channel"""
