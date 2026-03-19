@@ -47,9 +47,7 @@ def ret_ret_mcas(pdc):
     def ret_mcas(self, current_iterator_df, sequence_name=None):
         """This function creates the sequence for the current itterator and returns the mcas object with the sequence programmed in it."""
         sequence_name = "PLE_itterator 2" if sequence_name is None else sequence_name
-        mcas = pc.MultiChSeq(
-            name=sequence_name, awg=self.queue.awg
-        ) 
+        mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg) 
         
         def chk_i(key):
             if key == nuclear.sweep_keys[0]:
