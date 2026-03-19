@@ -129,6 +129,12 @@ class ScriptQueueList(collections.abc.MutableSequence):
     def __repr__(self) -> str:
         return str(self.list)
 
+from qudi.logic.transition_tracker import TransitionTracker
+from qudi.hardware.OPX.OPX_holder import OPX
+from qudi.hardware.picoquant.ppg512 import PPG512
+from qudi.logic.magnetlogic import MagnetLogic
+from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
+from qudi.logic.ple.optimize_logic import PLEOptimizeScannerLogic
 
 class queue_logic(GenericLogic):
     """Timer-driven scheduler for dynamically loaded queue userscripts.
@@ -139,32 +145,23 @@ class queue_logic(GenericLogic):
     """
 
     # declare connections
-    mcas_holder = Connector(interface="McasDictHolderInterface")
-    opx_holder = Connector(interface="OPX")
-    transition_tracker = Connector(
-        interface="TransitionTracker"
-    )  # Should be a name of the class
-    confocal = Connector(interface="ScanningProbeLogic")
-    gated_counter = Connector("GatedCounter")  # Should be name of the class.
-    optimizer = Connector("ScanningOptimizeLogic")
-    fastcounter = Connector(interface="TT")
-    PLE_logic = Connector(interface="PLEOptimizeScannerLogic")  # only for refocuses...
-    magnet_logic = Connector(
-        interface="MagnetLogic"
-    )  ## Adding magnet logic to the queue
-    # odmr_logic= Connector("ODMRLogic_holder")
-    # currentmeasurementlogic= Connector("CurrentMeasurementLogic")
-    # biaslogic= Connector("BiasLogic")
-    # poimanagerlogic = Connector('PoiManagerLogic')
-    # powerstabilization_logic = Connector("PowerStabilizationLogic")
+    # McasHolder = Connector(interface="McasDictHolderInterface")
+    OpxHolder: OPX = Connector(interface="OPX")
+    TransitionTracker: TransitionTracker = Connector(interface="TransitionTracker")
+    Confocal = Connector(interface="ScanningProbeLogic")
+    GatedCounter = Connector("GatedCounter")
+    Optimizer = Connector("ScanningOptimizeLogic")
+    FastCounter = Connector(interface="TT")
+    PleOptimizeLogic: PLEOptimizeScannerLogic = Connector(interface="PLEOptimizeScannerLogic")
+    PleScannerLogic: PLEScannerLogic = Connector(interface="PLEScannerLogic") 
+    MagnetLogic: MagnetLogic = Connector(interface="MagnetLogic") 
+    PPG: PPG512 = Connector(interface="PPG512") 
     counterlogic1 = Connector(interface="TimeTaggerLogic")
     Wavemeter = Connector(interface="HighFinesseWavemeter")
-    dlc_pro_620 = Connector(interface="DlProLaser")
-    power_conversion = Connector(interface="AomPowerCalibration")
-    process_setpoint_combiner = Connector(interface="ProcessSetpointCombinerInterfuse")
-    switches = Connector(
-        interface="SwitchCombinerInterfuse"
-    )  # for controlling the switches in the setup, e.g. for switching between confocal and widefield.
+    DlcPro620 = Connector(interface="DlProLaser")
+    PowerConversion = Connector(interface="AomPowerCalibration")
+    ProcessSetpointCombiner = Connector(interface="ProcessSetpointCombinerInterfuse")
+    Switches = Connector(interface="SwitchCombinerInterfuse") 
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
     update_queue_list = pyqtSignal(collections.OrderedDict)
@@ -198,29 +195,27 @@ class queue_logic(GenericLogic):
         self._shutting_down = False
 
         # self._awg = self.mcas_holder()
-        self._awg = self.opx_holder()
-        self._transition_tracker = self.transition_tracker()
-        self._gated_counter: GatedCounter = self.gated_counter()
-        self._optimizer = self.optimizer()
-        self._PLE_logic = self.PLE_logic()
-        self._magnet_logic: MagnetLogic = self.magnet_logic()
-        # self._ODMR_logic = self.odmr_logic()
-        # self._currentmeasurementlogic:CurrentMeasurementLogic = self.currentmeasurementlogic() ### : is important for clicking through.
-        # self._biaslogic:BiasLogic = self.biaslogic()
-        # self._powerstabilization_logic = self.powerstabilization_logic() ##: TODO - here we can recover it with our own code
-        # self._poimanagerlogic = self.poimanagerlogic() # :TODO - this is legacy poi manager, but we can use the new one.
+        self.awg = self.OpxHolder()
+        self.transition_tracker = self.TransitionTracker()
+        self.gated_counter = self.GatedCounter()
+        self.optimizer = self.Optimizer()
+        self.ple_optimize_logic = self.PleOptimizeLogic()
+        self.ple_scanner_logic = self.PleScannerLogic()
+        self.magnet_logic = self.MagnetLogic()
+        self.ppg = self.PPG()
+
         self._counter = self.counterlogic1()  #
-        self._fast_counter_device = self.fastcounter()
-        self._wavemeter = self.Wavemeter()  # type: HighFinesseWavemeter
-        self._dlc_pro_620 = self.dlc_pro_620()
-        self._process_setpoint_combiner = self.process_setpoint_combiner()
-        self._switches = self.switches()
+        self.fast_counter_device = self.FastCounter()
+        self.wavemeter = self.Wavemeter()  # type: HighFinesseWavemeter
+        self.dlc_pro_620 = self.DlcPro620()
+        self.ao = self.ProcessSetpointCombiner()
+        self.do = self.Switches()
         # self.create_odmr()  #only logic (no gui)
         self.init_run()
-        # self.write_standard_awg_sequences()
-        self._confocal = self.confocal()
-        self.tt = self._transition_tracker
-        self._power_conversion = self.power_conversion()
+        # self.write_standardawg_sequences()
+        self.confocal = self.Confocal()
+        self.tt = self.transition_tracker
+        self.power_conversion = self.PowerConversion()
         self.tt.load_rabi_parameters()
 
     def on_deactivate(self) -> None:

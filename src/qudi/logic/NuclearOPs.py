@@ -10,8 +10,6 @@ if sys.version_info.major == 2:
 else:
     from importlib import reload
 
-# TODO connect the objects, e.g. gated counter.
-# from self.queueiamond import self.queue
 
 import importlib
 import zipfile
@@ -47,6 +45,8 @@ import hashlib
 from collections import OrderedDict
 from typing import Any, Dict, Optional, Sequence
 
+from logic.queue.queue_logic import queue_logic
+
 
 class NuclearOPs(DataGeneration):
     """High-level measurement runner used by queue userscripts.
@@ -55,10 +55,25 @@ class NuclearOPs(DataGeneration):
     acquisition, analysis, refocus actions, and result persistence. Long-running
     methods accept a cooperative ``abort`` event so the queue can stop them
     cleanly without forcing thread termination.
+    
+    Special keys in current iterator:
+    
+    'sweeps': list of sweep indices, used to track progress through the iterator and for saving intermediate results.
+    'click_channel': Timetagger channel for click detection.
+    
+    'Laser_freqs_MHz': can be used to sweep the laser frequency. this input is converted from Hz to voltage used in the Quantummachine code to tune the laser. 
+    
+    'B_amp': magnetic field amplitude in mT
+    'B_theta': magnetic field polar angle in degree
+    'B_phi': magnetic field azimuthal angle in degree
+    
     """
-
+    queue: queue_logic
+    
+    
     # TODO use the qudi state machine instead maybe?
     state = ret_property_list_element(
+        
         "state",
         [
             "idle",
@@ -83,6 +98,8 @@ class NuclearOPs(DataGeneration):
         """Initialize measurement defaults and runtime state."""
 
         super().__init__()
+        self.queue: queue_logic
+        
         self.state = "idle"
         self._state = self.state
 
@@ -97,6 +114,9 @@ class NuclearOPs(DataGeneration):
         self.measure_A2_power: bool = False
 
         self.use_defect_frame: bool = False
+
+        # Parameters
+        self.slow_changing_parameters = ["B_amp", "B_theta", "B_phi"]
 
         self.manual_pause = False
         self.hashed = False
@@ -148,7 +168,7 @@ class NuclearOPs(DataGeneration):
         """Shortcut to the gated-counter trace object exposed by the queue."""
         # return np.array([0]) #FIXME
 
-        return self.queue._gated_counter.trace  # self.queue.gated_counter.trace
+        return self.queue.gated_counter.trace  # self.queue.gated_counter.trace
 
     @property
     def analyze_type(self) -> Any:
@@ -321,7 +341,7 @@ class NuclearOPs(DataGeneration):
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         """Start either the normal measurement thread or the debug sequence."""
-        self._md = self.queue._awg.mcas_dict
+        self._md = self.queue.awg.mcas_dict
         if getattr(self, "debug_mode", False):
             # self.run_debug_sequence(*args, **kwargs)
 
@@ -368,13 +388,12 @@ class NuclearOPs(DataGeneration):
         """Execute the main measurement loop used during normal queue operation."""
 
         self.queue.log.info("cun: NuclearOps run measurement")
-
         self.init_run(**kwargs)
 
         # Get and safe confocal positions from Qudi
-        x = self.queue._confocal.scanner_position["x"]
-        y = self.queue._confocal.scanner_position["y"]
-        z = self.queue._confocal.scanner_position["z"]
+        x = self.queue.confocal.scanner_position["x"]
+        y = self.queue.confocal.scanner_position["y"]
+        z = self.queue.confocal.scanner_position["z"]
 
         self.df_refocus_pos = pd.DataFrame(
             OrderedDict(confocal_x=[x], confocal_y=[y], confocal_z=[z])
@@ -382,11 +401,11 @@ class NuclearOPs(DataGeneration):
 
         try:
             # Setup gated counter
-            self.queue._gated_counter.set_counter()
+            self.queue.gated_counter.set_counter()
 
             # Lock laser to wavemeter if specified and not continously updated by PLE refocus
             if self.lock_laser_to_wavemeter and not self.do_ple_refocus_A1:
-                self.queue._wavemeter.start_lock(use_current_wavelength=True)
+                self.queue.wavemeter.start_lock(use_current_wavelength=True)
 
             for idx, _ in enumerate(self.iterator()):
                 if abort.is_set():
@@ -399,29 +418,18 @@ class NuclearOPs(DataGeneration):
                     # we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
                     self.check_manual_pause(abort)
 
-                    # TODO: Implement in the futur clean
-                    # while self.queue._counter.heating: # This is during the SNSPDs are recycled.
-                    # FIXME Here better to ask for the temperature of the photonspot cryostat.
-                    #     now = datetime.datetime.now()
-                    #     current_time = now.strftime("%H:%M:%S")
-                    #     print("Current Time =", current_time)
-                    #     print("Countrate too high. Assuming hearting of photon detector. Going to sleep for 1min.")
-                    #     QtTest.QTest.qSleep(60000)
-
                     # updates click channel for gated counter if defined
                     if "click_channel" in self.current_iterator_df.keys():
-                        self.queue._fast_counter_device._count_between_markers[
+                        self.queue.fast_counter_device._count_between_markers[
                             "click_channel"
                         ] = self.current_iterator_df["click_channel"].unique()[0]
 
                     if self.do_ple_refocus_A1:
                         self.refocus_ple_A1(abort)
-
-                    # TODO: remove duplicate implementation
-                    if "B" in self.current_iterator_df.keys():
-                        B_amp_ = self.current_iterator_df["B"].unique()[0] * 1e-3
-                        B_theta_ = self.current_iterator_df["B"].unique()[1]
-                        B_phi_ = self.current_iterator_df["B"].unique()[2]
+                        
+                    if "ppg_pulse_shape" in self.current_iterator_df.keys():
+                        self.queue.ppg  
+                    
 
                     if "B_amp" in self.current_iterator_df.keys():
                         self.do_ramp_magnet()
@@ -436,7 +444,7 @@ class NuclearOPs(DataGeneration):
                     self.data.set_observations(
                         [
                             OrderedDict(
-                                mw_mixing_frequency=self.queue._transition_tracker.mw_mixing_frequency_L
+                                mw_mixing_frequency=self.queue.transition_tracker.mw_mixing_frequency_L
                             )
                         ]
                         * self.number_of_simultaneous_measurements
@@ -444,7 +452,7 @@ class NuclearOPs(DataGeneration):
                     self.data.set_observations(
                         [
                             OrderedDict(
-                                mw_mixing_frequency=self.queue._transition_tracker.mw_mixing_frequency_R
+                                mw_mixing_frequency=self.queue.transition_tracker.mw_mixing_frequency_R
                             )
                         ]
                         * self.number_of_simultaneous_measurements
@@ -452,17 +460,17 @@ class NuclearOPs(DataGeneration):
                     self.data.set_observations(
                         [
                             OrderedDict(
-                                local_oscillator_freq=self.queue._transition_tracker.current_local_oscillator_freq
+                                local_oscillator_freq=self.queue.transition_tracker.current_local_oscillator_freq
                             )
                         ]
                         * self.number_of_simultaneous_measurements
                     )
                     self.data.set_observations(
-                        [OrderedDict(ple_A2=self.queue._transition_tracker.ple_A2)]
+                        [OrderedDict(ple_A2=self.queue.transition_tracker.ple_A2)]
                         * self.number_of_simultaneous_measurements
                     )  # already inlcuded in raw_clicks_processing
                     self.data.set_observations(
-                        [OrderedDict(ple_A1=self.queue._transition_tracker.ple_A1)]
+                        [OrderedDict(ple_A1=self.queue.transition_tracker.ple_A1)]
                         * self.number_of_simultaneous_measurements
                     )  # already inlcuded in raw_clicks_processing
                     self.data.set_observations(
@@ -563,9 +571,9 @@ class NuclearOPs(DataGeneration):
                 os.rmdir(self.save_dir)
 
             self.queue.log.info("cun: Finished function run_measurement")
-            self.queue._wavemeter.stop_lock()
+            self.queue.wavemeter.stop_lock()
             time.sleep(2)
-            self.queue._dlc_pro_620.set_pc_voltage(
+            self.queue.dlc_pro_620.set_pc_voltage(
                 self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE
             )
 
@@ -597,7 +605,7 @@ class NuclearOPs(DataGeneration):
         self.state = "sequence_testing"
         try:
             # self._md.debug_mode = True
-            self.queue._awg.debug_mode = True
+            self.queue.awg.debug_mode = True
             for idx, _ in enumerate(self.iterator()):
                 if abort.is_set():
                     break
@@ -610,9 +618,9 @@ class NuclearOPs(DataGeneration):
                 self.setup_rf(
                     self.current_iterator_df, hashed=False
                 )  # self.hashed) ##Is this guy stops the main loop?
-                self.queue._awg.simulate(self.mcas.program, plot=True)
+                self.queue.awg.simulate(self.mcas.program, plot=True)
 
-                # self.queue._awg.simulate(self.queue._awg.mcas_dict[self.sequence_name], plot = True)
+                # self.queue.awg.simulate(self.queue._awg.mcas_dict[self.sequence_name], plot = True)
                 self.data.set_observations(
                     [OrderedDict(end_time=datetime.datetime.now())]
                     * self.number_of_simultaneous_measurements
@@ -627,7 +635,7 @@ class NuclearOPs(DataGeneration):
         finally:
             # TODO do this
             # self._md.debug_mode = False
-            self.queue._awg.stop_awgs()  # formely it was mcas_dict as the main...
+            self.queue.awg.stop_awgs()  # formely it was mcas_dict as the main...
             self.update_current_str()
             if os.path.exists(self.save_dir) and not os.listdir(self.save_dir):
                 os.rmdir(self.save_dir)
@@ -676,10 +684,10 @@ class NuclearOPs(DataGeneration):
             B_vec_cart_SnV = self.spherical_to_carthesian(B_vec_SnV)
 
             # FIXME: Implement all this within the magnet logic and make it SnV orientation agnostic
-            B_vec_cart_Lab = self.queue._magnet_logic.rotate_vector(
+            B_vec_cart_Lab = self.queue.magnet_logic.rotate_vector(
                 B_vec_cart_SnV, 55, 225
             )
-            B_vec_Lab = self.queue._magnet_logic.cartesian_to_spherical(B_vec_cart_Lab)
+            B_vec_Lab = self.queue.magnet_logic.cartesian_to_spherical(B_vec_cart_Lab)
 
         else:
             B_vec_Lab = np.array(
@@ -690,9 +698,9 @@ class NuclearOPs(DataGeneration):
                 ]
             )
 
-        self.queue._magnet_logic.ramp(B_vec_Lab)
+        self.queue.magnet_logic.ramp(B_vec_Lab)
         time.sleep(0.5)
-        while min(self.queue._magnet_logic._magnet.get_ramping_state()) == 1:
+        while min(self.queue.magnet_logic._magnet.get_ramping_state()) == 1:
             time.sleep(0.1)
         time.sleep(1)
 
@@ -742,41 +750,41 @@ class NuclearOPs(DataGeneration):
         if abort.is_set():
             return False
 
-        q._wavemeter.stop_lock()
-        q._dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
-        q._awg.stop_awgs()
+        q.wavemeter.stop_lock()
+        q.dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
+        q.awg.stop_awgs()
 
         # Green repump
-        q._switches.set_state("Laser_520", "on")
+        q.do.set_state("Laser_520", "on")
         if not wait_or_abort(REPUMP_TIME_S):
-            q._switches.set_state("Laser_520", "off")
+            q.do.set_state("Laser_520", "off")
             return False
-        q._switches.set_state("Laser_520", "off")
+        q.do.set_state("Laser_520", "off")
 
         if abort.is_set():
             return False
 
         # Start optimization
-        q._switches.set_state("AOM_620", "on")
-        q._PLE_logic.toggle_optimize(True)
-        while q._PLE_logic.optimizer_running:
+        q.do.set_state("AOM_620", "on")
+        q.ple_optimize_logic.toggle_optimize(True)
+        while q.ple_optimize_logic.optimizer_running:
             if abort.is_set():
                 q.log.info("Abort during PLE optimization.")
                 return False
             time.sleep(OPTIMIZER_POLL_S)
-        q._switches.set_state("AOM_620", "off")
+        q.do.set_state("AOM_620", "off")
 
         if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
             return False
 
-        wavelength = q._wavemeter.read_single_point()[0][0] * 1e9
-        actual_voltage = int(q._dlc_pro_620.get_pc_voltage_act() * 1000)
+        wavelength = q.wavemeter.read_single_point()[0][0] * 1e9
+        actual_voltage = int(q.dlc_pro_620.get_pc_voltage_act() * 1000)
 
         if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
             return False
 
-        q._process_setpoint_combiner.set_setpoint("LaserScanner_red", 0)
-        q._wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage)
+        q.ao.set_setpoint("LaserScanner_red", 0)
+        q.wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage)
 
         # if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
         #     return False
@@ -785,7 +793,7 @@ class NuclearOPs(DataGeneration):
             return False
 
         q.tt.update_ple(wavelength)
-        q._wavemeter.start_lock(wavelength)
+        q.wavemeter.start_lock(wavelength)
         q.log.info(f"PLE refocus complete. Locked to wavelength: {wavelength:.2f} nm")
 
         if not wait_or_abort(LOCK_SETTLE_TIME_S):
@@ -795,100 +803,7 @@ class NuclearOPs(DataGeneration):
 
     # TODO: implement for Our setup and qudi
     def do_refocus_zpl(self, abort):
-        delta_t = time.time() - self.last_red_confocal_refocus
-
-        if delta_t >= self.confocal_refocus_interval:
-            print("doing confocal refocus with resonant laser")
-            self.queue._awg.mcas_dict.stop_awgs()
-            if self.do_confocal_A1A2_refocus:
-                print("NuclearOPs: Turn on repump +a1+a2 for confocal refocus")
-                self.queue._awg.mcas_dict["RepumpAndA1AndA2"].run()
-
-            elif self.do_confocal_A2MW_refocus:
-                sequence_name = "A2MW_confocal_refocus"
-                MW1_freq = 33.6
-                MW2_freq = 173.6
-                MW3_freq = 173.6
-                enable_MW1 = True
-                enable_MW2 = True
-                enable_MW3 = False
-
-                enable_Repump = True
-
-                self.power = [0.25, 0.25, 0.25]
-                # if self.enable_MW1:
-                #     self.power += [self.MW1_power]
-                # if self.enable_MW2:
-                #     self.power += [self.MW2_power]
-                # if self.enable_MW3:
-                #     self.power += [self.MW3_power]
-
-                # self.power = np.asarray(self.power)
-                # self.power=self.power_to_amp(self.power)
-
-                if not sequence_name in self.queue._awg.mcas_dict:
-
-                    seq = self.queue._awg.mcas(
-                        name=sequence_name, ch_dict={"2g": [1, 2], "ps": [1]}
-                    )
-                    frequencies = np.array([MW1_freq, MW2_freq, MW3_freq])[
-                        [enable_MW1, enable_MW2, enable_MW3]
-                    ]
-                    seq.start_new_segment(
-                        "Microwaves" + str(frequencies), loop_count=200
-                    )
-                    seq.asc(
-                        name="with MW",
-                        pd2g1={
-                            "type": "sine",
-                            "frequencies": frequencies,
-                            "amplitudes": self.power,
-                        },
-                        A2=True,
-                        repump=enable_Repump,
-                        length_mus=50,
-                    )
-
-                    self.queue._awg.mcas_dict[sequence_name] = seq
-
-                    while self.mcas == "":
-                        # process_events() #TODO gui process events.
-                        QtTest.QTest.qSleep(10)
-                    self.queue._awg.mcas_dict[sequence_name].run()
-
-            # try: #Add current defect name name to callertag
-            #    caller_tag = 'NuclearOps_' + str(self.current_iterator_df.defect_ids.at[0])
-            # except:
-            caller_tag = "NuclearOps_"
-
-            # counts_before = np.mean(self.queue._counter.countdata_smoothed[0][-20:])
-            # repetitions = 0
-            # while counts_before * 0.5 > counts_after: #What if PLE is misaligned?
-            with self._thread_lock:
-                self.queue._optimizer.start_refocus(
-                    initial_pos=self.queue._confocal.get_position(),
-                    caller_tag=caller_tag,
-                )
-                while self.queue._optimizer.module_state() == "locked":
-                    QtTest.QTest.qSleep(500)
-            self.queue._awg.mcas_dict.stop_awgs()
-            QtTest.QTest.qSleep(2000)  # TODO find a better synchro tool.
-            #    counts_after = np.mean(self.queue._counter.countdata_smoothed[0][-20:])
-            #    print('average counts after refocus No'+str(repetitions))
-            #    print(counts_after)
-            # if abort.is_set() or repetitions >1: break
-            # repetitions +=1
-
-            self.last_red_confocal_refocus = time.time()
-            self.df_refocus_pos = pd.DataFrame(
-                OrderedDict(
-                    confocal_x=[self.queue._optimizer.optim_pos_x],
-                    confocal_y=[self.queue._optimizer.optim_pos_y],
-                    confocal_z=[self.queue._optimizer.optim_pos_z],
-                )
-            )
-
-            self.performedRefocus = True
+       pass
 
     def reinit(self) -> None:
         """Reset counters and timing markers for a fresh run."""
@@ -916,7 +831,7 @@ class NuclearOPs(DataGeneration):
         self.queue.log.info("cun:get_trace:starting a longer trace")
 
         ## This is preparing a gated counter and running a sequence.
-        self.queue._gated_counter.count(
+        self.queue.gated_counter.count(
             abort,
             ch_dict=self.mcas.ch_dict,
             mcas=self.mcas,
@@ -941,7 +856,7 @@ class NuclearOPs(DataGeneration):
                 (
                     str(current_iterator_df)
                     + "\n"
-                    + str(self.queue._gated_counter.readout_duration)
+                    + str(self.queue.gated_counter.readout_duration)
                 ).encode()
             ).digest()
         )
@@ -953,16 +868,62 @@ class NuclearOPs(DataGeneration):
         # In the normal path the sequence is rebuilt for the current iterator
         # row and stored in the AWG/OPX dictionary under its generated name.
         self.queue.log.info("cun:setup_rf:This time is the qua writing...")
-        self.queue._awg.stop_awgs()
+        self.queue.awg.stop_awgs()
+        self.create_fast_sweep_sequences_OPX(current_iterator_df)
         self.mcas = self.ret_mcas(self, current_iterator_df)
         # Writing the sequence...
         # while self.mcas=='':
         # process_events() #TODO gui process events.
         # QtTest.QTest.qSleep(10)
         # self.sequence_name = self.mcas.name
-        self.queue._awg.mcas_dict[self.mcas.name] = self.mcas
+        self.queue.awg.mcas_dict[self.mcas.name] = self.mcas
 
         self.performedRefocus = False
+
+
+    def create_fast_sweep_sequences_OPX(self, current_iterator_df: pd.DataFrame) -> None:
+        """Create the fast sweep arrays to itterate over during the runtime of the QUA program"""
+        
+        self.sweeps = []
+        self.sweep_keys = []
+        for key in current_iterator_df.keys():
+            if (
+                len(current_iterator_df[key].unique()) > 1
+                and key not in self.slow_changing_parameters
+            ):
+                self.sweeps.append(current_iterator_df[key].unique())
+                self.sweep_keys.append(key)
+
+        if len(self.sweep_keys) > 2:
+            raise (
+                ValueError(
+                    "Current_iterator_df has more then two axis to iterate over by the quantum machine, which is not supportet at the moment"
+                )
+            )
+        self.i_1_array = (
+            np.array(
+                [
+                    self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e-6)
+                    for i in self.sweeps[0]
+                ]
+            )
+            if "Laser_freqs_MHz" == self.sweep_keys[0]
+            else self.sweeps[0]
+        )
+        self.i_2_array = (
+            (
+                np.array(
+                    [
+                        self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e-6)
+                        for i in self.sweeps[1]
+                    ]
+                )
+                if "Laser_freqs_MHz" == self.sweep_keys[1]
+                else self.sweeps[1]
+            )
+            if len(self.sweep_keys) == 2
+            else np.array([0])
+        )
 
     def analyze(
         self,

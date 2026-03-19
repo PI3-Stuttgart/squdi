@@ -90,15 +90,14 @@ class AnalogOutputOPX(ProcessSetpointInterface):
 
         # add limits from qudi config if defined
         _limits = {}
-        print(self._ao_options)
         for ch in _channels:
             if ch in self._ao_options.keys():
                 _limits[ch] = tuple(self._ao_options[ch]["limits"])
             else:
                 _limits[ch] = (
-                    -1,
-                    1,
-                )  # V (It should be 0.5, but for what ever reason it is 1
+                    -0.5,
+                    0.5,
+                ) # default full voltage range OPX+
 
         self._constraints = ProcessControlConstraints(
             setpoint_channels=_channels,
@@ -242,7 +241,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
 
         self._opx.update_config()
         with program() as arb_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red") / 2)
+            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
             set_dc_offset("620_pi_w_power", "single", res_power)
 
             with infinite_loop_():
@@ -290,7 +289,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
 
         self._opx.update_config()
         with program() as arb_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red") / 2)
+            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
             set_dc_offset("620_pi_w_power", "single", res_power)
 
             with for_():
@@ -315,7 +314,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         # self._configuration.config["elements"]["Gate_Trigger"]["digitalInputs"]["trigger"]["delay"] = 543 * u.ns
         aom_pulse_len = 30 * u.ns
         with program() as pi_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red") / 2)
+            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
             with infinite_loop_():
                 align()
                 play("pulse" * amp(0.02), "Laser_520", duration=300 * u.ns)
@@ -332,7 +331,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         # self._configuration.config["elements"]["Gate_Trigger"]["digitalInputs"]["trigger"]["delay"] = 543 * u.ns
         aom_pulse_len = 10 * u.ns
         with program() as gauss_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red") / 2)
+            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
             with infinite_loop_():
                 align()
                 play("pulse" * amp(0.02), "Laser_520", duration=300 * u.ns)

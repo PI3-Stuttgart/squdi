@@ -67,7 +67,7 @@ class OPX(Base):  # hardware, awg,
         self._connect_to_OPX()
 
     def _volt2amp(self, voltage: float) -> float:
-        return 1 * voltage
+        return 2 * voltage
 
     def on_deactivate(self) -> None:
         self.cw_job.halt()
@@ -100,7 +100,7 @@ class OPX(Base):  # hardware, awg,
                     set_dc_offset(
                         "LaserScanner_red",
                         "single",
-                        dict_curr_ao["LaserScanner_red"] * 0.5,
+                        dict_curr_ao["LaserScanner_red"],
                     )
                     dict_curr_ao.pop("LaserScanner_red", None)
                 with infinite_loop_():
