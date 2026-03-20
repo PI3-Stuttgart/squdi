@@ -53,8 +53,8 @@ def ret_ret_mcas(pdc):
     def ret_mcas(self, current_iterator_df, sequence_name=None):
         """This function creates the sequence for the current itterator and returns the mcas object with the sequence programmed in it."""
         sequence_name = "PLE_itterator 2" if sequence_name is None else sequence_name
-        mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg) 
-        
+        mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg)
+
         def chk_i(key):
             if key == nuclear.sweep_keys_OPX[0]:
                 return i_1
@@ -73,6 +73,12 @@ def ret_ret_mcas(pdc):
                 i_2 = qua.declare(fixed)
                 i_back = qua.declare(fixed)
 
+                #
+                set_dc_offset(
+                    "620_pi_w_power",
+                    "single",
+                )
+
                 ### Backscan ###
                 with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
                     set_dc_offset("LaserScanner_red", "single", i_back)
@@ -88,19 +94,32 @@ def ret_ret_mcas(pdc):
                 with for_(*from_array(i_1, nuclear.i_1_array)):
                     with for_(*from_array(i_2, nuclear.i_2_array)):
                         set_dc_offset("LaserScanner_red", "single", chk_i("Laser_freqs_MHz"))
-                        play(pulse="trigit", element="Gate_Trigger", duration=tt_trigger_len * u.ns)
+                        play(
+                            pulse="trigit",
+                            element="Gate_Trigger",
+                            duration=tt_trigger_len * u.ns,
+                        )
 
                         with for_(j, 0, j < j_avg, j + 1):
-                            play("pulse" * amp(chk_i("620_laser_power")), "AOM_620", duration=chk_i("readout_len_pixel") * u.ns / j_avg)
+                            play(
+                                "pulse" * amp(chk_i("620_laser_power")),
+                                "AOM_620",
+                                duration=chk_i("readout_len_pixel") * u.ns / j_avg,
+                            )
+                            play(
+                                pulse="trigit",
+                                element="620_pi",
+                                duration=chk_i("readout_len_pixel") * u.ns / j_avg,
+                            )
                             # play("pulse" * amp(chk_i("repump_laser_power")), "Laser_520", duration=chk_i("readout_len_pixel")*u.ns / j_avg,)
 
                         align()
-                        play(pulse="trigit", element="Memory_Trigger", duration=tt_trigger_len * u.ns)
+                        play(
+                            pulse="trigit",
+                            element="Memory_Trigger",
+                            duration=tt_trigger_len * u.ns,
+                        )
 
-        #!!! important!!!!
-        self.queue.gated_counter.set_n_values(
-            mcas=None, sm=1, n_values=500
-        )  # myqua, self.number_of_simultaneous_measurements) #calculating the number of gated counts on the timetagger.
         mcas.program = myprog
         return mcas
 
@@ -140,6 +159,8 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
+    nr_repeating_intergration: int = 1
+
     laser_freq_vec_MHz = np.linspace(-10000, 10000, 2000)
     nuclear.parameters = OrderedDict(
         (
@@ -153,9 +174,17 @@ def settings(pdc={}):
             ("click_channel", [1]),
             ("readout_len_pixel", [10 * u.ms]),
             ("backscan_len_pixel", [5 * u.ms]),
+            ("pulse_shape_ppg", ["square"]),  # string
+            ("pulse_width_ppg", [20]),  # ns
+            ("AOM_620_pi_power", [-1.6]),  # V
         )
     )
-    nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
+    nuclear.number_of_simultaneous_measurements = len(nuclear.i_1_array)
+    nuclear.queue.gated_counter.set_n_values(
+        mcas=None,
+        sm=1,
+        n_values=len(nuclear.i_1_array) * len(nuclear.i_2_array) * nr_repeating_intergration,
+    )
 
 
 def run_fun(abort, **kwargs):

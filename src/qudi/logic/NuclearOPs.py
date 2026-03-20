@@ -45,7 +45,7 @@ import hashlib
 from collections import OrderedDict
 from typing import Any, Dict, Optional, Sequence
 
-from logic.queue.queue_logic import queue_logic
+from qudi.logic.queue.queue_logic import queue_logic
 
 
 class NuclearOPs(DataGeneration):
@@ -55,25 +55,24 @@ class NuclearOPs(DataGeneration):
     acquisition, analysis, refocus actions, and result persistence. Long-running
     methods accept a cooperative ``abort`` event so the queue can stop them
     cleanly without forcing thread termination.
-    
+
     Special keys in current iterator:
-    
+
     'sweeps': list of sweep indices, used to track progress through the iterator and for saving intermediate results.
     'click_channel': Timetagger channel for click detection.
-    
-    'Laser_freqs_MHz': can be used to sweep the laser frequency. this input is converted from Hz to voltage used in the Quantummachine code to tune the laser. 
-    
+
+    'Laser_freqs_MHz': can be used to sweep the laser frequency. this input is converted from Hz to voltage used in the Quantummachine code to tune the laser.
+
     'B_amp': magnetic field amplitude in mT
     'B_theta': magnetic field polar angle in degree
     'B_phi': magnetic field azimuthal angle in degree
-    
+
     """
+
     queue: queue_logic
-    
-    
+
     # TODO use the qudi state machine instead maybe?
     state = ret_property_list_element(
-        
         "state",
         [
             "idle",
@@ -99,7 +98,7 @@ class NuclearOPs(DataGeneration):
 
         super().__init__()
         self.queue: queue_logic
-        
+
         self.state = "idle"
         self._state = self.state
 
@@ -117,6 +116,10 @@ class NuclearOPs(DataGeneration):
 
         # Parameters
         self.slow_changing_parameters = ["B_amp", "B_theta", "B_phi"]
+        self.sweeps_OPX: list = []
+        self.sweep_keys_OPX: list = []
+        self.i_1_array: np.ndarray
+        self.i_2_array: np.ndarray
 
         self.manual_pause = False
         self.hashed = False
@@ -172,6 +175,7 @@ class NuclearOPs(DataGeneration):
 
     @property
     def analyze_type(self) -> Any:
+        """Return the active trace-analysis mode from the gated counter."""
         try:
             return self.ana_trace.analyze_type
         except Exception:
@@ -180,14 +184,17 @@ class NuclearOPs(DataGeneration):
 
     @analyze_type.setter
     def analyze_type(self, val: Any) -> None:
+        """Set the trace-analysis mode used for newly acquired traces."""
         self.ana_trace.analyze_type = val
 
     @property
     def number_of_simultaneous_measurements(self) -> int:
+        """Return the number of parallel measurements expected per sequence shot."""
         return self.ana_trace.number_of_simultaneous_measurements
 
     @number_of_simultaneous_measurements.setter
     def number_of_simultaneous_measurements(self, val: int) -> None:
+        """Set the number of parallel measurements expected in the analysis trace."""
         self.ana_trace.number_of_simultaneous_measurements = val
 
     @property  # this comes form data generation.
@@ -337,6 +344,7 @@ class NuclearOPs(DataGeneration):
 
     @property
     def number_of_results(self) -> int:
+        """Return how many scalar result fields are produced by the trace analysis."""
         return self.ana_trace.number_of_results
 
     def run(self, *args: Any, **kwargs: Any) -> None:
@@ -426,13 +434,12 @@ class NuclearOPs(DataGeneration):
 
                     if self.do_ple_refocus_A1:
                         self.refocus_ple_A1(abort)
-                        
+
                     if "ppg_pulse_shape" in self.current_iterator_df.keys():
-                        self.queue.ppg  
-                    
+                        self.update_waveform_ppg()
 
                     if "B_amp" in self.current_iterator_df.keys():
-                        self.do_ramp_magnet()
+                        self.ramp_magnet()
 
                     self.queue.log.info("Cun: Starting measurement sequence")
                     self.setup_rf(self.current_iterator_df, hashed=self.hashed)
@@ -661,17 +668,21 @@ class NuclearOPs(DataGeneration):
 
     @property
     def refocus_moving_average_num(self) -> int:
+        """Return the window size used for averaging stored refocus positions."""
         return getattr(self, "_refocus_moving_average_num", 10)
 
     @refocus_moving_average_num.setter
     def refocus_moving_average_num(self, val: int) -> None:
+        """Set the moving-average window size for refocus position smoothing."""
         self._refocus_moving_average_num = val
 
     @property
     def sweeps(self) -> Any:
+        """Expose the configured sweep indices from the parameter dictionary."""
         return self.parameters["sweeps"]
 
-    def do_ramp_magnet(self) -> None:
+    def ramp_magnet(self) -> None:
+        """Ramp the magnet to the field vector requested by the current iterator row."""
         if self.use_defect_frame:
             B_vec_SnV = np.array(
                 [
@@ -704,7 +715,7 @@ class NuclearOPs(DataGeneration):
             time.sleep(0.1)
         time.sleep(1)
 
-    def refocus_ple_A1(self, abort):
+    def refocus_ple_A1(self, abort) -> bool:
         """Run SnV PLE refocus only when the refocus interval has elapsed."""
         now = time.time()
         delta_t = now - self.last_ple_refocus
@@ -726,7 +737,7 @@ class NuclearOPs(DataGeneration):
 
         return success
 
-    def _run_refocus_ple_A1_sequence(self, abort):
+    def _run_refocus_ple_A1_sequence(self, abort) -> bool:
         """Execute the SnV PLE refocus sequence."""
         REPUMP_TIME_S = 1.0
         OPTIMIZER_POLL_S = 0.2
@@ -739,6 +750,7 @@ class NuclearOPs(DataGeneration):
         q = self.queue
 
         def wait_or_abort(seconds, step=0.1):
+            """Sleep in small increments and return early if ``abort`` is set."""
             end_time = time.time() + seconds
             while time.time() < end_time:
                 if abort.is_set():
@@ -801,9 +813,49 @@ class NuclearOPs(DataGeneration):
 
         return True
 
+    def update_waveform_ppg(self, abort) -> bool:
+        """Update the PPG waveform parameters from the current iterator row."""
+        kwargs = {}
+
+        if "pulse_shape_ppg" in self.current_iterator_df.keys():
+            kwargs["pulse_shape"] = self.current_iterator_df[
+                "pulse_shape_ppg"
+            ].unique()[0]
+        else:
+            raise ValueError(
+                "'pulse_shape_ppg' needs to be in current_iterator_df for updating ppg waveform"
+            )
+
+        if "pulse_width_ppg" in self.current_iterator_df.keys():
+            kwargs["pulse_width"] = self.current_iterator_df[
+                "pulse_width_ppg"
+            ].unique()[0]
+        else:
+            raise ValueError(
+                "'pulse_length_ppg' needs to be in current_iterator_df for updating ppg waveform"
+            )
+
+        if "pulse_delay_ppg" in self.current_iterator_df.keys():
+            kwargs["pulse_delay"] = self.current_iterator_df[
+                "pulse_delay_ppg"
+            ].unique()[0]
+
+        if "pulse_amplitude_ppg" in self.current_iterator_df.keys():
+            kwargs["pulse_amplitude"] = self.current_iterator_df[
+                "pulse_amplitude"
+            ].unique()[0]
+
+        try:
+            success = self.queue.ppg.write_pulse(**kwargs)
+            return True
+        except BaseException as e:
+            raise ValueError(e)
+            return False
+
     # TODO: implement for Our setup and qudi
     def do_refocus_zpl(self, abort):
-       pass
+        """Placeholder for a future ZPL refocus routine."""
+        pass
 
     def reinit(self) -> None:
         """Reset counters and timing markers for a fresh run."""
@@ -880,21 +932,22 @@ class NuclearOPs(DataGeneration):
 
         self.performedRefocus = False
 
+    def create_fast_sweep_sequences_OPX(
+        self, current_iterator_df: pd.DataFrame
+    ) -> None:
+        """Build the fast-sweep arrays passed into the QUA/OPX runtime loops."""
 
-    def create_fast_sweep_sequences_OPX(self, current_iterator_df: pd.DataFrame) -> None:
-        """Create the fast sweep arrays to itterate over during the runtime of the QUA program"""
-        
-        self.sweeps = []
-        self.sweep_keys = []
+        self.sweeps_OPX = []
+        self.sweep_keys_OPX = []
         for key in current_iterator_df.keys():
             if (
                 len(current_iterator_df[key].unique()) > 1
                 and key not in self.slow_changing_parameters
             ):
-                self.sweeps.append(current_iterator_df[key].unique())
-                self.sweep_keys.append(key)
+                self.sweeps_OPX.append(current_iterator_df[key].unique())
+                self.sweep_keys_OPX.append(key)
 
-        if len(self.sweep_keys) > 2:
+        if len(self.sweep_keys_OPX) > 2:
             raise (
                 ValueError(
                     "Current_iterator_df has more then two axis to iterate over by the quantum machine, which is not supportet at the moment"
@@ -903,25 +956,25 @@ class NuclearOPs(DataGeneration):
         self.i_1_array = (
             np.array(
                 [
-                    self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e-6)
-                    for i in self.sweeps[0]
+                    self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e6)
+                    for i in self.sweeps_OPX[0]
                 ]
             )
-            if "Laser_freqs_MHz" == self.sweep_keys[0]
-            else self.sweeps[0]
+            if "Laser_freqs_MHz" == self.sweep_keys_OPX[0]
+            else self.sweeps_OPX[0]
         )
         self.i_2_array = (
             (
                 np.array(
                     [
-                        self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e-6)
-                        for i in self.sweeps[1]
+                        self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e6)
+                        for i in self.sweeps_OPX[1]
                     ]
                 )
-                if "Laser_freqs_MHz" == self.sweep_keys[1]
-                else self.sweeps[1]
+                if "Laser_freqs_MHz" == self.sweep_keys_OPX[1]
+                else self.sweeps_OPX[1]
             )
-            if len(self.sweep_keys) == 2
+            if len(self.sweep_keys_OPX) == 2
             else np.array([0])
         )
 
@@ -1074,9 +1127,7 @@ class NuclearOPs(DataGeneration):
                         )
 
     def reset_settings(self) -> None:
-        """
-        Reset persistent configuration values that are not restored by ``run()``.
-        """
+        """Reset run-specific settings and drop transient sequence references."""
         self.additional_recalibration_interval = 0
         self.ret_mcas = None
         self.mcas = None

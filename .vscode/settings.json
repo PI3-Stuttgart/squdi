@@ -1,2 +1,14 @@
 {
+    "editor.wordWrap": "off",
+    "[python]": {
+        "editor.wordWrap": "off",
+        "editor.formatOnSave": true
+    },
+    "python.linting.pylintArgs": [
+        "--disable=line-too-long"
+    ],
+    "pylint.args": [
+        "--disable=line-too-long"
+    ],
+    "black-formatter.args": ["--line-length", "200"]
 }
