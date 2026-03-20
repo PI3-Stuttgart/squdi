@@ -138,12 +138,13 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    laser_freq_vec_MHz = np.linspace(0, 2, 200) * 1e3
+    laser_freq_vec_MHz = np.linspace(-8, 8, 2000) * 1e3
+    B_amp = np.linspace(0, 400, 41)
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),
             ("B_theta", [0]),
-            ("B_amp", [0]),
+            ("B_amp", B_amp),
             ("sweeps", range(20)),
             ("620_laser_power", [laserpower_to_v(10e-9, "AOM_620")]),
             ("repump_laser_power", [laserpower_to_v(50e-6, "Laser_520")]),
