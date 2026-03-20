@@ -175,6 +175,7 @@ class NuclearOPs(DataGeneration):
 
     @property
     def analyze_type(self) -> Any:
+        """Return the active trace-analysis mode from the gated counter."""
         try:
             return self.ana_trace.analyze_type
         except Exception:
@@ -183,14 +184,17 @@ class NuclearOPs(DataGeneration):
 
     @analyze_type.setter
     def analyze_type(self, val: Any) -> None:
+        """Set the trace-analysis mode used for newly acquired traces."""
         self.ana_trace.analyze_type = val
 
     @property
     def number_of_simultaneous_measurements(self) -> int:
+        """Return the number of parallel measurements expected per sequence shot."""
         return self.ana_trace.number_of_simultaneous_measurements
 
     @number_of_simultaneous_measurements.setter
     def number_of_simultaneous_measurements(self, val: int) -> None:
+        """Set the number of parallel measurements expected in the analysis trace."""
         self.ana_trace.number_of_simultaneous_measurements = val
 
     @property  # this comes form data generation.
@@ -340,6 +344,7 @@ class NuclearOPs(DataGeneration):
 
     @property
     def number_of_results(self) -> int:
+        """Return how many scalar result fields are produced by the trace analysis."""
         return self.ana_trace.number_of_results
 
     def run(self, *args: Any, **kwargs: Any) -> None:
@@ -663,17 +668,21 @@ class NuclearOPs(DataGeneration):
 
     @property
     def refocus_moving_average_num(self) -> int:
+        """Return the window size used for averaging stored refocus positions."""
         return getattr(self, "_refocus_moving_average_num", 10)
 
     @refocus_moving_average_num.setter
     def refocus_moving_average_num(self, val: int) -> None:
+        """Set the moving-average window size for refocus position smoothing."""
         self._refocus_moving_average_num = val
 
     @property
     def sweeps(self) -> Any:
+        """Expose the configured sweep indices from the parameter dictionary."""
         return self.parameters["sweeps"]
 
     def ramp_magnet(self) -> None:
+        """Ramp the magnet to the field vector requested by the current iterator row."""
         if self.use_defect_frame:
             B_vec_SnV = np.array(
                 [
@@ -741,6 +750,7 @@ class NuclearOPs(DataGeneration):
         q = self.queue
 
         def wait_or_abort(seconds, step=0.1):
+            """Sleep in small increments and return early if ``abort`` is set."""
             end_time = time.time() + seconds
             while time.time() < end_time:
                 if abort.is_set():
@@ -804,6 +814,7 @@ class NuclearOPs(DataGeneration):
         return True
 
     def update_waveform_ppg(self, abort) -> bool:
+        """Update the PPG waveform parameters from the current iterator row."""
         kwargs = {}
 
         if "pulse_shape_ppg" in self.current_iterator_df.keys():
@@ -812,7 +823,7 @@ class NuclearOPs(DataGeneration):
             ].unique()[0]
         else:
             raise ValueError(
-                "'waveform_ppg' needs to be in current_iterator_df for updating ppg waveform"
+                "'pulse_shape_ppg' needs to be in current_iterator_df for updating ppg waveform"
             )
 
         if "pulse_width_ppg" in self.current_iterator_df.keys():
@@ -843,6 +854,7 @@ class NuclearOPs(DataGeneration):
 
     # TODO: implement for Our setup and qudi
     def do_refocus_zpl(self, abort):
+        """Placeholder for a future ZPL refocus routine."""
         pass
 
     def reinit(self) -> None:
@@ -923,7 +935,7 @@ class NuclearOPs(DataGeneration):
     def create_fast_sweep_sequences_OPX(
         self, current_iterator_df: pd.DataFrame
     ) -> None:
-        """Create the fast sweep arrays to itterate over during the runtime of the QUA program"""
+        """Build the fast-sweep arrays passed into the QUA/OPX runtime loops."""
 
         self.sweeps_OPX = []
         self.sweep_keys_OPX = []
@@ -1115,9 +1127,7 @@ class NuclearOPs(DataGeneration):
                         )
 
     def reset_settings(self) -> None:
-        """
-        Reset persistent configuration values that are not restored by ``run()``.
-        """
+        """Reset run-specific settings and drop transient sequence references."""
         self.additional_recalibration_interval = 0
         self.ret_mcas = None
         self.mcas = None

@@ -46,7 +46,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     OPX: _OPX = Connector(interface="OPX")
     PPG: _PPG = Connector(interface="PPG512")
 
-    _qm_config_file = ConfigOption(name="qm_config_file", default="configuration", missing="nothing")
+    _qm_config_file = ConfigOption(
+        name="qm_config_file", default="configuration", missing="nothing"
+    )
     _switch_time = ConfigOption(name="switch_time", default=1, missing="nothing")
     _ao_options = ConfigOption(name="analog_outputs", default={}, missing="nothing")
     _configuration = None
@@ -61,7 +63,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     def on_activate(self) -> None:
         """Loads QM config and establishs connection to OPX+"""
         # import QuantumMachines configuration python file
-        self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
+        self._configuration = importlib.import_module(
+            f"qudi.hardware.OPX.{self._qm_config_file}"
+        )
         globals().update(vars(self._configuration))
 
         # Establish connection to OPX+
@@ -85,7 +89,10 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     def _set_constraints(self):
         _channels: list = []
         for name, qm_element in self._configuration.config["elements"].items():
-            if "singleInput" in qm_element.keys() or "multipleInputs" in qm_element.keys():
+            if (
+                "singleInput" in qm_element.keys()
+                or "multipleInputs" in qm_element.keys()
+            ):
                 _channels.append(name)
 
         # add limits from qudi config if defined
@@ -122,7 +129,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         value is defined.
         """
         if active:
-            self.log.warning("OPX AO is always active, amplitude only can be set to zero for inactive state")
+            self.log.warning(
+                "OPX AO is always active, amplitude only can be set to zero for inactive state"
+            )
         if not active:
             self.set_setpoint(channel, 0)
 
@@ -207,8 +216,16 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         importlib.reload(self.qm_scan_module)
         return self.qm_scan_module.qm_scan_program(self)
 
-    def pulses_definition(self, pulse_width: float, pulse_shape: str, pulse_delay: float, pulse_amplitude: int = 255):
-        return self._ppg.write_pulse(pulse_width, pulse_shape, pulse_delay, pulse_amplitude)
+    def pulses_definition(
+        self,
+        pulse_width: float,
+        pulse_shape: str,
+        pulse_delay: float,
+        pulse_amplitude: int = 255,
+    ):
+        return self._ppg.write_pulse(
+            pulse_width, pulse_shape, pulse_delay, pulse_amplitude
+        )
 
     def run_arb_puls(
         self,
@@ -231,9 +248,11 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             pulse_amplitude (int, optional): Pulse amplitude in units of 1/255 of the maximum voltage supplied by the PPG. Defaults to 255.
             ppg_pulse_delay (float, optional): Delay of the PPG puls relative to the AOM in ns. Defaults to 0.
             counting_delay (float, optional): Delay of the counting (Trigger to TT) relative to the PPG pulse in ns. Defaults to 0.
-            res_power (int, optional): Power of the AOM. between 0, 1. Defaults to 0.
+            res_power (int, optional): Power of the AOM in V (TODO: power in W)
         """
-        PPG_write_status: bool = self.pulses_definition(pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude)
+        PPG_write_status: bool = self.pulses_definition(
+            pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude
+        )
         if vccrf is not None:
             self._ppg.set_vccrf(vccrf)
         if vref is not None:
@@ -241,7 +260,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
 
         self._opx.update_config()
         with program() as arb_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
+            set_dc_offset(
+                "LaserScanner_red", "single", self.get_setpoint("LaserScanner_red")
+            )
             set_dc_offset("620_pi_w_power", "single", res_power)
 
             with infinite_loop_():
@@ -250,9 +271,21 @@ class AnalogOutputOPX(ProcessSetpointInterface):
                     play(
                         "pulse" * amp(green_power),
                         "Laser_520",
-                        duration=(pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns,
+                        duration=(
+                            (pulse_width + AOM_end_buffer) * u.ns
+                            if (pulse_width + AOM_end_buffer) > 16
+                            else 16 * u.ns
+                        ),
                     )
-                play(pulse="trigit", element="620_pi", duration=(pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns)
+                play(
+                    pulse="trigit",
+                    element="620_pi",
+                    duration=(
+                        (pulse_width + AOM_end_buffer) * u.ns
+                        if (pulse_width + AOM_end_buffer) > 16
+                        else 16 * u.ns
+                    ),
+                )
                 play("trigit", "Gate_Trigger", duration=20 * u.ns)
                 wait(wait_between_pulses * u.ns)
 
@@ -281,7 +314,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             counting_delay (float, optional): Delay of the counting (Trigger to TT) relative to the PPG pulse in ns. Defaults to 0.
             res_power (int, optional): Power of the AOM. between 0, 1. Defaults to 0.
         """
-        PPG_write_status: bool = self.pulses_definition(pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude)
+        PPG_write_status: bool = self.pulses_definition(
+            pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude
+        )
         if vccrf is not None:
             self._ppg.set_vccrf(vccrf)
         if vref is not None:
@@ -289,7 +324,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
 
         self._opx.update_config()
         with program() as arb_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
+            set_dc_offset(
+                "LaserScanner_red", "single", self.get_setpoint("LaserScanner_red")
+            )
             set_dc_offset("620_pi_w_power", "single", res_power)
 
             with for_():
@@ -298,9 +335,21 @@ class AnalogOutputOPX(ProcessSetpointInterface):
                     play(
                         "pulse" * amp(green_power),
                         "Laser_520",
-                        duration=(pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns,
+                        duration=(
+                            (pulse_width + AOM_end_buffer) * u.ns
+                            if (pulse_width + AOM_end_buffer) > 16
+                            else 16 * u.ns
+                        ),
                     )
-                play(pulse="trigit", element="620_pi", duration=(pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns)
+                play(
+                    pulse="trigit",
+                    element="620_pi",
+                    duration=(
+                        (pulse_width + AOM_end_buffer) * u.ns
+                        if (pulse_width + AOM_end_buffer) > 16
+                        else 16 * u.ns
+                    ),
+                )
                 play("trigit", "Gate_Trigger", duration=20 * u.ns)
                 wait(wait_between_pulses * u.ns)
 
@@ -314,7 +363,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         # self._configuration.config["elements"]["Gate_Trigger"]["digitalInputs"]["trigger"]["delay"] = 543 * u.ns
         aom_pulse_len = 30 * u.ns
         with program() as pi_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
+            set_dc_offset(
+                "LaserScanner_red", "single", self.get_setpoint("LaserScanner_red")
+            )
             with infinite_loop_():
                 align()
                 play("pulse" * amp(0.02), "Laser_520", duration=300 * u.ns)
@@ -331,7 +382,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         # self._configuration.config["elements"]["Gate_Trigger"]["digitalInputs"]["trigger"]["delay"] = 543 * u.ns
         aom_pulse_len = 10 * u.ns
         with program() as gauss_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
+            set_dc_offset(
+                "LaserScanner_red", "single", self.get_setpoint("LaserScanner_red")
+            )
             with infinite_loop_():
                 align()
                 play("pulse" * amp(0.02), "Laser_520", duration=300 * u.ns)
