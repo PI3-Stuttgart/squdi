@@ -74,10 +74,7 @@ def ret_ret_mcas(pdc):
                 i_back = qua.declare(fixed)
 
                 #
-                set_dc_offset(
-                    "620_pi_w_power",
-                    "single",
-                )
+                set_dc_offset("620_pi_w_power", "single", chk_i("AOM_620_pi_power"))
 
                 ### Backscan ###
                 with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
@@ -161,29 +158,30 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 1
 
-    laser_freq_vec_MHz = np.linspace(-10000, 10000, 2000)
+    laser_freq_vec_MHz = np.linspace(-8, 8, 2000) * 1e3
+    B_amp = np.linspace(0, 400, 41)
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),
-            ("B_theta", [0]]),
-            ("B_amp", [np.arange(0, 300, 20)]),
-            ("sweeps", range(2)),
-            ("620_laser_power", [laserpower_to_v(20e-9, "AOM_620")]),
-            ("repump_laser_power", [laserpower_to_v(50e-6, "Laser_520")]),
+            ("B_theta", [0]),
+            ("B_amp", B_amp),
+            ("sweeps", range(3)),
+            ("620_laser_power", [laserpower_to_v(10e-9, "AOM_620")]),
+            ("repump_laser_power", [laserpower_to_v(500e-6, "Laser_520")]),
             ("Laser_freqs_MHz", laser_freq_vec_MHz),
-            ("click_channel", [1]),
+            ("click_channel", [3]),
             ("readout_len_pixel", [10 * u.ms]),
             ("backscan_len_pixel", [5 * u.ms]),
             ("pulse_shape_ppg", ["square"]),  # string
             ("pulse_width_ppg", [20]),  # ns
-            ("AOM_620_pi_power", [-1.6]),  # V
+            ("AOM_620_pi_power", [-2]),  # V
         )
     )
-    nuclear.number_of_simultaneous_measurements = len(nuclear.i_1_array)
+    nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,
-        n_values=len(nuclear.i_1_array) * len(nuclear.i_2_array) * nr_repeating_intergration,
+        n_values=len(laser_freq_vec_MHz) * 5,
     )
 
 
