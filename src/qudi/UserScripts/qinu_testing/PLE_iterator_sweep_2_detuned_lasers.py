@@ -165,8 +165,8 @@ def settings(pdc={}):
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),
-            ("B_theta", np.arange(0, 365, 10)),
-            ("B_amp", [0]),
+            ("B_theta", [0]]),
+            ("B_amp", [np.arange(0, 300, 20)]),
             ("sweeps", range(2)),
             ("620_laser_power", [laserpower_to_v(20e-9, "AOM_620")]),
             ("repump_laser_power", [laserpower_to_v(50e-6, "Laser_520")]),

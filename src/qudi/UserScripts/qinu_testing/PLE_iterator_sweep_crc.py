@@ -20,9 +20,9 @@ importlib.reload(sna)
 import qudi.hardware.OPX.program_container as pc
 
 importlib.reload(pc)
-import qudi.hardware.OPX.OPX_utils as OPX_utils
+from qudi.hardware.OPX.OPX_utils import crc, scan_laser_to_target
 
-importlib.reload(OPX_utils)
+# importlib.reload(OPX_utils)
 
 from qudi.logic.qudip_enhanced import *
 
@@ -64,6 +64,13 @@ def ret_ret_mcas(pdc):
             else:
                 return current_iterator_df[key].unique()[0]
 
+        crc_620_laser_power = self.queue.power_conversion.convert_power_to_voltage(10e-9, "AOM_620")  # W to Volt
+        crc_repump_laser_power = self.queue.power_conversion.convert_power_to_voltage(1e-3, "Laser_520")  # nW
+        crc_threshold_repump: int = 3
+        crc_threshold = 8
+        crc_repump_len = 1 * u.ms  # ns
+        crc_pulse_len = 500 * u.us  # ns
+
         with qua.program() as myprog:
             with infinite_loop_():
 
@@ -74,16 +81,39 @@ def ret_ret_mcas(pdc):
                 i_back = qua.declare(fixed)
 
                 ### Backscan ###
-                with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
-                    set_dc_offset("LaserScanner_red", "single", i_back)
-                    with for_(j_back, 0, j_back < j_avg, j_back + 1):
-                        play(
-                            "pulse" * amp(chk_i("repump_laser_power")),
-                            "Laser_520",
-                            duration=chk_i("backscan_len_pixel") * u.ns / j_avg,
-                        )
-                    align()
+                # with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
+                #     set_dc_offset("LaserScanner_red", "single", i_back)
+                #     with for_(j_back, 0, j_back < j_avg, j_back + 1):
+                #         play(
+                #             "pulse" * amp(chk_i("repump_laser_power")),
+                #             "Laser_520",
+                #             duration=chk_i("backscan_len_pixel") * u.ns / j_avg,
+                #         )
+                #     align()
 
+                # scan_laser_to_target(
+                #     self.queue.ple_scanner_logic.frequency_to_voltage(current_iterator_df["Laser_freqs_MHz"].unique()[-1] * 1e6), self.queue.ple_scanner_logic.frequency_to_voltage(1e9)
+                # )
+                align()
+                set_dc_offset("LaserScanner_red", "single", self.queue.ple_scanner_logic.frequency_to_voltage(1e9))
+                align()
+                qua.wait(1 * u.s)
+                crc(
+                    volt_power_620=crc_620_laser_power,
+                    volt_power_520=crc_repump_laser_power,
+                    crc_pulse_len=crc_pulse_len,
+                    crc_threshold=crc_threshold,
+                    crc_threshold_repump=crc_threshold_repump,
+                    crc_repump_len=crc_repump_len,
+                )
+                align()
+                set_dc_offset("LaserScanner_red", "single", self.queue.ple_scanner_logic.frequency_to_voltage(current_iterator_df["Laser_freqs_MHz"].unique()[0] * 1e6))
+                qua.wait(1 * u.s)
+                # scan_laser_to_target(
+                #     self.queue.ple_scanner_logic.frequency_to_voltage(1e9),
+                #     self.queue.ple_scanner_logic.frequency_to_voltage(current_iterator_df["Laser_freqs_MHz"].unique()[0] * 1e6),
+                # )
+                align()
                 ### PLE loop ###
                 with for_(*from_array(i_1, nuclear.i_1_array)):
                     with for_(*from_array(i_2, nuclear.i_2_array)):
@@ -96,7 +126,6 @@ def ret_ret_mcas(pdc):
 
                         align()
                         play(pulse="trigit", element="Memory_Trigger", duration=tt_trigger_len * u.ns)
-
         #!!! important!!!!
         # myqua, self.number_of_simultaneous_measurements) #calculating the number of gated counts on the timetagger.
         mcas.program = myprog
@@ -154,7 +183,7 @@ def settings(pdc={}):
         )
     )
     nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
-    nuclear.queue.gated_counter.set_n_values(mcas=None, sm=1, n_values=len(laser_freq_vec_MHz) * 1)
+    nuclear.queue.gated_counter.set_n_values(mcas=None, sm=1, n_values=len(laser_freq_vec_MHz) * 5)
 
 
 def run_fun(abort, **kwargs):

@@ -111,6 +111,17 @@ def crc(
         wait(5000 * u.us)
 
 
+def crc_nuclearOPs(nuclear):
+    return crc(
+        volt_power_620=nuclear.crc_620_laser_power,
+        volt_power_520=nuclear.crc_repump_laser_power,
+        crc_pulse_len=nuclear.crc_pulse_len,
+        crc_threshold=nuclear.crc_threshold,
+        crc_threshold_repump=nuclear.crc_threshold_repump,
+        crc_repump_len=nuclear.crc_repump_len,
+    )
+
+
 from typing import Any
 
 import numpy as np
@@ -183,7 +194,7 @@ def scan_laser_to_target(
         if volt_power_520 > 0:
             play("pulse" * amp(volt_power_520), "Laser_520", duration=time_per_step / 4)
         else:
-            wait(time_per_step / 4)
+            wait(time_per_step * u.ns)
 
         # Synchronize all involved elements before the next step
         align()

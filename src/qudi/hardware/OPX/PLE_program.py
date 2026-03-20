@@ -11,7 +11,7 @@ crc_voltage = 0.3295  # V
 
 def qm_scan_program(aoOPX):
 
-    counts_per_second_threshold = 20  # threshold in kc/s
+    counts_per_second_threshold = 10  # threshold in kc/s
     scans_to_repump = 20  # number of scans before repumping regardless of counts
     i_avg = 1000  # 00  # number of averages per voltage
     nr_of_scanns = aoOPX._scan_parameters["nr_of_scans"]
@@ -20,12 +20,12 @@ def qm_scan_program(aoOPX):
 
     # Laser scan Parameters
     nr_ls_volt_steps = aoOPX._scan_parameters["nr_amp_steps"]
-    min_ls_volt = aoOPX._scan_parameters["voltage_start"] * 0.5
-    max_ls_volt = aoOPX._scan_parameters["voltage_stop"] * 0.5
+    min_ls_volt = aoOPX._scan_parameters["voltage_start"]
+    max_ls_volt = aoOPX._scan_parameters["voltage_stop"]
     ls_volt_array = np.linspace(min_ls_volt, max_ls_volt, nr_ls_volt_steps)
 
     # CRC parameters
-    crc_laser_voltage = aoOPX.get_setpoint("LaserScanner_red") * 0.5  # in V
+    crc_laser_voltage = aoOPX.get_setpoint("LaserScanner_red")  # in V
     crc_threshold = 20  # in c/s
     crc_pulse_len = 100 * u.us
     crc_repump_len = 1 * u.ms
@@ -162,8 +162,8 @@ def crc(
     counts,
     counts_st,
     crc_pulse_len=500 * u.us,
-    crc_threshold=20,
-    crc_threshold_repump=5,
+    crc_threshold=8,
+    crc_threshold_repump=3,
     crc_repump_len=1 * u.ms,
     max_attempts=1000,
 ):
