@@ -37,7 +37,7 @@ def qm_scan_program(aoOPX):
     # Powers for laseres
     volt_620 = aoOPX.get_setpoint("AOM_620")
     volt_520 = aoOPX.get_setpoint("Laser_520")
-    volt_620_pi = -0.23
+    volt_620_pi = -0.245
     # Repump parameters
     repump_len = back_scan_duration
 
