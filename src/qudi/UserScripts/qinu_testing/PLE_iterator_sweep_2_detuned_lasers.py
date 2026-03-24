@@ -172,7 +172,7 @@ def settings(pdc={}):
             ("click_channel", [3]),
             ("readout_len_pixel", [10 * u.ms]),
             ("backscan_len_pixel", [5 * u.ms]),
-            ("pulse_shape_ppg", ["square"]),  # string
+            ("ppg_pulse_shape", ["square"]),  # string
             ("pulse_width_ppg", [20]),  # ns
             ("AOM_620_pi_power", [-0.245]),  # V
         )

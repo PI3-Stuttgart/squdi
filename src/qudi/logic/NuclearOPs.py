@@ -731,6 +731,8 @@ class NuclearOPs(DataGeneration):
 
     def update_waveform_ppg(self, abort) -> bool:
         """Update the PPG waveform parameters from the current iterator row."""
+
+        self.queue.log.info("Cun: run measurement: Updating ppg waveform")
         kwargs = {}
 
         if "pulse_shape_ppg" in self.current_iterator_df.keys():
