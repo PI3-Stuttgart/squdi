@@ -68,29 +68,20 @@ def ret_ret_mcas(pdc):
             with infinite_loop_():
 
                 j = declare(int)
-                j_back = declare(int)
                 i_1 = declare(fixed)
-                i_2 = qua.declare(fixed)
-                i_back = qua.declare(fixed)
+                i_2 = declare(fixed)
 
-                #
-                set_dc_offset("620_pi_w_power", "single", chk_i("AOM_620_pi_power"))
-
-                ### Backscan ###
-                with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
-                    set_dc_offset("LaserScanner_red", "single", i_back)
-                    with for_(j_back, 0, j_back < j_avg, j_back + 1):
-                        play(
-                            "pulse" * amp(chk_i("repump_laser_power")),
-                            "Laser_520",
-                            duration=chk_i("backscan_len_pixel") * u.ns / j_avg,
-                        )
-                    align()
-
-                ### PLE loop ###
                 with for_(*from_array(i_1, nuclear.i_1_array)):
                     with for_(*from_array(i_2, nuclear.i_2_array)):
-                        set_dc_offset("LaserScanner_red", "single", chk_i("Laser_freqs_MHz"))
+
+                        # repump_puls
+                        with for_(j, 0, j < j_avg, j + 1):
+                            play(
+                                "pulse" * amp(chk_i("repump_laser_power")),
+                                "Laser_520",
+                                duration=chk_i("repump_len") * u.ns / j_avg,
+                            )
+
                         play(
                             pulse="trigit",
                             element="Gate_Trigger",
@@ -101,21 +92,11 @@ def ret_ret_mcas(pdc):
                             play(
                                 "pulse" * amp(chk_i("620_laser_power")),
                                 "AOM_620",
-                                duration=chk_i("readout_len_pixel") * u.ns / j_avg,
+                                duration=chk_i("readout_len") * u.ns / j_avg,
                             )
-                            play(
-                                pulse="trigit",
-                                element="620_pi",
-                                duration=chk_i("readout_len_pixel") * u.ns / j_avg,
-                            )
-                            # play("pulse" * amp(chk_i("repump_laser_power")), "Laser_520", duration=chk_i("readout_len_pixel")*u.ns / j_avg,)
-
+                            play(pulse="trigit", element="620_pi", duration=chk_i("readout_len_pixel") * u.ns / j_avg)
                         align()
-                        play(
-                            pulse="trigit",
-                            element="Memory_Trigger",
-                            duration=tt_trigger_len * u.ns,
-                        )
+                        play(pulse="trigit", element="Memory_Trigger", duration=tt_trigger_len * u.ns)
 
         mcas.program = myprog
         return mcas
@@ -156,10 +137,10 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 10
+    nr_repeating_intergration: int = 5
 
-    laser_freq_vec_MHz = np.linspace(-1, 4, 500) * 1e3  # GHz -> MHz
-    B_amp = np.arange(150, 352, 2)  # mT
+    laser_freq_vec_MHz = np.linspace(-1, 4, 500) * 1e3
+    B_amp = np.arange(230, 280, 2)
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),

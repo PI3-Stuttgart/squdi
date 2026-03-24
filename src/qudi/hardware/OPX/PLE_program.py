@@ -6,8 +6,6 @@ from qm.quantum_machines_manager import QuantumMachinesManager
 from qualang_tools.loops import qua_linspace
 import time
 
-crc_voltage = 0.3295  # V
-
 
 def qm_scan_program(aoOPX):
 
@@ -37,7 +35,7 @@ def qm_scan_program(aoOPX):
     # Powers for laseres
     volt_620 = aoOPX.get_setpoint("AOM_620")
     volt_520 = aoOPX.get_setpoint("Laser_520")
-    volt_620_pi = -0.245
+    volt_620_pi = -0.25
     # Repump parameters
     repump_len = back_scan_duration
 
@@ -75,8 +73,10 @@ def qm_scan_program(aoOPX):
         #         set_dc_offset("LaserScanner_red", "single", vLSBS)
         #         wait(repump_pulse_len * u.ns * 4)
         # wait(1000 * u.ms)
-        scan_laser_to_target(aoOPX.get_setpoint("LaserScanner_red") * 0.5, min_ls_volt)
+        # scan_laser_to_target(aoOPX.get_setpoint("LaserScanner_red") * 0.5, min_ls_volt)
         set_dc_offset("620_pi_w_power", "single", volt_620_pi)
+        set_dc_offset("LaserScanner_red", "single", min_ls_volt)
+        wait(3 * u.s)
 
         with for_(n, 0, n < nr_of_scanns, n + 1):
             # looping over Laser scanner voltages
@@ -98,7 +98,7 @@ def qm_scan_program(aoOPX):
                     # assign(total_counts_point, total_counts_point + counts)
                 align()
                 play("trigit", "Memory_Trigger", duration=tt_trigger_len * u.ns)
-                play("pulse" * amp(volt_620), "AOM_620", duration=tt_trigger_len * u.ns)
+                # Time tagger stop trigger
                 # with if_(total_counts_point > total_counts_scan):
                 #     assign(total_counts_scan, total_counts_point)
                 # assign(total_counts_scan, _exp=total_counts_scan + total_counts_point)
@@ -107,10 +107,13 @@ def qm_scan_program(aoOPX):
                 # wait(1000 * u.ns)
             # Repump and laser backscan
             # assign(count_repump, count_repump + 1)
-            scan_laser_to_target(max_ls_volt, crc_laser_voltage)
-            # wait(10 * u.ms)
+
+            # scan_laser_to_target(max_ls_volt, crc_laser_voltage)
+            set_dc_offset("LaserScanner_red", "single", min_ls_volt)
+            with for_(i, 0, i < 10000, i + 1):
+                play("pulse" * amp(volt_520), "Laser_520", duration=3 * u.s / 10000)
             # crc(volt_620, volt_520, counts, counts_st)
-            scan_laser_to_target(crc_laser_voltage, min_ls_volt)
+            # scan_laser_to_target(crc_laser_voltage, min_ls_volt)
             # with for_each_(vLSBS, back_scan_ls_volt_array):
             #    set_dc_offset("LaserScanner_red", "single", vLSBS)
             #    with for_(i, 0, i < i_avg, i + 1):
