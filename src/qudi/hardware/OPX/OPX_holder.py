@@ -42,6 +42,7 @@ class OPX(Base):  # hardware, awg,
 
     _configuration: Any
     _qm_manual_output_control = None
+    config: Any
 
     # TODO: Is this init function needed?
     def __init__(self, *args, **kwargs):
@@ -65,6 +66,7 @@ class OPX(Base):  # hardware, awg,
         # Establish connection to OPX+
 
         self._connect_to_OPX()
+        self.config = self._configuration.config
 
     def _volt2amp(self, voltage: float) -> float:
         return 2 * voltage

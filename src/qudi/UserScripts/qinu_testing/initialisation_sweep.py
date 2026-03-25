@@ -29,11 +29,13 @@ from qudi.logic.qudip_enhanced import *
 import os
 from collections import OrderedDict
 from qm import qua
-from qm.qua import play, set_dc_offset, declare, fixed, for_, align, amp, infinite_loop_
+from qm.qua import play, set_dc_offset, declare, fixed, for_, align, amp, infinite_loop_, wait
 
 from qualang_tools.units import unit
 from qualang_tools.loops import from_array
 from qudi.logic.NuclearOPs import NuclearOPs
+
+from qudi.logic.queue.queue_logic import queue_logic
 
 
 ### Setup the sequence and the measurement ###
@@ -52,8 +54,12 @@ j_avg = 1000
 def ret_ret_mcas(pdc):
     def ret_mcas(self, current_iterator_df, sequence_name=None):
         """This function creates the sequence for the current itterator and returns the mcas object with the sequence programmed in it."""
+
+        # self.queue: queue_logic
         sequence_name = "PLE_itterator 2" if sequence_name is None else sequence_name
         mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg)
+
+        laser_pulse = self.queue.nuclear_ops_opx_utils.laser_pulse
 
         def chk_i(key):
             if key == nuclear.sweep_keys_OPX[0]:
@@ -75,12 +81,9 @@ def ret_ret_mcas(pdc):
                     with for_(*from_array(i_2, nuclear.i_2_array)):
 
                         # repump_puls
-                        with for_(j, 0, j < j_avg, j + 1):
-                            play(
-                                "pulse" * amp(chk_i("repump_laser_power")),
-                                "Laser_520",
-                                duration=chk_i("repump_len") * u.ns / j_avg,
-                            )
+                        laser_pulse("Laser_520", chk_i("repump_laser_power"), chk_i("repump_len"))
+                        align()
+                        wait(chk_i("wait_after_repump"))
 
                         play(
                             "pulse" * amp(chk_i("620_laser_power")),

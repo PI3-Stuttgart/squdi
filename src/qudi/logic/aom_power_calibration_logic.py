@@ -286,7 +286,7 @@ class AOMPowerCalibrationLogic(LogicBase):
             # TODO: Absolute bullshit of code. Make this more universal.
             self.log.info("Step 3.2: Write PPG waveform for EOM pulsing")
             self.ppg.write_pulse(
-                pulse_width=100 * self.EOM_PULSING_ON_FRACTION,
+                pulse_width=int(256 * 0.2 * self.EOM_PULSING_ON_FRACTION),  # ns
                 pulse_shape="square",
             )
 

@@ -29,7 +29,7 @@ from qudi.logic.qudip_enhanced import *
 import os
 from collections import OrderedDict
 from qm import qua
-from qm.qua import play, set_dc_offset, declare, fixed, for_, align, amp, infinite_loop_
+from qm.qua import play, set_dc_offset, declare, fixed, for_, align, amp, infinite_loop_, wait
 
 from qualang_tools.units import unit
 from qualang_tools.loops import from_array
@@ -44,16 +44,12 @@ with open(os.path.abspath(__file__).split(".")[0] + ".py", "r") as f:
     meas_code = f.read()
 
 
-### FIXME: Hardcoded parameters ###
-tt_trigger_len = 20 * u.ns
-j_avg = 1000
-
-
 def ret_ret_mcas(pdc):
     def ret_mcas(self, current_iterator_df, sequence_name=None):
         """This function creates the sequence for the current itterator and returns the mcas object with the sequence programmed in it."""
         sequence_name = "PLE_itterator 2" if sequence_name is None else sequence_name
         mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg)
+        ou = self.queue.nuclear_ops_opx_utils
 
         def chk_i(key):
             if key == nuclear.sweep_keys_OPX[0]:
@@ -74,48 +70,24 @@ def ret_ret_mcas(pdc):
                 i_back = qua.declare(fixed)
 
                 #
-                set_dc_offset("620_pi_w_power", "single", chk_i("AOM_620_pi_power"))
-
+                ou.set_laser_power("620_pi_w_power", chk_i("AOM_620_pi_power"))
                 ### Backscan ###
                 with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
                     set_dc_offset("LaserScanner_red", "single", i_back)
-                    with for_(j_back, 0, j_back < j_avg, j_back + 1):
-                        play(
-                            "pulse" * amp(chk_i("repump_laser_power")),
-                            "Laser_520",
-                            duration=chk_i("backscan_len_pixel") * u.ns / j_avg,
-                        )
+                    ou.laser_pulse("Laser_520", chk_i("backscan_len_pixel"), chk_i("repump_laser_power"))
                     align()
 
+                wait(1 * u.s)
                 ### PLE loop ###
                 with for_(*from_array(i_1, nuclear.i_1_array)):
                     with for_(*from_array(i_2, nuclear.i_2_array)):
                         set_dc_offset("LaserScanner_red", "single", chk_i("Laser_freqs_MHz"))
-                        play(
-                            pulse="trigit",
-                            element="Gate_Trigger",
-                            duration=tt_trigger_len * u.ns,
-                        )
 
-                        with for_(j, 0, j < j_avg, j + 1):
-                            play(
-                                "pulse" * amp(chk_i("620_laser_power")),
-                                "AOM_620",
-                                duration=chk_i("readout_len_pixel") * u.ns / j_avg,
-                            )
-                            play(
-                                pulse="trigit",
-                                element="620_pi",
-                                duration=chk_i("readout_len_pixel") * u.ns / j_avg,
-                            )
-                            # play("pulse" * amp(chk_i("repump_laser_power")), "Laser_520", duration=chk_i("readout_len_pixel")*u.ns / j_avg,)
-
+                        ou.gate_trigger()
                         align()
-                        play(
-                            pulse="trigit",
-                            element="Memory_Trigger",
-                            duration=tt_trigger_len * u.ns,
-                        )
+                        ou.multiple_laser_pulses(laser_names=["AOM_620", "620_pi_w_power"], duration_ns=chk_i("readout_len_pixel"), powers_nw=[chk_i("620_laser_power"), None])
+                        align()
+                        ou.memory_trigger()
 
         mcas.program = myprog
         return mcas
@@ -156,25 +128,25 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 10
+    nr_repeating_intergration: int = 1
 
-    laser_freq_vec_MHz = np.linspace(-1, 4, 1000) * 1e3  # GHz -> MHz
-    B_amp = np.arange(150, 352, 2)  # mT
+    laser_freq_vec_MHz = np.linspace(-2, 3, 1000) * 1e3  # GHz -> MHz
+    B_amp = np.arange(200, 290, 2)  # mT
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),
             ("B_theta", [0]),
             ("B_amp", B_amp),
-            ("sweeps", range(2)),
-            ("620_laser_power", [laserpower_to_v(7e-9, "AOM_620")]),
-            ("repump_laser_power", [laserpower_to_v(1000e-6, "Laser_520")]),
+            ("sweeps", range(3)),
+            ("620_laser_power", [5]),  # nW
+            ("repump_laser_power", [1e6]),  # nW
             ("Laser_freqs_MHz", laser_freq_vec_MHz),
             ("click_channel", [3]),
             ("readout_len_pixel", [5 * u.ms]),
             ("backscan_len_pixel", [2 * u.ms]),
-            ("pulse_shape_ppg", ["continuous_sin"]),  # string
+            ("pulse_shape_ppg", ["gaussian"]),  # string
             ("pulse_width_ppg", [20]),  # ns
-            ("AOM_620_pi_power", [-0.245]),  # V
+            ("AOM_620_pi_power", [100.7]),  # nW
         )
     )
     nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
