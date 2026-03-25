@@ -83,6 +83,12 @@ def ret_ret_mcas(pdc):
                             )
 
                         play(
+                            "pulse" * amp(chk_i("620_laser_power")),
+                            "AOM_620",
+                            duration=chk_i("readout_len") * u.ns / j_avg,
+                        )
+
+                        play(
                             pulse="trigit",
                             element="Gate_Trigger",
                             duration=tt_trigger_len * u.ns,

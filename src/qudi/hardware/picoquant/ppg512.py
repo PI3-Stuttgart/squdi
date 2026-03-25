@@ -87,6 +87,10 @@ class waveform_generation:
                 bins = np.arange(512)
                 waveform = np.around(pulse_amplitude * np.exp(-((bins - center) ** 2) / (2 * sigma**2)))
 
+            case "continuous_sin":
+                bins = np.arange(512)
+                waveform = np.around(pulse_amplitude * (1 + np.sin(2 * np.pi * bins / 512)) / 2)
+
         return waveform
 
     def create_pulses(self, num_pulses, width, spacing, amp=255, pulse_shape="square", initial_delay=0):
@@ -167,6 +171,7 @@ class waveform_generation:
         return voltages
 
     def create_sine(self, amp):
+
         if amp > 255:
             raise Exception("amp needs to be 255 or less.")
         voltages = np.zeros((512,))

@@ -425,7 +425,7 @@ class NuclearOPs(DataGeneration):
                     if self.do_ple_refocus_A1:
                         self.refocus_ple_A1(abort)
 
-                    if "ppg_pulse_shape" in self.current_iterator_df.keys():
+                    if "pulse_shape_ppg" in self.current_iterator_df.keys():
                         self.update_waveform_ppg(abort)
 
                     if "B_amp" in self.current_iterator_df.keys():
@@ -443,9 +443,7 @@ class NuclearOPs(DataGeneration):
                     self.data.set_observations([OrderedDict(local_oscillator_freq=self.queue.transition_tracker.current_local_oscillator_freq)] * self.number_of_simultaneous_measurements)
                     self.data.set_observations([OrderedDict(ple_A2=self.queue.transition_tracker.ple_A2)] * self.number_of_simultaneous_measurements)  # already inlcuded in raw_clicks_processing
                     self.data.set_observations([OrderedDict(ple_A1=self.queue.transition_tracker.ple_A1)] * self.number_of_simultaneous_measurements)  # already inlcuded in raw_clicks_processing
-                    self.data.set_observations(
-                        pd.concat([self.df_refocus_pos.iloc[-1:, :]] * self.number_of_simultaneous_measurements).reset_index(drop=True)
-                    )  # already inlcuded in raw_clicks_processing
+                    self.data.set_observations(pd.concat([self.df_refocus_pos.iloc[-1:, :]] * self.number_of_simultaneous_measurements).reset_index(drop=True))  # already inlcuded in raw_clicks_processing
 
                     self.data.set_observations([OrderedDict(start_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
 
@@ -631,7 +629,7 @@ class NuclearOPs(DataGeneration):
         time.sleep(0.5)
         while min(self.queue.magnet_logic._magnet.get_ramping_state()) == 1:
             time.sleep(0.1)
-        time.sleep(1)
+        time.sleep(3)
 
     def refocus_ple_A1(self, abort) -> bool:
         """Run SnV PLE refocus only when the refocus interval has elapsed."""
@@ -753,7 +751,7 @@ class NuclearOPs(DataGeneration):
 
         try:
             success = self.queue.ppg.write_pulse(**kwargs)
-            return True
+            return success
         except BaseException as e:
             raise ValueError(e)
             return False
@@ -843,11 +841,7 @@ class NuclearOPs(DataGeneration):
         if len(self.sweep_keys_OPX) > 2:
             raise (ValueError("Current_iterator_df has more then two axis to iterate over by the quantum machine, which is not supportet at the moment"))
         self.i_1_array = np.array([self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e6) for i in self.sweeps_OPX[0]]) if "Laser_freqs_MHz" == self.sweep_keys_OPX[0] else self.sweeps_OPX[0]
-        self.i_2_array = (
-            (np.array([self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e6) for i in self.sweeps_OPX[1]]) if "Laser_freqs_MHz" == self.sweep_keys_OPX[1] else self.sweeps_OPX[1])
-            if len(self.sweep_keys_OPX) == 2
-            else np.array([0])
-        )
+        self.i_2_array = (np.array([self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e6) for i in self.sweeps_OPX[1]]) if "Laser_freqs_MHz" == self.sweep_keys_OPX[1] else self.sweeps_OPX[1]) if len(self.sweep_keys_OPX) == 2 else np.array([0])
 
     def analyze(
         self,
@@ -888,9 +882,7 @@ class NuclearOPs(DataGeneration):
     def reanalyze(self, do_while_run: bool = False, **kwargs: Any) -> None:
         """Re-run the stored trace analysis over existing dataframe entries."""
         if self.state == "run" and not do_while_run:
-            print(
-                "Measurement is running.\nReanalyzation will write to data.df and may interfere with the running measurement doing the same.\nIf you want to reanalyze anyway, pass argument do_while_run=True"
-            )
+            print("Measurement is running.\nReanalyzation will write to data.df and may interfere with the running measurement doing the same.\nIf you want to reanalyze anyway, pass argument do_while_run=True")
             return
         import Analysis
 
@@ -908,11 +900,7 @@ class NuclearOPs(DataGeneration):
             if (idx - 1) % ana_trace.number_of_simultaneous_measurements:
                 continue  ## What is it for? (seems that it doing nothings.
             if type(_I_["trace"]) != np.ndarray:
-                print(
-                    "Interrupted reanalyzation at dataframe index {}, as trace is not a numpy array.\nMaybe, this is trace has just not been measured yet?\nTotal length of dataframe is {}".format(
-                        idx, len(self.data.df)
-                    )
-                )
+                print("Interrupted reanalyzation at dataframe index {}, as trace is not a numpy array.\nMaybe, this is trace has just not been measured yet?\nTotal length of dataframe is {}".format(idx, len(self.data.df)))
                 break
             ana_trace.trace = _I_["trace"]
             self.analyze(ana_trace=ana_trace, start_idx=idx)
