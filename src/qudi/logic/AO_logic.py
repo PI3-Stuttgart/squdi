@@ -32,7 +32,7 @@ from qudi.interface.process_control_interface import (
     ProcessSetpointInterface,
     ProcessControlConstraints,
 )
-from qudi.logic.aom_power_calibration import AomPowerCalibration
+from qudi.logic.aom_power_calibration_logic import AOMPowerCalibrationLogic
 
 
 class AOLogic(LogicBase):
@@ -53,8 +53,8 @@ class AOLogic(LogicBase):
     """
 
     ao_hardware: ProcessSetpointInterface = Connector(interface="ProcessSetpointInterface")
-    power_conversion: AomPowerCalibration = Connector(interface="LogicBase")
-    _power_conversion: AomPowerCalibration
+    power_calibration_logic: AOMPowerCalibrationLogic = Connector(interface="AOMPowerCalibrationLogic")
+    _power_calibration_logic: AOMPowerCalibrationLogic
     _ao_hardware: ProcessSetpointInterface
 
     ao_parameters: dict[str, dict[str, Any]] = ConfigOption(name="AO_parameters", missing="nothing")  # type: ignore
@@ -84,12 +84,12 @@ class AOLogic(LogicBase):
 
     def on_activate(self):
         """Activate module"""
-        self._power_conversion = self.power_conversion()
+        self._power_calibration_logic = self.power_calibration_logic()
         self._ao_hardware = self.ao_hardware()
         self._old_setpoints = self.setpoints
         self._set_constraints()
         self._watchdog_interval_ms = int(round(self._watchdog_interval * 1000))
-        self._curr_conversion_channels = self._power_conversion.channels_w_conversion
+        self._current_calibrated_channels = self._power_calibration_logic.calibrated_channels
         if self._autostart_watchdog:
             self._watchdog_active = True
             QtCore.QMetaObject.invokeMethod(self, "_watchdog_body", QtCore.Qt.QueuedConnection)
@@ -107,7 +107,7 @@ class AOLogic(LogicBase):
 
     def use_conversion(self, channel: str) -> bool:
         """Checks if conversion is used"""
-        return channel in self._power_conversion.channels_w_conversion
+        return channel in self._power_calibration_logic.calibrated_channels
 
     @property
     def watchdog_active(self) -> bool:
@@ -119,11 +119,11 @@ class AOLogic(LogicBase):
         units = {}
         limits = {}
         for channel in channels:
-            if channel in self._power_conversion.channels_w_conversion and self.use_conversion:
+            if channel in self._power_calibration_logic.calibrated_channels and self.use_conversion:
                 units[channel] = "W"  # TODO: Needs to be generalized
 
                 limits[channel] = tuple(
-                    [self._power_conversion.convert_voltage_to_power(v, channel) for v in self._ao_hardware.constraints.channel_limits[channel]]
+                    [self._power_calibration_logic.voltage_to_power(v, channel) for v in self._ao_hardware.constraints.channel_limits[channel]]
                 )
 
             else:
@@ -141,7 +141,7 @@ class AOLogic(LogicBase):
 
     @property
     def constraints(self) -> ProcessControlConstraints:
-        if self._curr_conversion_channels == self._power_conversion.channels_w_conversion:
+        if self._current_calibrated_channels == self._power_calibration_logic.calibrated_channels:
 
             return self._constraints
         else:
@@ -223,9 +223,9 @@ class AOLogic(LogicBase):
         # check if convertion is defined, otherwise just returns input value as output
         if self.use_conversion(channel):
             if reverse:
-                return self._power_conversion.convert_voltage_to_power(value, channel)
+                return self._power_calibration_logic.voltage_to_power(value, channel)
             else:
-                return self._power_conversion.convert_power_to_voltage(value, channel)
+                return self._power_calibration_logic.power_to_voltage(value, channel)
         else:
             return value
 
@@ -234,8 +234,8 @@ class AOLogic(LogicBase):
 
         return {channel: self.convert_setpoint(channel, value, reverse) for channel, value in setpoints_dict.items()}
 
-    def calibrate_power(self, aom_channel: str, get_meas_data=False) -> None:
-        self._power_conversion.calibrate_power(aom_channel, get_meas_data)
+    def calibrate_channel_power(self, aom_channel: str, return_measurement_data: bool = False) -> None:
+        self._power_calibration_logic.calibrate_channel_power(aom_channel, return_measurement_data)
         self._set_constraints()
 
     @QtCore.Slot(bool)

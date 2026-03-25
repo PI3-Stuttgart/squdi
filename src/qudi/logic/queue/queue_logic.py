@@ -159,7 +159,7 @@ class queue_logic(GenericLogic):
     counterlogic1 = Connector(interface="TimeTaggerLogic")
     Wavemeter = Connector(interface="HighFinesseWavemeter")
     DlcPro620 = Connector(interface="DlProLaser")
-    PowerConversion = Connector(interface="AomPowerCalibration")
+    PowerCalibrationLogic = Connector(interface="AOMPowerCalibrationLogic")
     ProcessSetpointCombiner = Connector(interface="ProcessSetpointCombinerInterfuse")
     Switches = Connector(interface="SwitchCombinerInterfuse") 
 
@@ -215,7 +215,7 @@ class queue_logic(GenericLogic):
         # self.write_standardawg_sequences()
         self.confocal = self.Confocal()
         self.tt = self.transition_tracker
-        self.power_conversion = self.PowerConversion()
+        self.power_calibration_logic = self.PowerCalibrationLogic()
         self.tt.load_rabi_parameters()
 
     def on_deactivate(self) -> None:

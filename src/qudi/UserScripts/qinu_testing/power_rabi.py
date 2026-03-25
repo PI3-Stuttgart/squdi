@@ -184,14 +184,14 @@ def settings(pdc={}):
             # ("t_repump", [50]),
             ("delay_memory_trigger", [20]),  # ns
             # ("delay_gate_trigger", [50]),  # ns
-            # ("repump_laser_power", [nuclear.queue._power_conversion.convert_power_to_voltage(50e-6, "Laser_520")]),
+            # ("repump_laser_power", [nuclear.queue._power_calibration_logic.power_to_voltage(50e-6, "Laser_520")]),
             # ("aom_attenuation", np.arange(-0.24, 0, 0.1)),
             # ("duty_cycle", [0.5]),  # np.linspace(0.1,0.9,9)), #for laser power.
             # ("Laser_freq", [nuclear.queue._PLE_logic._scan_logic()._scanner()._triggered_ao().get_setpoint("LaserScanner_red") / 2]),
             # ("scanns", range(100)),
             ("click_channel", [2]),
-            ("crc_repump_power", [nuclear.queue._power_conversion.convert_power_to_voltage(20e-6, "Laser_520")]),
-            ("crc_probe_power", [nuclear.queue._power_conversion.convert_power_to_voltage(5e-9, "Laser_620")]),
+            ("crc_repump_power", [nuclear.queue._power_calibration_logic.power_to_voltage(20e-6, "Laser_520")]),
+            ("crc_probe_power", [nuclear.queue._power_calibration_logic.power_to_voltage(5e-9, "Laser_620")]),
             ("crc_threshold", [20]),
             ("crc_threshold_repump", [5]),
             ("do_crc", [False]),

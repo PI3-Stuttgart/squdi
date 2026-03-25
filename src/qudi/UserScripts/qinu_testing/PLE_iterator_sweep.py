@@ -226,7 +226,7 @@ def settings(pdc={}):
             # ("t_read", [100]),
             # ("t_repump", [50]),
             ("620_laser_power", [0.05]),
-            ("repump_laser_power", [nuclear.queue._power_conversion.convert_power_to_voltage(50e-6, "Laser_520")]),  ###
+            ("repump_laser_power", [nuclear.queue._power_calibration_logic.power_to_voltage(50e-6, "Laser_520")]),  ###
             ("Laser_freqs_MHz", laser_freq_vec_MHz),
             ("click_channel", [2]),
             # ("duty_cycle", [0.5]),  # np.linspace(0.1,0.9,9)), #for laser power.

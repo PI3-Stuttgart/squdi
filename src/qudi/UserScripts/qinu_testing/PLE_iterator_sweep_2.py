@@ -106,7 +106,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    laserpower_to_v = nuclear.queue.power_conversion.convert_power_to_voltage
+    laserpower_to_v = nuclear.queue.power_calibration_logic.power_to_voltage
     ana_seq = [
         ["result", ">", -1, 1, 1, 1],  # Put "int(_I_['n_ssr']" as nlp_per_point?
     ]

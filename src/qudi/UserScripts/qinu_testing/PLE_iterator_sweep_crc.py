@@ -64,8 +64,8 @@ def ret_ret_mcas(pdc):
             else:
                 return current_iterator_df[key].unique()[0]
 
-        crc_620_laser_power = self.queue.power_conversion.convert_power_to_voltage(10e-9, "AOM_620")  # W to Volt
-        crc_repump_laser_power = self.queue.power_conversion.convert_power_to_voltage(1e-3, "Laser_520")  # nW
+        crc_620_laser_power = self.queue.power_calibration_logic.power_to_voltage(10e-9, "AOM_620")  # W to Volt
+        crc_repump_laser_power = self.queue.power_calibration_logic.power_to_voltage(1e-3, "Laser_520")  # nW
         crc_threshold_repump: int = 3
         crc_threshold = 8
         crc_repump_len = 1 * u.ms  # ns
@@ -135,7 +135,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    laserpower_to_v = nuclear.queue.power_conversion.convert_power_to_voltage
+    laserpower_to_v = nuclear.queue.power_calibration_logic.power_to_voltage
     ana_seq = [
         ["result", ">", -1, 1, 1, 1],  # Put "int(_I_['n_ssr']" as nlp_per_point?
     ]

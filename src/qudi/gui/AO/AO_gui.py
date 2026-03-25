@@ -26,7 +26,7 @@ from qudi.core.connector import Connector
 from qudi.core.statusvariable import StatusVar
 from qudi.core.module import GuiBase
 from qudi.core.configoption import ConfigOption
-from qudi.logic.aom_power_calibration import AomPowerCalibration
+from qudi.logic.aom_power_calibration_logic import AOMPowerCalibrationLogic
 from qudi.logic.AO_logic import AOLogic
 from qudi.util.mutex import RecursiveMutex
 
@@ -82,7 +82,7 @@ class AOGui(GuiBase):
 
     # declare connectors
     aologic: AOLogic = Connector(interface="AOLogic")
-    power_conversion: AomPowerCalibration = Connector(interface="LogicBase")
+    power_calibration_logic: AOMPowerCalibrationLogic = Connector(interface="AOMPowerCalibrationLogic")
 
     # declare config options
     _slider_row_num_max = ConfigOption(name="_slider_row_num_max", default=None)
@@ -125,7 +125,7 @@ class AOGui(GuiBase):
 
         self.sigSetpointChanged.connect(self.aologic().set_setpoint, QtCore.Qt.QueuedConnection)
         # self.sigCalibratePower.connect(
-        #     self.power_conversion().calibrate_power,
+        #     self.power_calibration_logic().calibrate_channel_power,
         #     QtCore.Qt.QueuedConnection,
         # )
 
@@ -184,7 +184,7 @@ class AOGui(GuiBase):
             label: QtWidgets.QLabel = self._get_channel_label(channel)
 
             # Add Button for Power measurement, if this is defined for the current channel
-            if channel in self.power_conversion().channels_w_power_measurement:
+            if channel in self.power_calibration_logic().channels_with_power_measurement:
                 power_meas_button: QtWidgets.QPushButton = self._get_power_measurement_button()
                 self._widgets[channel] = (label, slider_w_spinbox, power_meas_button)
                 self._mw.main_layout.addWidget(power_meas_button, grid_pos[0], grid_pos[1] + 2)
@@ -277,7 +277,7 @@ class AOGui(GuiBase):
 
     def _power_calib_func(self, channel):
         self.sigShowPowerCalibrationDialog.emit(True)
-        self.sigCalibratePower.emit(channel, self.aologic().calibrate_power)
+        self.sigCalibratePower.emit(channel, self.aologic().calibrate_channel_power)
 
     def _calibration_measurement_finished(self, channel):
         print(f"Calibration finished for {channel}")
