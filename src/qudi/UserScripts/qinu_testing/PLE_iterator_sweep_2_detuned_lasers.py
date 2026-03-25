@@ -96,7 +96,6 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    laserpower_to_v = nuclear.queue.power_calibration_logic.power_to_voltage
     ana_seq = [
         ["result", ">", -1, 1, 1, 1],  # Put "int(_I_['n_ssr']" as nlp_per_point?
     ]
@@ -142,8 +141,8 @@ def settings(pdc={}):
             ("repump_laser_power", [1e6]),  # nW
             ("Laser_freqs_MHz", laser_freq_vec_MHz),
             ("click_channel", [3]),
-            ("readout_len_pixel", [5 * u.ms]),
-            ("backscan_len_pixel", [2 * u.ms]),
+            ("readout_len_pixel", [5_000_000]),  # ns
+            ("backscan_len_pixel", [2_000_000]),  # ns
             ("pulse_shape_ppg", ["gaussian"]),  # string
             ("pulse_width_ppg", [20]),  # ns
             ("AOM_620_pi_power", [100.7]),  # nW
