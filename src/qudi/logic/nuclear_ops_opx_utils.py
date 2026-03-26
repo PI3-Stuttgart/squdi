@@ -19,10 +19,25 @@ from qudi.logic.aom_power_calibration_logic import AOMPowerCalibrationLogic
 from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
 from qudi.logic.transition_tracker import TransitionTracker
 from qudi.hardware.OPX.OPX_holder import OPX
+from qm import qua
 from qm.qua import play, set_dc_offset, amp, declare, for_
 from qualang_tools.units import unit
+from dataclasses import dataclass
+from types import Any
+
+import numpy as np
+import pandas as pd
 
 u = unit(coerce_to_integer=True)
+
+
+@dataclass
+class FastSweepQUA:
+    element: None | str
+    key: str
+    quantity_kind: None | str
+    raw_array: np.ndarray
+    qua_array: np.ndarray
 
 
 class NuclearOpsOPXUtils(LogicBase):
@@ -57,6 +72,15 @@ class NuclearOpsOPXUtils(LogicBase):
     _transition_tracker: TransitionTracker
     _opx: OPX
 
+    laser_elements: list[str] = ["Laser_520", "Laser_620", "Laser_620_pi", "Laser_620_freq"]
+    quantity_types: list[str] = ["power", "freq"]
+    SLOW_CHANGING_PARAMETERS: list[str] = ["B_amp", "B_theta", "B_phi"]
+    fast_sweeps_qua: dict[str, FastSweepQUA] = {}
+    current_iterator_df: pd.DataFrame
+
+    i_1: qua.QuaVariable
+    i_2: qua.QuaVariable
+
     def on_activate(self) -> None:
         """Resolve external logic and hardware connectors on activation."""
         self._power_calibration_logic = self.power_calibration_logic()
@@ -70,6 +94,63 @@ class NuclearOpsOPXUtils(LogicBase):
         self._ple_scanner_logic = None
         self._transition_tracker = None
         self._opx = None
+
+    def create_fast_sweep_qua_arrays(self, current_iterator_df: pd.DataFrame):
+        self.current_iterator_df = current_iterator_df
+
+        self.fast_sweeps_qua = {}
+        self.sweep_keys_OPX = []
+
+        for key in current_iterator_df.keys():
+            if len(current_iterator_df[key].unique()) > 1 and key not in self.SLOW_CHANGING_PARAMETERS:
+                element = self._find_element_from_current_iterator(key)
+                quantity_kind = self._find_quantity_kind_from_current_iterator(key)
+                raw_array = np.asarray(current_iterator_df[key].unique())
+                self.sweep_keys_OPX.append(key)
+                self.fast_sweeps_qua[key] = FastSweepQUA(
+                    element=element,
+                    key=key,
+                    quantity_kind=quantity_kind,
+                    raw_array=raw_array,
+                    qua_array=self._get_qua_array(element, quantity_kind, raw_array),
+                )
+
+        if len(self.fast_sweeps_qua) > 2:
+            raise (ValueError("Current_iterator_df has more then two axis to iterate over by the quantum machine, which is not supportet at the moment"))
+
+    def _find_element_from_current_iterator(self, key: str):
+        for laser_element in self.laser_elements:
+            if laser_element in key:
+                return laser_element
+        return None
+
+    def _get_value_from_key(self, key: str | float) -> tuple[None | Real, None | qua.QuaVariable]:
+        # if value is float or similar, it is not a key but an actuall value
+        if not isinstance(key, str):
+            return key, None
+
+        if len(self.sweep_keys_OPX) > 0 and key == self.sweep_keys_OPX[0]:
+            return None, self.i_1
+
+        if len(self.sweep_keys_OPX) > 1 and key == self.sweep_keys_OPX[1]:
+            return None, self.i_2
+
+        return self.current_iterator_df[key].unique()[0], None
+
+    def _find_quantity_kind_from_current_iterator(self, key: str):
+        for quantity_type in self.quantity_types:
+            if quantity_type in key:
+                return quantity_type
+        return None
+
+    def _get_qua_array(self, element: None | str, quantity_kind: None | str, raw_array: np.ndarray):
+        match quantity_kind:
+            case "power":
+                return np.asarray([self.laser_power_to_voltage(element, i) for i in raw_array])
+            case "freq":
+                return np.asarray([self.laser_frequency_to_voltage(i) for i in raw_array])
+            case _:
+                return raw_array
 
     @staticmethod
     def voltage_to_amp(voltage: float) -> float:
@@ -131,10 +212,7 @@ class NuclearOpsOPXUtils(LogicBase):
         if "multipleInputs" in element_config:
             input_names = tuple(element_config["multipleInputs"]["inputs"].keys())
             if len(input_names) != 1:
-                raise ValueError(
-                    f"{element_name} has multiple analog inputs {input_names}; "
-                    "NuclearOpsOPXUtils only supports single-input elements"
-                )
+                raise ValueError(f"{element_name} has multiple analog inputs {input_names}; " "NuclearOpsOPXUtils only supports single-input elements")
             return input_names[0]
         raise ValueError(f"{element_name} could not be found for setting a DC offset in OPX config")
 
@@ -163,7 +241,7 @@ class NuclearOpsOPXUtils(LogicBase):
             laser_name: OPX element name to play on.
             duration_ns: Total requested pulse duration in nanoseconds.
         """
-        if not isinstance(duration_ns, Real) or duration_ns <= self.LONG_PULSE_THRESHOLD_NS:
+        if duration_ns <= self.LONG_PULSE_THRESHOLD_NS:
             play(pulse, laser_name, duration=self.duration_ns_to_qua(duration_ns))
             return
 
@@ -179,7 +257,7 @@ class NuclearOpsOPXUtils(LogicBase):
         if remainder_ns:
             play(pulse, laser_name, duration=self.duration_ns_to_qua(remainder_ns))
 
-    def laser_pulse(self, laser_name: str, duration_ns: float, power_nw: None | float = None) -> None:
+    def laser_pulse(self, laser_name: str, duration_ns: float | str, power_nw: None | float | str = None) -> None:
         """Play a calibrated laser pulse on one OPX element.
 
         Args:
@@ -189,11 +267,18 @@ class NuclearOpsOPXUtils(LogicBase):
                 falls back to the element's ``"active"`` operation, i.e. a
                 digital-only trigger without calibrated analog amplitude.
         """
+
+        duration_ns, duration_ns_qua = self._get_value_from_key(duration_ns)
+        power_nw, power_v_qua = self._get_value_from_key(power_nw)
+
         if power_nw is not None:
             pulse = "pulse" * amp(self.laser_power_to_amp(laser_name, power_nw))
+        elif power_v_qua is not None:
+            pulse = "pulse" * amp(power_v_qua * 2)
         else:
             pulse = "active"
-        self.play_chunked(pulse, laser_name, duration_ns)
+
+        self.play_chunked(pulse, laser_name, duration_ns if duration_ns is not None else duration_ns_qua)
 
     def multiple_laser_pulses(self, laser_names: list[str], duration_ns: float, powers_nw: None | list[float | None] = None) -> None:
         """Play synchronized pulses on multiple laser elements.
@@ -214,26 +299,35 @@ class NuclearOpsOPXUtils(LogicBase):
                 ``laser_names``.
         """
         pulses = []
+        duration_ns, duration_ns_qua = self._get_value_from_key(duration_ns)
 
         if powers_nw is not None:
+
             if len(powers_nw) != len(laser_names):
                 raise ValueError("I powers_ns defined it needs to be defined for all lasers, if no power should be given, use None")
 
             for laser_name, power_nw in zip(laser_names, powers_nw):
+                power_nw, power_v_qua = self._get_value_from_key(power_nw)
+
                 if power_nw is not None:
-                    pulses.append("pulse" * amp(self.laser_power_to_amp(laser_name, power_nw)))
+                    pulse = "pulse" * amp(self.laser_power_to_amp(laser_name, power_nw))
+                elif power_v_qua is not None:
+                    pulse = "pulse" * amp(power_v_qua * 2)
                 else:
-                    pulses.append("active")
+                    pulse = "active"
+                pulses.append(pulse)
         else:
             pulses = ["active"] * len(laser_names)
 
-        if not isinstance(duration_ns, Real) or duration_ns <= self.LONG_PULSE_THRESHOLD_NS:
+        duration_ns_general = duration_ns if duration_ns is not None else duration_ns_qua
+
+        if duration_ns_general <= self.LONG_PULSE_THRESHOLD_NS:
             for laser_name, pulse in zip(laser_names, pulses):
-                play(pulse, laser_name, duration=self.duration_ns_to_qua(duration_ns))
+                play(pulse, laser_name, duration=self.duration_ns_to_qua(duration_ns_general))
             return
 
-        full_chunks = int(duration_ns // self.LONG_PULSE_CHUNK_NS)
-        remainder_ns = duration_ns - full_chunks * self.LONG_PULSE_CHUNK_NS
+        full_chunks = int(duration_ns_general // self.LONG_PULSE_CHUNK_NS)
+        remainder_ns = duration_ns_general - full_chunks * self.LONG_PULSE_CHUNK_NS
 
         if full_chunks:
             j = declare(int)
@@ -257,9 +351,12 @@ class NuclearOpsOPXUtils(LogicBase):
             ValueError: If the OPX element does not expose a supported analog
                 input layout.
         """
+
+        power_nw, power_v_qua = self._get_value_from_key(power_nw)
+
         self.set_laser_voltage(
             laser_name,
-            self.laser_power_to_voltage(laser_name, power_nw),
+            self.laser_power_to_voltage(laser_name, power_nw) if power_nw is not None else power_v_qua,
         )
 
     def set_laser_frequency(self, laser_name: str, frequency_mhz: object) -> None:
@@ -272,14 +369,12 @@ class NuclearOpsOPXUtils(LogicBase):
         fast-sweep path in ``NuclearOPs``, where ``Laser_freqs_MHz`` arrays are
         preconverted to voltages before entering the QUA loop.
         """
-        voltage_v = (
-            self.laser_frequency_to_voltage(frequency_mhz)
-            if isinstance(frequency_mhz, Real)
-            else frequency_mhz
-        )
+
+        frequency_mhz, frequency_v_qua = self._get_value_from_key(frequency_mhz)
+
         self.set_laser_voltage(
             laser_name,
-            voltage_v,
+            self.laser_frequency_to_voltage(frequency_mhz) if frequency_mhz is not None else frequency_v_qua,
         )
 
     def gate_trigger(self) -> None:

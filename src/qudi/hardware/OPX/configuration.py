@@ -253,7 +253,7 @@ config = {
                 "active": "TTL_only_digital",
             },
         },
-        "620_pi_w_power": {
+        "Laser_620_pi": {
             "singleInput": {
                 "port": ("con1", 7),
             },
@@ -271,7 +271,7 @@ config = {
                 "pulse": "AOM_pulse",
             },
         },
-        "AOM_620": {
+        "Laser_620": {
             "multipleInputs": {"inputs": {"input1": ("con1", 9), "input2": ("con1", 10)}},
             "digitalInputs": {
                 "marker": {
@@ -308,7 +308,7 @@ config = {
                 "pulse": "AOM_pulse",
             },
         },
-        "LaserScanner_red": {
+        "Laser_620_freq": {
             "singleInput": {
                 "port": ("con1", 4),
             },

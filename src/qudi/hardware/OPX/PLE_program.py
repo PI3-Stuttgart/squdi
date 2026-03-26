@@ -23,7 +23,7 @@ def qm_scan_program(aoOPX):
     ls_volt_array = np.linspace(min_ls_volt, max_ls_volt, nr_ls_volt_steps)
 
     # CRC parameters
-    crc_laser_voltage = aoOPX.get_setpoint("LaserScanner_red")  # in V
+    crc_laser_voltage = aoOPX.get_setpoint("Laser_620_freq")  # in V
     crc_threshold = 20  # in c/s
     crc_pulse_len = 100 * u.us
     crc_repump_len = 1 * u.ms
@@ -33,7 +33,7 @@ def qm_scan_program(aoOPX):
     back_scan_ls_volt_array = np.linspace(max_ls_volt, min_ls_volt, nr_ls_volt_steps_back)
 
     # Powers for laseres
-    volt_620 = aoOPX.get_setpoint("AOM_620")
+    volt_620 = aoOPX.get_setpoint("Laser_620")
     volt_520 = aoOPX.get_setpoint("Laser_520")
     volt_620_pi = -0.245
     # Repump parameters
@@ -48,9 +48,9 @@ def qm_scan_program(aoOPX):
     counts_threshold = counts_per_second_threshold * sweep_duration / (nr_ls_volt_steps) * 1e-6
     curr_do: list = [key for key, value in aoOPX._opx.cw_do_states.items() if value == "on"]
     curr_ao = {key: value for key, value in aoOPX._opx.cw_ao_values.items() if value != 0.0}
-    curr_laser_scanner_volt = aoOPX.get_setpoint("LaserScanner_red") * 0.5
+    curr_laser_scanner_volt = aoOPX.get_setpoint("Laser_620_freq") * 0.5
     array_volts_scan_laser_to_start = np.linspace(curr_laser_scanner_volt, min_ls_volt, nr_ls_volt_steps)
-    # print(f"laser position: {aoOPX.get_setpoint("LaserScanner_red")}")
+    # print(f"laser position: {aoOPX.get_setpoint("Laser_620_freq")}")
     with program() as ple:
         vLS = declare(fixed)  # voltge Laser scanner
         vLSBS = declare(fixed)  # voltage laser scanner for backscan
@@ -66,27 +66,27 @@ def qm_scan_program(aoOPX):
         save(0, counts_st)
         # Integrations of whole scan
         # assign(total_counts_scan, 0)
-        # scan_laser_to_target(aoOPX.get_setpoint("LaserScanner_red"), min_ls_volt, repump_pulse_len, i_avg, nr_ls_volt_steps_back)
+        # scan_laser_to_target(aoOPX.get_setpoint("Laser_620_freq"), min_ls_volt, repump_pulse_len, i_avg, nr_ls_volt_steps_back)
         # ### Scan to start position
         # with for_each_(vLS, array_volts_scan_laser_to_start):
         #     with for_(i, 0, i < i_avg, i + 1):
-        #         set_dc_offset("LaserScanner_red", "single", vLSBS)
+        #         set_dc_offset("Laser_620_freq", "single", vLSBS)
         #         wait(repump_pulse_len * u.ns * 4)
         # wait(1000 * u.ms)
-        # scan_laser_to_target(aoOPX.get_setpoint("LaserScanner_red") * 0.5, min_ls_volt)
-        set_dc_offset("620_pi_w_power", "single", volt_620_pi)
-        set_dc_offset("LaserScanner_red", "single", min_ls_volt)
+        # scan_laser_to_target(aoOPX.get_setpoint("Laser_620_freq") * 0.5, min_ls_volt)
+        set_dc_offset("Laser_620_pi", "single", volt_620_pi)
+        set_dc_offset("Laser_620_freq", "single", min_ls_volt)
         wait(3 * u.s)
 
         with for_(n, 0, n < nr_of_scanns, n + 1):
             # looping over Laser scanner voltages
             with for_each_(vLS, ls_volt_array):
-                set_dc_offset("LaserScanner_red", "single", vLS)
+                set_dc_offset("Laser_620_freq", "single", vLS)
                 play("trigit", "Gate_Trigger", duration=laser_pulse_len * u.ns)
-                play("pulse" * amp(volt_620), "AOM_620", duration=tt_trigger_len * u.ns)
+                play("pulse" * amp(volt_620), "Laser_620", duration=tt_trigger_len * u.ns)
                 with for_(i, 0, i < i_avg, i + 1):
-                    play("pulse" * amp(volt_620), "AOM_620", duration=laser_pulse_len * u.ns)
-                    play("active", "620_pi_w_power", duration=laser_pulse_len * u.ns)
+                    play("pulse" * amp(volt_620), "Laser_620", duration=laser_pulse_len * u.ns)
+                    play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
                     # play("trigit", "TT_attodry_trigger", duration=laser_pulse_len * u.ns)
                     # play("pulse" * amp(volt_520), "Laser_520", duration=laser_pulse_len)  # Time tagger stop trigger
                     # measure(
@@ -109,15 +109,15 @@ def qm_scan_program(aoOPX):
             # assign(count_repump, count_repump + 1)
 
             # scan_laser_to_target(max_ls_volt, crc_laser_voltage)
-            set_dc_offset("LaserScanner_red", "single", min_ls_volt)
+            set_dc_offset("Laser_620_freq", "single", min_ls_volt)
             with for_(i, 0, i < 10000, i + 1):
                 play("pulse" * amp(volt_520), "Laser_520", duration=3 * u.s / 10000)
             # crc(volt_620, volt_520, counts, counts_st)
             # scan_laser_to_target(crc_laser_voltage, min_ls_volt)
             # with for_each_(vLSBS, back_scan_ls_volt_array):
-            #    set_dc_offset("LaserScanner_red", "single", vLSBS)
+            #    set_dc_offset("Laser_620_freq", "single", vLSBS)
             #    with for_(i, 0, i < i_avg, i + 1):
-            # play("pulse" * amp(volt_620), "AOM_620", duration=repump_pulse_len * u.ns * 4)
+            # play("pulse" * amp(volt_620), "Laser_620", duration=repump_pulse_len * u.ns * 4)
 
             # with if_(total_counts_scan <= counts_threshold):
             #    play("pulse" * amp(volt_520), "Laser_520", duration=repump_pulse_len)
@@ -155,7 +155,7 @@ def scan_laser_to_target(curr_laser_volt, laser_target_voltage):
     array_volts_scan_laser_to_target = np.linspace(curr_laser_volt, laser_target_voltage, nr_steps)
     vLS = declare(fixed)
     with for_each_(vLS, array_volts_scan_laser_to_target):
-        set_dc_offset("LaserScanner_red", "single", vLS)
+        set_dc_offset("Laser_620_freq", "single", vLS)
         wait(repump_pulse_len)
         align()
 
@@ -185,7 +185,7 @@ def crc(
             None,
             time_tagging.analog(times, crc_pulse_len, counts),
         )
-        play("pulse" * amp(volt_620 * 1), "AOM_620", duration=crc_pulse_len / 4)
+        play("pulse" * amp(volt_620 * 1), "Laser_620", duration=crc_pulse_len / 4)
         align()
         save(counts, counts_st)
         wait(500 * u.us)
