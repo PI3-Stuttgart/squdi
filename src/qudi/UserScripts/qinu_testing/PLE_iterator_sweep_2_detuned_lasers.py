@@ -29,11 +29,12 @@ from qudi.logic.qudip_enhanced import *
 import os
 from collections import OrderedDict
 from qm import qua
-from qm.qua import play, set_dc_offset, declare, fixed, for_, align, amp, infinite_loop_, wait
+from qm.qua import play, declare, fixed, for_, align, amp, infinite_loop_, wait
 
 from qualang_tools.units import unit
 from qualang_tools.loops import from_array
 from qudi.logic.NuclearOPs import NuclearOPs
+from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 
 
 ### Setup the sequence and the measurement ###
@@ -49,7 +50,7 @@ def ret_ret_mcas(pdc):
         """This function creates the sequence for the current itterator and returns the mcas object with the sequence programmed in it."""
         sequence_name = "PLE_itterator 2" if sequence_name is None else sequence_name
         mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg)
-        ou = self.queue.nuclear_ops_opx_utils
+        ou: NuclearOpsOPXUtils = self.queue.nuclear_ops_opx_utils
 
         def chk_i(key):
             if key == nuclear.sweep_keys_OPX[0]:
@@ -63,7 +64,6 @@ def ret_ret_mcas(pdc):
         with qua.program() as myprog:
             with infinite_loop_():
 
-                j = declare(int)
                 j_back = declare(int)
                 i_1 = declare(fixed)
                 i_2 = qua.declare(fixed)
@@ -73,7 +73,7 @@ def ret_ret_mcas(pdc):
                 ou.set_laser_power("620_pi_w_power", chk_i("AOM_620_pi_power"))
                 ### Backscan ###
                 with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
-                    set_dc_offset("LaserScanner_red", "single", i_back)
+                    ou.set_laser_voltage("LaserScanner_red", i_back)
                     ou.laser_pulse("Laser_520", chk_i("backscan_len_pixel"), chk_i("repump_laser_power"))
                     align()
 
@@ -81,7 +81,7 @@ def ret_ret_mcas(pdc):
                 ### PLE loop ###
                 with for_(*from_array(i_1, nuclear.i_1_array)):
                     with for_(*from_array(i_2, nuclear.i_2_array)):
-                        set_dc_offset("LaserScanner_red", "single", chk_i("Laser_freqs_MHz"))
+                        ou.set_laser_frequency("LaserScanner_red", chk_i("Laser_freqs_MHz"))
 
                         ou.gate_trigger()
                         align()

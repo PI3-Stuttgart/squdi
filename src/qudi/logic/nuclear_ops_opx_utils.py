@@ -16,6 +16,7 @@ from numbers import Real
 from qudi.core.connector import Connector
 from qudi.core.module import LogicBase
 from qudi.logic.aom_power_calibration_logic import AOMPowerCalibrationLogic
+from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
 from qudi.logic.transition_tracker import TransitionTracker
 from qudi.hardware.OPX.OPX_holder import OPX
 from qm.qua import play, set_dc_offset, amp, declare, for_
@@ -47,22 +48,26 @@ class NuclearOpsOPXUtils(LogicBase):
     LONG_PULSE_CHUNK_NS: int = 5_000  # ns
 
     power_calibration_logic: AOMPowerCalibrationLogic = Connector(interface="AOMPowerCalibrationLogic")
+    ple_scanner_logic: PLEScannerLogic = Connector(interface="PLEScannerLogic")
     transition_tracker_logic: TransitionTracker = Connector(interface="TransitionTracker")
     opx: OPX = Connector(interface="OPX")
 
     _power_calibration_logic: AOMPowerCalibrationLogic
+    _ple_scanner_logic: PLEScannerLogic
     _transition_tracker: TransitionTracker
     _opx: OPX
 
     def on_activate(self) -> None:
         """Resolve external logic and hardware connectors on activation."""
         self._power_calibration_logic = self.power_calibration_logic()
+        self._ple_scanner_logic = self.ple_scanner_logic()
         self._transition_tracker = self.transition_tracker_logic()
         self._opx = self.opx()
 
     def on_deactivate(self) -> None:
         """Clear cached connector references on deactivation."""
         self._power_calibration_logic = None
+        self._ple_scanner_logic = None
         self._transition_tracker = None
         self._opx = None
 
@@ -100,6 +105,38 @@ class NuclearOpsOPXUtils(LogicBase):
     def laser_power_to_amp(self, laser_name: str, power_nw: float) -> float:
         """Convert a requested optical power in nW to a QUA ``amp()`` factor."""
         return self.voltage_to_amp(self.laser_power_to_voltage(laser_name, power_nw))
+
+    def laser_frequency_to_voltage(self, frequency_mhz: float) -> float:
+        """Convert a target laser frequency in MHz to the scanner voltage in V."""
+        return self._ple_scanner_logic.frequency_to_voltage(float(frequency_mhz) * 1e6)
+
+    def set_laser_voltage(self, laser_name: str, voltage_v: object) -> None:
+        """Set a static analog offset for one laser element in volts.
+
+        This is the direct wrapper around QUA ``set_dc_offset()`` and can take
+        either a Python scalar voltage or a QUA expression that already
+        evaluates to a voltage inside the program.
+        """
+        set_dc_offset(
+            laser_name,
+            self._resolve_element_input(laser_name),
+            voltage_v,
+        )
+
+    def _resolve_element_input(self, element_name: str) -> str:
+        """Return the analog input name used by ``set_dc_offset()`` for an element."""
+        element_config = self._opx.config["elements"][element_name]
+        if "singleInput" in element_config:
+            return "single"
+        if "multipleInputs" in element_config:
+            input_names = tuple(element_config["multipleInputs"]["inputs"].keys())
+            if len(input_names) != 1:
+                raise ValueError(
+                    f"{element_name} has multiple analog inputs {input_names}; "
+                    "NuclearOpsOPXUtils only supports single-input elements"
+                )
+            return input_names[0]
+        raise ValueError(f"{element_name} could not be found for setting a DC offset in OPX config")
 
     @staticmethod
     def duration_ns_to_qua(duration_ns: float) -> int:
@@ -220,18 +257,30 @@ class NuclearOpsOPXUtils(LogicBase):
             ValueError: If the OPX element does not expose a supported analog
                 input layout.
         """
-        element_config = self._opx.config["elements"][laser_name]
-        if "singleInput" in element_config:
-            element_input = "single"
-        elif "multipleInputs" in element_config:
-            input_names = tuple(element_config["multipleInputs"]["inputs"].keys())
-            if len(input_names) != 1:
-                raise ValueError(f"{laser_name} has multiple analog inputs {input_names}; set_laser_power only supports single-input elements")
-            element_input = input_names[0]
-        else:
-            raise ValueError(f"{laser_name} could not be found for setting power in OPX config")
+        self.set_laser_voltage(
+            laser_name,
+            self.laser_power_to_voltage(laser_name, power_nw),
+        )
 
-        set_dc_offset(laser_name, element_input, self.laser_power_to_voltage(laser_name, power_nw))
+    def set_laser_frequency(self, laser_name: str, frequency_mhz: object) -> None:
+        """Set a static laser-scanner offset using a target frequency in MHz.
+
+        The frequency-to-voltage conversion is resolved via
+        :class:`PLEScannerLogic`, so this helper is intended for fixed Python
+        frequency values. When a QUA expression is passed instead, it is
+        assumed to already represent the target voltage. That matches the
+        fast-sweep path in ``NuclearOPs``, where ``Laser_freqs_MHz`` arrays are
+        preconverted to voltages before entering the QUA loop.
+        """
+        voltage_v = (
+            self.laser_frequency_to_voltage(frequency_mhz)
+            if isinstance(frequency_mhz, Real)
+            else frequency_mhz
+        )
+        self.set_laser_voltage(
+            laser_name,
+            voltage_v,
+        )
 
     def gate_trigger(self) -> None:
         """Play the standard gate trigger TTL pulse."""
