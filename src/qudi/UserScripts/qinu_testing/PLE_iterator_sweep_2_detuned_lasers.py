@@ -129,20 +129,20 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 1
 
-    laser_freq_vec_MHz = np.linspace(-2, 3, 1000) * 1e3  # GHz -> MHz
+    laser_freq_vec_MHz = np.linspace(-5, -1, 1000) * 1e3  # GHz -> MHz
     B_amp = np.arange(200, 290, 2)  # mT
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),
             ("B_theta", [0]),
             ("B_amp", B_amp),
-            ("sweeps", range(3)),
+            ("sweeps", range(10)),
             ("620_laser_power", [5]),  # nW
             ("repump_laser_power", [1e6]),  # nW
             ("Laser_freqs_MHz", laser_freq_vec_MHz),
             ("click_channel", [3]),
-            ("readout_len_pixel", [5_000_000]),  # ns
-            ("backscan_len_pixel", [2_000_000]),  # ns
+            ("readout_len_pixel", [3_000_000]),  # ns
+            ("backscan_len_pixel", [1_000_000]),  # ns
             ("pulse_shape_ppg", ["gaussian"]),  # string
             ("pulse_width_ppg", [20]),  # ns
             ("AOM_620_pi_power", [100.7]),  # nW
