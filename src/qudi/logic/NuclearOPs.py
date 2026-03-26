@@ -817,7 +817,8 @@ class NuclearOPs(DataGeneration):
         # row and stored in the AWG/OPX dictionary under its generated name.
         self.queue.log.info("cun:setup_rf:This time is the qua writing...")
         self.queue.awg.stop_awgs()
-        self.create_fast_sweep_sequences_OPX(current_iterator_df)
+        # self.create_fast_sweep_sequences_OPX(current_iterator_df)
+        self.queue.nuclear_ops_opx_utils.create_fast_sweep_qua_arrays(current_iterator_df)
         self.mcas = self.ret_mcas(self, current_iterator_df)
         # Writing the sequence...
         # while self.mcas=='':

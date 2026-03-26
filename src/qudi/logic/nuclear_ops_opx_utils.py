@@ -22,6 +22,7 @@ from qudi.hardware.OPX.OPX_holder import OPX
 from qm import qua
 from qm.qua import play, set_dc_offset, amp, declare, for_
 from qualang_tools.units import unit
+from collections import OrderedDict
 from dataclasses import dataclass
 from types import Any
 
@@ -75,11 +76,11 @@ class NuclearOpsOPXUtils(LogicBase):
     laser_elements: list[str] = ["Laser_520", "Laser_620", "Laser_620_pi", "Laser_620_freq"]
     quantity_types: list[str] = ["power", "freq"]
     SLOW_CHANGING_PARAMETERS: list[str] = ["B_amp", "B_theta", "B_phi"]
-    fast_sweeps_qua: dict[str, FastSweepQUA] = {}
+    fast_sweeps_qua: OrderedDict[str, FastSweepQUA] = OrderedDict()
     current_iterator_df: pd.DataFrame
 
-    i_1: qua.QuaVariable
-    i_2: qua.QuaVariable
+    i_1: qua.Variable
+    i_2: qua.Variable
 
     def on_activate(self) -> None:
         """Resolve external logic and hardware connectors on activation."""
@@ -98,7 +99,7 @@ class NuclearOpsOPXUtils(LogicBase):
     def create_fast_sweep_qua_arrays(self, current_iterator_df: pd.DataFrame):
         self.current_iterator_df = current_iterator_df
 
-        self.fast_sweeps_qua = {}
+        self.fast_sweeps_qua = OrderedDict()
         self.sweep_keys_OPX = []
 
         for key in current_iterator_df.keys():
@@ -118,13 +119,28 @@ class NuclearOpsOPXUtils(LogicBase):
         if len(self.fast_sweeps_qua) > 2:
             raise (ValueError("Current_iterator_df has more then two axis to iterate over by the quantum machine, which is not supportet at the moment"))
 
-    def _find_element_from_current_iterator(self, key: str):
-        for laser_element in self.laser_elements:
-            if laser_element in key:
-                return laser_element
-        return None
+    def get_fast_sweep_qua_array(self, idx: int) -> np.ndarray:
+        if idx not in (0, 1):
+            raise IndexError(f"Fast sweep index must be 0 or 1, got {idx}")
 
-    def _get_value_from_key(self, key: str | float) -> tuple[None | Real, None | qua.QuaVariable]:
+        values = tuple(self.fast_sweeps_qua.values())
+        if idx < len(values):
+            return values[idx].qua_array
+        if idx == 1:
+            return np.array([0.0])
+        raise IndexError("Fast sweep index 0 requested, but no fast sweep arrays are available")
+
+    @staticmethod
+    def _find_longest_substring_match(key: str, candidates: list[str]) -> None | str:
+        matching_candidates = [candidate for candidate in candidates if candidate in key]
+        if not matching_candidates:
+            return None
+        return max(matching_candidates, key=len)
+
+    def _find_element_from_current_iterator(self, key: str):
+        return self._find_longest_substring_match(key, self.laser_elements)
+
+    def _get_value_from_key(self, key: str | float) -> tuple[None | Real, None | qua.Variable]:
         # if value is float or similar, it is not a key but an actuall value
         if not isinstance(key, str):
             return key, None
@@ -135,13 +151,18 @@ class NuclearOpsOPXUtils(LogicBase):
         if len(self.sweep_keys_OPX) > 1 and key == self.sweep_keys_OPX[1]:
             return None, self.i_2
 
+        longest_matching_sweep_key = self._find_longest_substring_match(key, self.sweep_keys_OPX)
+        if longest_matching_sweep_key is not None and longest_matching_sweep_key in self.current_iterator_df:
+            if len(self.sweep_keys_OPX) > 0 and longest_matching_sweep_key == self.sweep_keys_OPX[0]:
+                return None, self.i_1
+            if len(self.sweep_keys_OPX) > 1 and longest_matching_sweep_key == self.sweep_keys_OPX[1]:
+                return None, self.i_2
+            return self.current_iterator_df[longest_matching_sweep_key].unique()[0], None
+
         return self.current_iterator_df[key].unique()[0], None
 
     def _find_quantity_kind_from_current_iterator(self, key: str):
-        for quantity_type in self.quantity_types:
-            if quantity_type in key:
-                return quantity_type
-        return None
+        return self._find_longest_substring_match(key, self.quantity_types)
 
     def _get_qua_array(self, element: None | str, quantity_kind: None | str, raw_array: np.ndarray):
         match quantity_kind:
@@ -280,7 +301,7 @@ class NuclearOpsOPXUtils(LogicBase):
 
         self.play_chunked(pulse, laser_name, duration_ns if duration_ns is not None else duration_ns_qua)
 
-    def multiple_laser_pulses(self, laser_names: list[str], duration_ns: float, powers_nw: None | list[float | None] = None) -> None:
+    def multiple_laser_pulses(self, laser_names: list[str], duration_ns: float | str, powers_nw: None | list[float | str | None] = None) -> None:
         """Play synchronized pulses on multiple laser elements.
 
         All elements receive the same duration. When the duration is long
@@ -340,7 +361,7 @@ class NuclearOpsOPXUtils(LogicBase):
             for laser_name, pulse in zip(laser_names, pulses):
                 play(pulse, laser_name, duration=self.duration_ns_to_qua(remainder_ns))
 
-    def set_laser_power(self, laser_name: str, power_nw: float) -> None:
+    def set_laser_power(self, laser_name: str, power_nw: float | str) -> None:
         """Set a static calibrated analog output level for one laser element.
 
         Args:

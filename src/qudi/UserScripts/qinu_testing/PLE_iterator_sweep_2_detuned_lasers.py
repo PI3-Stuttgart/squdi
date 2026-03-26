@@ -52,40 +52,32 @@ def ret_ret_mcas(pdc):
         mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg)
         ou: NuclearOpsOPXUtils = self.queue.nuclear_ops_opx_utils
 
-        def chk_i(key):
-            if key == nuclear.sweep_keys_OPX[0]:
-                return i_1
-            if len(nuclear.sweep_keys_OPX) == 2:
-                if key == nuclear.sweep_keys_OPX[1]:
-                    return i_2
-            else:
-                return current_iterator_df[key].unique()[0]
-
+        qua_array_1 = ou.get_fast_sweep_qua_array(0)
+        qua_array_2 = ou.get_fast_sweep_qua_array(1)
         with qua.program() as myprog:
             with infinite_loop_():
 
-                j_back = declare(int)
-                i_1 = declare(fixed)
-                i_2 = qua.declare(fixed)
-                i_back = qua.declare(fixed)
+                ou.i_1 = declare(fixed)
+                ou.i_2 = declare(fixed)
 
-                #
-                ou.set_laser_power("620_pi_w_power", chk_i("AOM_620_pi_power"))
+                ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
                 ### Backscan ###
-                with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
-                    ou.set_laser_voltage("LaserScanner_red", i_back)
-                    ou.laser_pulse("Laser_520", chk_i("backscan_len_pixel"), chk_i("repump_laser_power"))
-                    align()
+                # with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
+                #     ou.set_laser_frequency("Laser_620_freq", i_back)
+                #     ou.laser_pulse("Laser_520", "backscan_len_pixel", "repump_laser_power")
+                #     align()
+                ou.set_laser_frequency("Laser_620_freq", qua_array_1[0])
 
-                wait(1 * u.s)
+                ou.laser_pulse("Laser_520", "backscan_len_pixel", "Laser_520_power_repump")
+                wait(100 * u.ms)
+
                 ### PLE loop ###
-                with for_(*from_array(i_1, nuclear.i_1_array)):
-                    with for_(*from_array(i_2, nuclear.i_2_array)):
-                        ou.set_laser_frequency("LaserScanner_red", chk_i("Laser_freqs_MHz"))
-
+                with for_(*from_array(ou.i_1, qua_array_1)):
+                    with for_(*from_array(ou.i_2, qua_array_2)):
+                        ou.set_laser_frequency("Laser_620_freq", "Laser_620_freq_MHz")
                         ou.gate_trigger()
                         align()
-                        ou.multiple_laser_pulses(laser_names=["AOM_620", "620_pi_w_power"], duration_ns=chk_i("readout_len_pixel"), powers_nw=[chk_i("620_laser_power"), None])
+                        ou.multiple_laser_pulses(laser_names=["Laser_620", "Laser_620_pi"], duration_ns="readout_len_pixel", powers_nw=["Laser_620_power", None])
                         align()
                         ou.memory_trigger()
 
@@ -137,15 +129,15 @@ def settings(pdc={}):
             ("B_theta", [0]),
             ("B_amp", B_amp),
             ("sweeps", range(10)),
-            ("620_laser_power", [5]),  # nW
-            ("repump_laser_power", [1e6]),  # nW
-            ("Laser_freqs_MHz", laser_freq_vec_MHz),
+            ("Laser_620_power", [5]),  # nW
+            ("Laser_520_power_repump", [1e6]),  # nW
+            ("Laser_620_freq_MHz", laser_freq_vec_MHz),
             ("click_channel", [3]),
             ("readout_len_pixel", [3_000_000]),  # ns
             ("backscan_len_pixel", [1_000_000]),  # ns
             ("pulse_shape_ppg", ["gaussian"]),  # string
             ("pulse_width_ppg", [20]),  # ns
-            ("AOM_620_pi_power", [100.7]),  # nW
+            ("Laser_620_pi_power", [100.7]),  # nW
         )
     )
     nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
