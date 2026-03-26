@@ -498,7 +498,7 @@ class NuclearOPs(DataGeneration):
 
         except Exception as e:
 
-            self.queue.log.error("cun ERROR: Nuclear op failed in run measurement", e)
+            self.queue.log.error("cun ERROR: Nuclear op failed in run measurement: %s", e)
             abort.set()
             self.update_current_str()
             exc_type, exc_value, exc_tb = sys.exc_info()

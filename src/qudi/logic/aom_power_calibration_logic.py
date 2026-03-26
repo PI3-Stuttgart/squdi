@@ -125,6 +125,22 @@ class AOMPowerCalibrationLogic(LogicBase):
 
         self.log.info(f"Calibration data for {aom_channel} saved to {dataset_filename}")
 
+    def save_channel_calibration_plot(self, aom_channel: str) -> str:
+        """Render and save the current calibration plot for one channel.
+
+        The plot always includes measured data. If a fit result is available on
+        the stored fit helper, the fitted curve is overlaid as well.
+        """
+        if aom_channel not in self.aom_configs or "fit_helper" not in self.aom_configs[aom_channel]:
+            raise ValueError(f"No fit helper found for AOM channel {aom_channel}.")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        plot_filename = os.path.join(self.save_path, f"aom_{aom_channel}_calibration_{timestamp}.png")
+        self.aom_configs[aom_channel]["fit_helper"].plot_calibration_fit()
+        plt.savefig(plot_filename)
+        plt.close()
+        return plot_filename
+
     def load_latest_channel_calibration_data(self, aom_channel: str) -> None:
         """Load the newest persisted calibration dataset for one channel.
 
@@ -236,8 +252,8 @@ class AOMPowerCalibrationLogic(LogicBase):
             voltage_data=self.aom_configs[aom_channel]["data"].voltage.values,
             power_data=self.aom_configs[aom_channel]["data"].power.values,
         )
-        self.aom_configs[aom_channel]["fit_result"] = fit_helper.fit()
         self.aom_configs[aom_channel]["fit_helper"] = fit_helper
+        self.aom_configs[aom_channel]["fit_result"] = fit_helper.fit()
         # self.aom_configs[aom_channel]["data"].attrs["fit_result"] = fit_helper.fit()  # TODO: Fix this
 
     def calibrate_channel_power(self, aom_channel: str, return_measurement_data: bool = False) -> Optional[xr.Dataset]:
@@ -326,9 +342,14 @@ class AOMPowerCalibrationLogic(LogicBase):
             self.aom_configs[aom_channel]["data"] = calibration_dataset
             self.log.info("Step 6: Fit ans save measured data")
             print("measured_powers:", measured_powers)
-            self.fit_channel_calibration(aom_channel)
-            self._update_calibrated_channels()
-            self.save_channel_calibration_data(aom_channel)
+            try:
+                self.fit_channel_calibration(aom_channel)
+                self._update_calibrated_channels()
+                self.save_channel_calibration_data(aom_channel)
+            except Exception as error:
+                self.aom_configs[aom_channel].pop("fit_result", None)
+                plot_filename = self.save_channel_calibration_plot(aom_channel)
+                self.log.warning(f"Fit failed for {aom_channel}; saved measured-data plot without fit to {plot_filename}. Error: {error}")
         except Exception as error:
             self.log.error(error)
         return None
@@ -463,18 +484,12 @@ class AOMPowerCalibrationFit:
 
     def plot_calibration_fit(self) -> None:
         """Plot the measured calibration points together with the fitted curve.
-
-        Raises:
-            ValueError: If no fit result is available yet.
         """
-        if not hasattr(self, "result"):
-            raise ValueError("Fit the data first using `fit()`.")
-
-        fit_voltage = np.linspace(min(self.voltage_data), max(self.voltage_data), 500)
-        fit_power = self.model.func(fit_voltage, **self.result.best_values)
-
         plt.figure(figsize=(8, 6))
-        plt.plot(fit_voltage, fit_power * 1e3, label="Fitted Curve", color="orange", linewidth=1, zorder=1)
+        if hasattr(self, "result"):
+            fit_voltage = np.linspace(min(self.voltage_data), max(self.voltage_data), 500)
+            fit_power = self.model.func(fit_voltage, **self.result.best_values)
+            plt.plot(fit_voltage, fit_power * 1e3, label="Fitted Curve", color="orange", linewidth=1, zorder=1)
         plt.scatter(self.voltage_data, self.power_data * 1e3, label="Measured Data", color="blue", s=30, zorder=3)
         plt.xlabel("Voltage [V]")
         plt.ylabel("Power [mW]")

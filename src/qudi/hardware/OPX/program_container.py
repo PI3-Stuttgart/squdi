@@ -21,6 +21,9 @@ class MultiChSeq:
     def name(self):
         return self._name
 
+    # def asc()
+    #
+
     @property
     def program(self):
         return self._program

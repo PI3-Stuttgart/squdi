@@ -24,7 +24,7 @@ from qm.qua import play, set_dc_offset, amp, declare, for_
 from qualang_tools.units import unit
 from collections import OrderedDict
 from dataclasses import dataclass
-from types import Any
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -79,8 +79,8 @@ class NuclearOpsOPXUtils(LogicBase):
     fast_sweeps_qua: OrderedDict[str, FastSweepQUA] = OrderedDict()
     current_iterator_df: pd.DataFrame
 
-    i_1: qua.Variable
-    i_2: qua.Variable
+    i_1: Any = None
+    i_2: Any = None
 
     def on_activate(self) -> None:
         """Resolve external logic and hardware connectors on activation."""

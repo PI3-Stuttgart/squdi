@@ -550,7 +550,7 @@ class MotorStageMicos(MotorInterface):
                         already_checked_zphi = True
                     param_dict[axis_label] = float(pos_zphi[int(constraints[axis_label]['ID'])])/self.unit_factor
                 else:
-                    self.log.error("Asking question to not defined axis:", axis_label)
+                    self.log.error("Asking question to not defined axis: %s", axis_label)
                 # check if all required parameters are known
                 if set(param_dict.keys()).issubset(set(param_list)):
                     break
@@ -590,7 +590,7 @@ class MotorStageMicos(MotorInterface):
                             already_checked_zphi = True
                         param_dict[axis_label] = status_zphi
                     else:
-                        self.log.error("Asking question to not defined axis:", axis_label)
+                        self.log.error("Asking question to not defined axis: %s", axis_label)
             else:
                 for axis_label in constraints:
                     #the status check takes quite long so if port is checked
@@ -606,7 +606,7 @@ class MotorStageMicos(MotorInterface):
                             already_checked_zphi = True
                         param_dict[axis_label] = status_zphi
                     else:
-                        self.log.error("Asking question to not defined axis:", axis_label)
+                        self.log.error("Asking question to not defined axis: %s", axis_label)
             return param_dict
         except:
             self.log.error('Status request unsuccessful')
@@ -734,7 +734,7 @@ class MotorStageMicos(MotorInterface):
                 self._serial_connection_zphi.write(command + '\n')
                 trash = self._read_answer(axis)  # deletes possible answers
             else:
-                self.log.error("Asking question to not defined axis:", axis)
+                self.log.error("Asking question to not defined axis: %s", axis)
             return 0
         except:
             self.log.error('Command was not accepted')
@@ -755,7 +755,7 @@ class MotorStageMicos(MotorInterface):
                 elif constraints[axis]['label'] == 'z' or constraints[axis]['label'] == 'phi':
                     answer = answer + self._serial_connection_zphi.read()[:-2]
                 else:
-                    self.log.error("Asking question to not defined axis:", axis)
+                    self.log.error("Asking question to not defined axis: %s", axis)
             except:
                 still_reading = False
         return answer
@@ -776,7 +776,7 @@ class MotorStageMicos(MotorInterface):
             self._serial_connection_zphi.write(question+'\n')
             answer = self._read_answer(axis)
         else:
-            self.log.error("Asking question to not defined axis:", axis)
+            self.log.error("Asking question to not defined axis: %s", axis)
         return answer
 
     def _in_movement(self):
