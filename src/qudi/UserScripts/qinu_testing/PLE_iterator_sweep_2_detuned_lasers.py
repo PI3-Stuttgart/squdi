@@ -61,6 +61,7 @@ def ret_ret_mcas(pdc):
                 ou.i_2 = declare(fixed)
 
                 ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
+
                 ### Backscan ###
                 # with for_(*from_array(i_back, nuclear.i_1_array[::-1])):
                 #     ou.set_laser_frequency("Laser_620_freq", i_back)
@@ -70,7 +71,7 @@ def ret_ret_mcas(pdc):
 
                 ou.laser_pulse("Laser_520", "backscan_len_pixel", "Laser_520_power_repump")
                 wait(100 * u.ms)
-
+                # sna.SSR(mcas)
                 ### PLE loop ###
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
@@ -125,19 +126,19 @@ def settings(pdc={}):
     B_amp = np.arange(200, 290, 2)  # mT
     nuclear.parameters = OrderedDict(
         (
-            # ("B_phi", [0]),
-            # ("B_theta", [0]),
-            # ("B_amp", B_amp),
+            ("B_phi", [0]),
+            ("B_theta", [0]),
+            ("B_amp", B_amp),
             ("sweeps", range(10)),
-            ("Laser_620_power", [5]),  # nW
+            ("Laser_620_power", [12]),  # nW
             ("Laser_520_power_repump", [1e6]),  # nW
             ("Laser_620_freq_MHz", laser_freq_vec_MHz),
             ("click_channel", [3]),
             ("readout_len_pixel", [3_000_000]),  # ns
             ("backscan_len_pixel", [1_000_000]),  # ns
-            ("pulse_shape_ppg", ["gaussian"]),  # string
+            ("pulse_shape_ppg", ["continuous_sin"]),  # string
             ("pulse_width_ppg", [20]),  # ns
-            ("Laser_620_pi_power", [100.7]),  # nW
+            ("Laser_620_pi_power", [30]),  # nW
         )
     )
     nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
