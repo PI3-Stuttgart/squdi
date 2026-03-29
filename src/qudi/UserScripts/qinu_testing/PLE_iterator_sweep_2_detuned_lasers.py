@@ -120,17 +120,17 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 1
+    nr_repeating_intergration: int = 5
 
-    laser_freq_vec_MHz = np.linspace(-5, -1, 1000) * 1e3  # GHz -> MHz
-    B_amp = np.arange(200, 290, 2)  # mT
+    laser_freq_vec_MHz = np.linspace(-5, 0, 1000) * 1e3  # GHz -> MHz
+    B_amp = np.arange(180, 300, 4)  # mT
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),
             ("B_theta", [0]),
             ("B_amp", B_amp),
-            ("sweeps", range(10)),
-            ("Laser_620_power", [12]),  # nW
+            ("sweeps", range(1)),
+            ("Laser_620_power", [30]),  # nW
             ("Laser_520_power_repump", [1e6]),  # nW
             ("Laser_620_freq_MHz", laser_freq_vec_MHz),
             ("click_channel", [3]),
@@ -138,7 +138,7 @@ def settings(pdc={}):
             ("backscan_len_pixel", [1_000_000]),  # ns
             ("pulse_shape_ppg", ["continuous_sin"]),  # string
             ("pulse_width_ppg", [20]),  # ns
-            ("Laser_620_pi_power", [30]),  # nW
+            ("Laser_620_pi_power", [50]),  # nW
         )
     )
     nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
