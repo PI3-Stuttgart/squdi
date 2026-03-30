@@ -20,7 +20,7 @@ from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
 from qudi.logic.transition_tracker import TransitionTracker
 from qudi.hardware.OPX.OPX_holder import OPX
 from qm import qua
-from qm.qua import play, set_dc_offset, amp, declare, for_
+from qm.qua import play, set_dc_offset, amp, declare, for_, fixed
 from qualang_tools.units import unit
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -79,8 +79,9 @@ class NuclearOpsOPXUtils(LogicBase):
     fast_sweeps_qua: OrderedDict[str, FastSweepQUA] = OrderedDict()
     current_iterator_df: pd.DataFrame
 
-    i_1: Any = None
-    i_2: Any = None
+    i_1: qua.Variable[fixed] | None = None
+    i_2: qua.Variable[fixed] | None = None
+    j: qua.Variable[int] | None = None
 
     def on_activate(self) -> None:
         """Resolve external logic and hardware connectors on activation."""
@@ -212,30 +213,27 @@ class NuclearOpsOPXUtils(LogicBase):
         """Convert a target laser frequency in MHz to the scanner voltage in V."""
         return self._ple_scanner_logic.frequency_to_voltage(float(frequency_mhz) * 1e6)
 
-    def set_laser_voltage(self, laser_name: str, voltage_v: object) -> None:
+    def set_laser_voltage(self, laser_name: str, voltage_v: float | qua.Variable[fixed]) -> None:
         """Set a static analog offset for one laser element in volts.
 
         This is the direct wrapper around QUA ``set_dc_offset()`` and can take
         either a Python scalar voltage or a QUA expression that already
         evaluates to a voltage inside the program.
-        """
-        set_dc_offset(
-            laser_name,
-            self._resolve_element_input(laser_name),
-            voltage_v,
-        )
+        It automaticaly finds all "inputs" of the element.
 
-    def _resolve_element_input(self, element_name: str) -> str:
-        """Return the analog input name used by ``set_dc_offset()`` for an element."""
-        element_config = self._opx.config["elements"][element_name]
+         Args:
+            laser_name: OPX element name to set_dc_offset.
+            voltage_v: Voltag to be used in set_dc_offset.
+        """
+        element_config = self._opx.config["elements"][laser_name]
         if "singleInput" in element_config:
-            return "single"
-        if "multipleInputs" in element_config:
+            set_dc_offset(laser_name, "single", voltage_v)
+        elif "multipleInputs" in element_config:
             input_names = tuple(element_config["multipleInputs"]["inputs"].keys())
-            if len(input_names) != 1:
-                raise ValueError(f"{element_name} has multiple analog inputs {input_names}; " "NuclearOpsOPXUtils only supports single-input elements")
-            return input_names[0]
-        raise ValueError(f"{element_name} could not be found for setting a DC offset in OPX config")
+            for input_name in input_names:
+                set_dc_offset(laser_name, input_name, voltage_v)
+        else:
+            raise ValueError(f"{laser_name} could not be found for setting a DC offset in OPX config")
 
     @staticmethod
     def duration_ns_to_qua(duration_ns: float) -> int:
@@ -351,9 +349,8 @@ class NuclearOpsOPXUtils(LogicBase):
         remainder_ns = duration_ns_general - full_chunks * self.LONG_PULSE_CHUNK_NS
 
         if full_chunks:
-            j = declare(int)
             # Chunk at the grouped-play level so all lasers stay synchronized.
-            with for_(j, 0, j < full_chunks, j + 1):
+            with for_(self.j, 0, self.j < full_chunks, self.j + 1):
                 for laser_name, pulse in zip(laser_names, pulses):
                     play(pulse, laser_name, duration=self.duration_ns_to_qua(self.LONG_PULSE_CHUNK_NS))
 
@@ -398,8 +395,6 @@ class NuclearOpsOPXUtils(LogicBase):
             self.laser_frequency_to_voltage(frequency_mhz) if frequency_mhz is not None else frequency_v_qua,
         )
 
-    def count(self, )
-
     def gate_trigger(self) -> None:
         """Play the standard gate trigger TTL pulse."""
         play(pulse="trigit", element="Gate_Trigger", duration=self.duration_ns_to_qua(self.TT_TRIGGER_LENGTH_NS))
@@ -407,3 +402,8 @@ class NuclearOpsOPXUtils(LogicBase):
     def memory_trigger(self) -> None:
         """Play the standard memory trigger TTL pulse."""
         play(pulse="trigit", element="Memory_Trigger", duration=self.duration_ns_to_qua(self.TT_TRIGGER_LENGTH_NS))
+
+    def init_program(self) -> None:
+        self.i_1 = declare(fixed)
+        self.i_2 = declare(fixed)
+        self.j = declare(int)
