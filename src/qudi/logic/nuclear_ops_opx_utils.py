@@ -398,6 +398,8 @@ class NuclearOpsOPXUtils(LogicBase):
             self.laser_frequency_to_voltage(frequency_mhz) if frequency_mhz is not None else frequency_v_qua,
         )
 
+    def count(self, )
+
     def gate_trigger(self) -> None:
         """Play the standard gate trigger TTL pulse."""
         play(pulse="trigit", element="Gate_Trigger", duration=self.duration_ns_to_qua(self.TT_TRIGGER_LENGTH_NS))

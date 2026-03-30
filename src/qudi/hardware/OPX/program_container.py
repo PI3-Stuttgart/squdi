@@ -1,6 +1,8 @@
 import time
 import qm
 from qm import SimulationConfig
+from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
+
 
 """
 This is a moku of MCAS basic functions for program to have some object oriented stuff. 
@@ -8,6 +10,8 @@ This is a moku of MCAS basic functions for program to have some object oriented 
 
 
 class MultiChSeq:
+
+    ou: NuclearOpsOPXUtils
 
     def __init__(self, name, awg):
         self._name = name
