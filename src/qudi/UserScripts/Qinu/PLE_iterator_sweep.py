@@ -30,7 +30,7 @@ from qudi.logic.qudip_enhanced import *
 import os
 from collections import OrderedDict
 from qm import qua
-from qm.qua import play, declare, fixed, for_, align, amp, infinite_loop_, wait
+from qm.qua import play, declare, fixed, for_, align, amp, infinite_loop_, wait, set_dc_offset
 
 from qualang_tools.units import unit
 from qualang_tools.loops import from_array
@@ -50,8 +50,8 @@ def ret_ret_mcas(pdc):
     def ret_mcas(self, current_iterator_df, sequence_name=None):
         """This function creates the sequence for the current itterator and returns the mcas object with the sequence programmed in it."""
         sequence_name = "PLE_itterator 2" if sequence_name is None else sequence_name
-        mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg)
         ou: NuclearOpsOPXUtils = self.queue.nuclear_ops_opx_utils
+        mcas = pc.MultiChSeq(name=sequence_name, awg=self.queue.awg, ou=ou)
 
         use_crc = current_iterator_df["use_crc"].unique()[0]
         use_detuned_laser = current_iterator_df["use_detuned_laser"].unique()[0]
@@ -63,12 +63,27 @@ def ret_ret_mcas(pdc):
 
                 ou.init_program()
 
-                # if use_detuned_laser:
-                #    ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
-                # ou.set_laser_power("Laser_620", "Laser_620_power")
-                ou.set_laser_frequency("Laser_620_freq", qua_array_1[0])
-                ou.laser_pulse("Laser_520", "repump_len", "Laser_520_power_repump")
-                wait(100 * u.ms)
+                if use_crc:
+                    set_dc_offset("Laser_620_freq", "single", self.queue.ao.get_setpoint("Laser_620_freq"))
+                    align()
+                    wait(1 * u.us)
+                    align()
+                    sna.crc(mcas, probe_2_power=80)
+
+                if use_detuned_laser:
+                    ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
+                ou.set_laser_power("Laser_620", "Laser_620_power")
+
+                set_dc_offset("Laser_620_freq", "single", qua_array_1[0])
+                if use_crc:
+                    # wait(int(current_iterator_df["repump_len"].unique()[0]) * u.ns)
+                    wait(2 * u.s)
+                else:
+                    ou.laser_pulse("Laser_520", "repump_len", "Laser_520_power_repump")
+                    align()
+                    wait(100 * u.ms)
+                    align()
+
                 ### PLE loop ###
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
@@ -76,9 +91,9 @@ def ret_ret_mcas(pdc):
                         ou.gate_trigger()
                         align()
                         if use_detuned_laser:
-                            ou.multiple_laser_pulses(laser_names=["Laser_620", "Laser_620_pi"], duration_ns="readout_len_pixel", powers_nw=["Laser_620_power", "Laser_620_pi_power"])
+                            ou.multiple_laser_pulses(laser_names=["Laser_620", "Laser_620_pi"], duration_ns="readout_len_pixel")  # , powers_nw=["Laser_620_power", "Laser_620_pi_power"])
                         else:
-                            ou.laser_pulse("Laser_620", "readout_len_pixel", "Laser_620_power")
+                            ou.laser_pulse("Laser_620", "readout_len_pixel")
                         align()
                         ou.memory_trigger()
 
@@ -90,7 +105,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     ana_seq = [
-        ["result", ">", -1, 1, 1, 1],  # Put "int(_I_['n_ssr']" as nlp_per_point?
+        ["result", ">", 1, 1, 1, 1],  # Put "int(_I_['n_ssr']" as nlp_per_point?
     ]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
@@ -111,8 +126,8 @@ def settings(pdc={}):
     nuclear.x_axis_title = "Freq [MHz]"
     # nuclear.analyze_type = 'consecutive'
     nuclear.analyze_type = "average"  # experimental feature for the fast
-    nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
-    nuclear.no_trace = True  ##Doesnt save the trace
+    nuclear.save_smartly = False  # Doesnt save 0 in the trace only.
+    nuclear.no_trace = True  # Doesnt save the trace
 
     # PLE refocus
     nuclear.do_ple_refocus_A1 = False  # not used
@@ -122,7 +137,7 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 1
 
-    laser_freq_vec_MHz = np.linspace(-1, 4, 1000) * 1e3  # GHz -> MHz
+    laser_freq_vec_MHz = np.linspace(5, 7, 1000) * 1e3  # GHz -> MHz
     B_amp = np.arange(200, 300, 5)  # mT
     nuclear.parameters = OrderedDict(
         (
@@ -130,24 +145,24 @@ def settings(pdc={}):
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
             ("sweeps", range(10)),
-            ("Laser_620_power", [19]),  # nW
-            ("Laser_520_power_repump", [50e3]),  # nW (50uW)
+            ("Laser_620_power", [80]),  # nW
+            ("Laser_520_power_repump", [200e3]),  # nW (50uW)
             ("Laser_620_freq_MHz", laser_freq_vec_MHz),
             ("click_channel", [3]),
-            ("readout_len_pixel", [int(3e6)]),  # ns (1ms)
+            ("readout_len_pixel", [int(5e6)]),  # ns (1ms)
             ("repump_len", [int(1e9)]),  # ns (1s)
             ("pulse_shape_ppg", ["continuous_sin"]),  # string
             ("pulse_width_ppg", [20]),  # ns
-            ("Laser_620_pi_power", [30]),  # nW
-            ("use_crc", [False]),
+            ("Laser_620_pi_power", [80]),  # nW
+            ("use_crc", [True]),
             ("use_detuned_laser", [True]),
         )
     )
-    nuclear.number_of_simultaneous_measurements = len(laser_freq_vec_MHz)
+    nuclear.number_of_simultaneous_measurements = len(nuclear.queue.ou.get_fast_sweep_qua_array(0)) * len(nuclear.queue.ou.get_fast_sweep_qua_array(1))
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,
-        n_values=len(laser_freq_vec_MHz) * nr_repeating_intergration,
+        n_values=nuclear.number_of_simultaneous_measurements * nr_repeating_intergration,
     )
 
 

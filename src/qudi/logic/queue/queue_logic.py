@@ -33,6 +33,7 @@ import logging
 import collections
 import importlib
 from typing import Any, Dict, List, Optional, Union
+from qin
 
 # import qudi.logic.ODMR_nops as odmr; importlib.reload(odmr)
 from qudi.util.mutex import Mutex
@@ -133,6 +134,10 @@ from qudi.hardware.picoquant.ppg512 import PPG512
 from qudi.logic.magnetlogic import MagnetLogic
 from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
 from qudi.logic.ple.optimize_logic import PLEOptimizeScannerLogic
+from qudi.logic.AO_logic import AOLogic
+from qudi.hardware.wavemeter.high_finesse_wavemeter import HighFinesseWavemeter
+from qudi.hardware.laser.toptica_dl_pro import DlProLaser
+from qudi.hardware.interfuse.switch_combiner_interfuse import SwitchCombinerInterfuse
 
 
 class queue_logic(GenericLogic):
@@ -145,23 +150,23 @@ class queue_logic(GenericLogic):
 
     # declare connections
     # McasHolder = Connector(interface="McasDictHolderInterface")
-    OpxHolder: OPX = Connector(interface="OPX")
-    TransitionTracker: TransitionTracker = Connector(interface="TransitionTracker")
-    Confocal = Connector(interface="ScanningProbeLogic")
-    GatedCounter = Connector("GatedCounter")
-    Optimizer = Connector("ScanningOptimizeLogic")
-    FastCounter = Connector(interface="TT")
-    PleOptimizeLogic: PLEOptimizeScannerLogic = Connector(interface="PLEOptimizeScannerLogic")
-    PleScannerLogic: PLEScannerLogic = Connector(interface="PLEScannerLogic")
-    MagnetLogic: MagnetLogic = Connector(interface="MagnetLogic")
-    PPG: PPG512 = Connector(interface="PPG512")
-    counterlogic1 = Connector(interface="TimeTaggerLogic")
-    Wavemeter = Connector(interface="HighFinesseWavemeter")
-    DlcPro620 = Connector(interface="DlProLaser")
-    PowerCalibrationLogic = Connector(interface="AOMPowerCalibrationLogic")
-    NuclearOpsOPXUtils: NuclearOpsOPXUtils = Connector(interface="NuclearOpsOPXUtils")
-    ProcessSetpointCombiner = Connector(interface="ProcessSetpointCombinerInterfuse")
-    Switches = Connector(interface="SwitchCombinerInterfuse")
+    OpxHolder_connector = Connector(interface="OPX")
+    TransitionTracker_connector = Connector(interface="TransitionTracker")
+    Confocal_connector = Connector(interface="ScanningProbeLogic")
+    GatedCounter_connector = Connector("GatedCounter")
+    Optimizer_connector = Connector("ScanningOptimizeLogic")
+    FastCounter_connector = Connector(interface="TT")
+    PleOptimizeLogic_connector = Connector(interface="PLEOptimizeScannerLogic")
+    PleScannerLogic_connector = Connector(interface="PLEScannerLogic")
+    MagnetLogic_connector = Connector(interface="MagnetLogic")
+    PPG_connector = Connector(interface="PPG512")
+    counterlogic1_connector = Connector(interface="TimeTaggerLogic")
+    Wavemeter_connector = Connector(interface="HighFinesseWavemeter")
+    DlcPro620_connector = Connector(interface="DlProLaser")
+    PowerCalibrationLogic_connector = Connector(interface="AOMPowerCalibrationLogic")
+    NuclearOpsOPXUtils_connector = Connector(interface="NuclearOpsOPXUtils")
+    AOLogic_connector = Connector(interface="AOLogic")
+    Switches_connector = Connector(interface="SwitchCombinerInterfuse")
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
     update_queue_list = pyqtSignal(collections.OrderedDict)
@@ -170,13 +175,22 @@ class queue_logic(GenericLogic):
     _StopTimeout = 60.0
 
     __TIME_FORMAT_STR__ = "%Y%m%d-h%Hm%Ms%S"
-
-    # smiq_visa_device = 'GPIB0::28::INSTR'
-    # app_dir = r'D:/Python/pi3diamond'
-    # log_dir = '{}/log/'.format(app_dir)
-    # log_archive_dir = '{}/log/archive/'.format(app_dir)
-    # log_single_val_dir = '{}/log/single_values/'.format(app_dir)
-    # log_tmp = '{}/log/temp/'.format(app_dir)
+    
+    
+    awg: OPX
+    transition_tracker: TransitionTracker
+    gated_counter: Any
+    optimizer: Any
+    ple_optimize_logic: PLEOptimizeScannerLogic
+    ple_scanner_logic: PLEScannerLogic
+    magnet_logic: MagnetLogic
+    ppg: PPG512
+    _counter: Any
+    fast_counter_device: Any
+    wavemeter: HighFinesseWavemeter
+    dlc_pro_620: DlProLaser
+    ao: AOLogic
+    do: SwitchCombinerInterfuse
 
     def __init__(self, config: Dict[str, Any], **kwargs: Any) -> None:
         super(queue_logic, self).__init__(config=config, **kwargs)
@@ -195,28 +209,28 @@ class queue_logic(GenericLogic):
         self._shutting_down = False
 
         # self._awg = self.mcas_holder()
-        self.awg = self.OpxHolder()
-        self.transition_tracker = self.TransitionTracker()
-        self.gated_counter = self.GatedCounter()
-        self.optimizer = self.Optimizer()
-        self.ple_optimize_logic = self.PleOptimizeLogic()
-        self.ple_scanner_logic = self.PleScannerLogic()
-        self.magnet_logic = self.MagnetLogic()
-        self.ppg = self.PPG()
+        self.awg = self.OpxHolder_connector()
+        self.transition_tracker = self.TransitionTracker_connector()
+        self.gated_counter = self.GatedCounter_connector()
+        self.optimizer = self.Optimizer_connector()
+        self.ple_optimize_logic = self.PleOptimizeLogic_connector()
+        self.ple_scanner_logic = self.PleScannerLogic_connector()
+        self.magnet_logic = self.MagnetLogic_connector()
+        self.ppg = self.PPG_connector()
 
-        self._counter = self.counterlogic1()  #
-        self.fast_counter_device = self.FastCounter()
-        self.wavemeter = self.Wavemeter()  # type: HighFinesseWavemeter
-        self.dlc_pro_620 = self.DlcPro620()
-        self.ao = self.ProcessSetpointCombiner()
-        self.do = self.Switches()
-        self.nuclear_ops_opx_utils = self.NuclearOpsOPXUtils()
+        self._counter = self.counterlogic1_connector()  #
+        self.fast_counter_device = self.FastCounter_connector()
+        self.wavemeter = self.Wavemeter_connector()  # type: HighFinesseWavemeter
+        self.dlc_pro_620 = self.DlcPro620_connector()
+        self.ao = self.AOLogic_connector()
+        self.do = self.Switches_connector()
+        self.nuclear_ops_opx_utils = self.NuclearOpsOPXUtils_connector()
         # self.create_odmr()  #only logic (no gui)
         self.init_run()
         # self.write_standardawg_sequences()
-        self.confocal = self.Confocal()
+        self.confocal = self.Confocal_connector()
         self.tt = self.transition_tracker
-        self.power_calibration_logic = self.PowerCalibrationLogic()
+        self.power_calibration_logic = self.PowerCalibrationLogic_connector()
         self.tt.load_rabi_parameters()
 
     def on_deactivate(self) -> None:

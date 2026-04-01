@@ -20,7 +20,7 @@ from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
 from qudi.logic.transition_tracker import TransitionTracker
 from qudi.hardware.OPX.OPX_holder import OPX
 from qm import qua
-from qm.qua import play, set_dc_offset, amp, declare, for_, fixed
+from qm.qua import play, set_dc_offset, amp, declare, for_, fixed, wait, align
 from qualang_tools.units import unit
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -60,7 +60,7 @@ class NuclearOpsOPXUtils(LogicBase):
     """
 
     TT_TRIGGER_LENGTH_NS: int = 20  # ns
-    LONG_PULSE_THRESHOLD_NS: int = 10_000  # ns
+    LONG_PULSE_THRESHOLD_NS: int = 1_000_000  # ns (1ms)
     LONG_PULSE_CHUNK_NS: int = 5_000  # ns
 
     power_calibration_logic: AOMPowerCalibrationLogic = Connector(interface="AOMPowerCalibrationLogic")
@@ -402,6 +402,12 @@ class NuclearOpsOPXUtils(LogicBase):
     def memory_trigger(self) -> None:
         """Play the standard memory trigger TTL pulse."""
         play(pulse="trigit", element="Memory_Trigger", duration=self.duration_ns_to_qua(self.TT_TRIGGER_LENGTH_NS))
+
+    def pause(self, duration_ns: int | qua.Variable[int]) -> None:
+        """Insert a delay by playing no pulses for the specified duration."""
+
+        _duration_ns, _duration_ns_qua = self._get_value_from_key(duration_ns)
+        wait(self.duration_ns_to_qua(_duration_ns if _duration_ns is not None else _duration_ns_qua))
 
     def init_program(self) -> None:
         self.i_1 = declare(fixed)

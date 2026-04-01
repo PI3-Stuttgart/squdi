@@ -33,6 +33,10 @@ simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
 
 from numbers import Number
 
+import qudi.UserScripts.helpers.snippets_awg_OPX as snippets_awg
+
+importlib.reload(snippets_awg)
+
 # TODO replace import with a connector to that
 from qudi.logic.qudip_enhanced.data_generation import DataGeneration
 from qudi.logic.qudip_enhanced.util import ret_property_list_element
@@ -479,9 +483,6 @@ class NuclearOPs(DataGeneration):
                     if abort.is_set():
                         break
 
-                    if self.do_ple_refocus_A1:
-                        self.refocus_ple_A1(abort=abort)
-
                     if repeat_measurement:
                         self.queue.log.info("cun:repeat_measurement ")
                     else:
@@ -660,6 +661,8 @@ class NuclearOPs(DataGeneration):
         BEFORE_DEVIATION_WAIT_S = 1.0
         AFTER_DEVIATION_WAIT_S = 1.0
         LOCK_SETTLE_TIME_S = 3.0
+        DO_GREEN_REPUMP = False
+        USE_GUI_POWERS = True
 
         q = self.queue
 
@@ -680,25 +683,30 @@ class NuclearOPs(DataGeneration):
         q.dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
         q.awg.stop_awgs()
 
+        if not snippets_awg.__PLE_REFOCUS_PARAMS__["use_gui_powers"]:
+            q.ao.set_setpoint("Laser_620", snippets_awg.__PLE_REFOCUS_PARAMS__["Laser_620_power"] * 1e-9)  # nW -> W
+            q.ao.set_setpoint("Laser_620_pi", snippets_awg.__PLE_REFOCUS_PARAMS__["Laser_620_pi_power"] * 1e-9)  # nW -> W
+            q.ao.set_setpoint("Laser_520", snippets_awg.__PLE_REFOCUS_PARAMS__["Laser_520_power"] * 1e-9)  # nW -> W
+            self.sleep(1)
+
         # Green repump
-        q.do.set_state("Laser_520", "on")
-        if not wait_or_abort(REPUMP_TIME_S):
+        if DO_GREEN_REPUMP:
+            q.do.set_state("Laser_520", "on")
+            if not wait_or_abort(REPUMP_TIME_S):
+                q.do.set_state("Laser_520", "off")
+                return False
             q.do.set_state("Laser_520", "off")
-            return False
-        q.do.set_state("Laser_520", "off")
 
         if abort.is_set():
             return False
 
         # Start optimization
-        q.do.set_state("AOM_620", "on")
         q.ple_optimize_logic.toggle_optimize(True)
         while q.ple_optimize_logic.optimizer_running:
             if abort.is_set():
                 q.log.info("Abort during PLE optimization.")
                 return False
             time.sleep(OPTIMIZER_POLL_S)
-        q.do.set_state("AOM_620", "off")
 
         if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
             return False
@@ -817,7 +825,6 @@ class NuclearOPs(DataGeneration):
         # row and stored in the AWG/OPX dictionary under its generated name.
         self.queue.log.info("cun:setup_rf:This time is the qua writing...")
         self.queue.awg.stop_awgs()
-        # self.create_fast_sweep_sequences_OPX(current_iterator_df)
         self.queue.nuclear_ops_opx_utils.create_fast_sweep_qua_arrays(current_iterator_df)
         self.mcas = self.ret_mcas(self, current_iterator_df)
         # Writing the sequence...
@@ -828,21 +835,6 @@ class NuclearOPs(DataGeneration):
         self.queue.awg.mcas_dict[self.mcas.name] = self.mcas
 
         self.performedRefocus = False
-
-    def create_fast_sweep_sequences_OPX(self, current_iterator_df: pd.DataFrame) -> None:
-        """Build the fast-sweep arrays passed into the QUA/OPX runtime loops."""
-
-        self.sweeps_OPX = []
-        self.sweep_keys_OPX = []
-        for key in current_iterator_df.keys():
-            if len(current_iterator_df[key].unique()) > 1 and key not in self.slow_changing_parameters:
-                self.sweeps_OPX.append(current_iterator_df[key].unique())
-                self.sweep_keys_OPX.append(key)
-
-        if len(self.sweep_keys_OPX) > 2:
-            raise (ValueError("Current_iterator_df has more then two axis to iterate over by the quantum machine, which is not supportet at the moment"))
-        self.i_1_array = np.array([self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e6) for i in self.sweeps_OPX[0]]) if "Laser_freqs_MHz" == self.sweep_keys_OPX[0] else self.sweeps_OPX[0]
-        self.i_2_array = (np.array([self.queue.ple_scanner_logic.frequency_to_voltage(i * 1e6) for i in self.sweeps_OPX[1]]) if "Laser_freqs_MHz" == self.sweep_keys_OPX[1] else self.sweeps_OPX[1]) if len(self.sweep_keys_OPX) == 2 else np.array([0])
 
     def analyze(
         self,

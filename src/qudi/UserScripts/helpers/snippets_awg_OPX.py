@@ -20,120 +20,38 @@ importlib.reload(MCAS)
 
 importlib.reload(sch)
 
+
 __CURRENT_POL_RED__ = 0
 __T_POL_RED__ = 0
 __RED_LASER__DELAY__ = 0
-__CRC_PARAMS__: dict[str, float | str | int] = dict(
-    probe_power=10,  # nW
-    repump_power=int(100e3),  # nW
-    probe_len=int(500e3),  # ns
+__CRC_PARAMS__: dict[str, float | str | int | None] = dict(
+    probe_power=80,  # nW
+    probe_2_power=None,
+    repump_power=int(500e3),  # nW
+    probe_len=int(1e6),  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len=int(500e3),  # ns
     threshold=15,  # cts
-    threshold_repump=5,  # cts
+    threshold_repump=7,  # cts
     wait_before_repump=int(500e3),  # ns
     wait_after_repump=int(500e3),  # ns
     max_attempts=1000,  # not used right now
     SPCM_channel="SPCM1",
 )
-__SSR_REPETITIONS__ = {
-    "14n+1": 1500,
-    "14n-1": 1500,
-    "14n": 1500,
-    "14n0": 1200,
-    "13c414": 1500,
-    "13c90": 2000,
-    "13c5000": 10,
-    "charge_state": 1,
-    "charge_state_A1_aom_Ex": 1,
-    "charge_state_ExMW": 1,
-    "ple_A2": 1,
-    "ple_A1": 1,
-    "ple_A2_delay": 1,
-    "ple_A1_delay": 1,
-    "Ex_pi_readout": 1,
-    "Ex_pi_readout_6ns": 1,
-    "Ex_ampl_sweep_SSR": 1,
-    "opt_mw_delays_calibration": 1,
-    "opt_mw_delays_calibration2": 1,
-    "2_opt_mw_delays_calibration": 1,
-    "Ex_RO": 1,
-    "2opt_withMW_pi": 1,
-    "entanglement_for_tests": 1,
-    "HOM": 1,
-    "entanglement": 1,
-    "Ex_ampl_sweep_SSR_6ns": 10,
-    "Ex_pi_readout_10ns": 10,
-}
-__LASER_DUR_DICT__ = {
-    "14n+1": 0.175,
-    "14n-1": 0.175,
-    "14n": 0.175,
-    "14n0": 0.9,
-    "13c414": 0.9,
-    "13c90": 0.21,
-    "29Si8_A2": 5.0,
-    "13c5000_A2": 5.0,
-    "13c5000": 5.0,
-    "single_state": 0.9,
-    "charge_state": 500.0,
-    "charge_state_ExMW": 2000.0,
-    "charge_state_A1_aom_Ex": 2000.0,
-    "ple_A2": 50.0,
-    "ple_A1": 50.0,
-    "Ex_pi_readout_6ns": 481 * 3 / 12.0e3,  # (Len in samples / sampling rate)
-    "Ex_ampl_sweep_SSR": 481 * 1 / 12e3,
-    "opt_mw_delays_calibration": 481 * 1 / 12e3,
-    "opt_mw_delays_calibration2": 481 * 1 / 12e3,
-    "2_opt_mw_delays_calibration": 481 * 1 / 12e3,
-    "Ex_RO": 5.0,
-    "2opt_withMW_pi": 481 * 1 / 12e3,
-    "entanglement_for_tests": 481 * 1 / 12e3,
-    "HOM": 481 * 1 / 12e3,
-    "entanglement": 481 * 1 / 12e3,
-    "Ex_ampl_sweep_SSR_6ns": 481 * 3 / 12e3,
-    "Ex_pi_readout_10ns": 481 * 5 / 12.0e3,
-    "Ex_pi_readout": 481 / 12.0e3,  # (Len in samples / sampling rate)
-}  # us
-__PERIODS__ = {
-    "14n+1": 1.6,
-    "14n-1": 1.6,
-    "29Si8_A2": 1.0,
-    "13c5000_A2": 1.0,
-    "14n": 1.6,
-    "14n0": 1.6,
-    "13c414": 6.0,
-    "13c90": 20.0,
-    "charge_state": 0.0,
-    "charge_state_A1_aom_Ex": 0.0,
-    "charge_state_ExMW": 0.0,
-    "ple_A2": 0.0,
-    "ple_A1": 0.0,
-    "ple_A2_delay": 0.0,
-    "ple_A1_delay": 0.0,
-    "Ex_pi_readout": 0.0,
-    "Ex_pi_readout_6ns": 0.0,
-    "Ex_ampl_sweep_SSR": 0.0,
-    "Ex_ampl_sweep_SSR_6ns": 0.0,
-    "Ex_pi_readout_10ns": 0.0,
-    "opt_mw_delays_calibration": 0.0,
-    "opt_mw_delays_calibration2": 0.0,
-    "2_opt_mw_delays_calibration": 0.0,
-    "Ex_RO": 0.0,
-    "2opt_withMW_pi": 0.0,
-    "entanglement": 0.0,
-    "entanglement_for_tests": 0.0,
-    "HOM": 0.0,
-}
-
-__WAIT_SWITCH__ = 0.0
-__IQ_MIXER__ = False
-__TT_TRIGGER_LENGTH__ = 0.064  # 10*192/12e3
-__SAMPLE_FREQUENCY__ = 12e3
+__PLE_REFOCUS_PARAMS__: dict[str, float | bool] = dict(
+    use_gui_powers=True,
+    Laser_620_power=100,  # nW
+    Laser_620_pi_power=50,  # nW
+    Laser_520_power=500e3,  # nW
+)
+__electron_init_params__ = dict(
+    state="A1",  # ["A1", "B2"]
+)
 
 
 def crc(
     mcas: MultiChSeq,
-    probe_power: float | str = __CRC_PARAMS__["probe_power"],  # nW
+    probe_power: float | str = __CRC_PARAMS__["probe_power"],
+    probe_2_power: float | str | None = __CRC_PARAMS__["probe_2_power"],  # nW
     repump_power: float | str = __CRC_PARAMS__["repump_power"],  # nW
     probe_len: int | str = __CRC_PARAMS__["probe_len"],  # ns
     repump_len: int | str = __CRC_PARAMS__["repump_len"],  # ns
@@ -184,17 +102,27 @@ def crc(
 
     ou: NuclearOpsOPXUtils = mcas.ou
     # QUA vector storing photon arrival time-tags
-    times = declare(int, size=1)
+    times = declare(int, size=1000)
 
     # Declare counts variable if not provided
     if counts is None:
         counts: qua.Variable[int] = declare(int)
     assign(counts, 0)
-
+    align()
+    if probe_2_power is not None:
+        ou.set_laser_power("Laser_620_pi", probe_2_power)
+    ou.set_laser_power("Laser_620", probe_power)
+    wait(500 * u.us)
     # Repeat until sufficient photon counts are detected
     with while_(counts < crc_threshold):
+        # ou.gate_trigger()
         measure("readout", SPCM_channel, None, time_tagging.analog(times, probe_len, counts))
-        ou.laser_pulse("Laser_620", probe_len, probe_power)
+        if probe_2_power is not None:
+            ou.multiple_laser_pulses(["Laser_620", "Laser_620_pi"], probe_len)
+        else:
+            ou.laser_pulse("Laser_620", probe_len)
+
+        # ou.memory_trigger()
         align()
 
         # Provide counts in Stream if provided
@@ -208,9 +136,10 @@ def crc(
             ou.laser_pulse("Laser_520", repump_len, repump_power)
 
         # Potential safeguard against infinite looping (not implemented)
-        # with if_(i > max_attempts):
-        #      assign(counts, crc_threshold + 1)
+        with if_(i > max_attempts):
+            assign(counts, crc_threshold + 1)
         wait(wait_after_repump)
+    align()
 
 
 def scan_laser_to_target(
@@ -308,7 +237,7 @@ def init_state_drive(state, freqs, max_amp):
     """
 
 
-def electron_init(mcas, state, dur, freqs_all_L, freqs_all_R, segment_length=10, max_amp=0.5):
+def electron_init(mcas, state, dur, segment_length=10, max_amp=0.5):
     """
     State could be "+(-)0(1).5", example "+1.5" or "-0.5".
     Duration (µs) will be used to calculate loop_count (int) depending on segment_length (10µs standard).

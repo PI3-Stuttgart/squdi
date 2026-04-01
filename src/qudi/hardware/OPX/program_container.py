@@ -13,10 +13,11 @@ class MultiChSeq:
 
     ou: NuclearOpsOPXUtils
 
-    def __init__(self, name, awg):
+    def __init__(self, name, awg, ou):
         self._name = name
         self._qm = awg.qm
         self._qmm = awg.qmm
+        self.ou = ou
         self._config = awg._configuration
         self.ch_dict = None  # Here in principle the config ch_dict could be used of used channels.
         self._job = None
