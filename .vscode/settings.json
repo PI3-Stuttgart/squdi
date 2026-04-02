@@ -1,10 +1,42 @@
 {
-  "editor.wordWrap": "off",
-  "[python]": {
-    "editor.wordWrap": "off",
-    "editor.formatOnSave": true
+  "python.createEnvironment.trigger": "off",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.inlayHints.variableTypes": true,
+  "python.analysis.inlayHints.functionReturnTypes": true,
+  "python.analysis.inlayHints.callArgumentNames": true,
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports.ruff": "explicit",
+    "source.fixAll.ruff": "explicit"
   },
-  "python.linting.pylintArgs": ["--disable=line-too-long"],
-  "pylint.args": ["--disable=line-too-long"],
-  "black-formatter.args": ["--line-length", "300"]
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.rulers": [
+      100
+    ]
+  },
+  "ruff.nativeServer": "on",
+  "ruff.organizeImports": true,
+  "ruff.lineLength": 100,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.exclude": {
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/__pycache__": true,
+    "**/.ruff_cache": true
+  },
+  "testing.pytestEnabled": true,
+  "testing.unittestEnabled": false,
+  "testing.pytestArgs": [
+    "tests"
+  ],
+  "jupyter.askForKernelRestart": false,
+  "jupyter.interactiveWindow.creationMode": "perFile",
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "editor.minimap.enabled": false,
+  "editor.renderWhitespace": "selection",
+  "workbench.startupEditor": "none"
 }
