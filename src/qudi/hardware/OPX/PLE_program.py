@@ -86,7 +86,7 @@ def qm_scan_program(aoOPX):
                 play("pulse" * amp(volt_620 * 2), "Laser_620", duration=tt_trigger_len * u.ns)
                 with for_(i, 0, i < i_avg, i + 1):
                     play("pulse" * amp(volt_620 * 2), "Laser_620", duration=laser_pulse_len * u.ns)
-                    play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
+                    # play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
                     # play("trigit", "TT_attodry_trigger", duration=laser_pulse_len * u.ns)
                     # play("pulse" * amp(volt_520), "Laser_520", duration=laser_pulse_len)  # Time tagger stop trigger
                     # measure(
