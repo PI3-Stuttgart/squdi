@@ -1,29 +1,27 @@
+# from configuration import *
+import importlib
 import json
+import sys
+import time
+from typing import Any
 
-from qm import SimulationConfig, LoopbackInterface
-from qm.grpc.qua import QuaProgramArrayVarRefExpression, QuaProgramVarRefExpression
+import qm
+import qm.exceptions
+from qm import SimulationConfig
 from qm.qua import *
 
 # from qm import QuantumMachinesManager
 from qm.quantum_machines_manager import QuantumMachinesManager
-from qm.qua._expressions import QuaVariable
-
-# from configuration import *
-import importlib
-import sys
-from typing import Dict, Tuple, Any, Union
-import time
-import qm.exceptions
-from qualang_tools.control_panel import ManualOutputControl
-import qm
 from qudi.core.configoption import ConfigOption
-from qudi.util.mutex import RecursiveMutex
 from qudi.core.module import Base
+from qudi.util.mutex import RecursiveMutex
 
 # from qudi.hardware.OPX.configuration import *
 
 config_module = importlib.import_module("qudi.hardware.OPX.configuration")
-globals().update({name: getattr(config_module, name) for name in dir(config_module) if not name.startswith("_")})
+globals().update(
+    {name: getattr(config_module, name) for name in dir(config_module) if not name.startswith("_")}
+)
 
 
 # class OPXmanual(Base):
@@ -38,7 +36,9 @@ class OPX(Base):  # hardware, awg,
         options:
     """
 
-    _qm_config_file = ConfigOption(name="qm_config_file", default="configuration", missing="nothing")
+    _qm_config_file = ConfigOption(
+        name="qm_config_file", default="configuration", missing="nothing"
+    )
 
     _configuration: Any
     _qm_manual_output_control = None
@@ -61,7 +61,13 @@ class OPX(Base):  # hardware, awg,
         """Loads QM config and establishs connection to OPX+"""
         # import QuantumMachines configuration python file
         self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
-        globals().update({name: getattr(self._configuration, name) for name in dir(self._configuration) if not name.startswith("_")})
+        globals().update(
+            {
+                name: getattr(self._configuration, name)
+                for name in dir(self._configuration)
+                if not name.startswith("_")
+            }
+        )
 
         # Establish connection to OPX+
 
@@ -86,7 +92,11 @@ class OPX(Base):  # hardware, awg,
     def run_cw_mode(self) -> None:
         """Runs a continuous wave program on the OPX that sets the digital and analog outputs as specified in the dictionaries."""
         ls_curr_do: list = [key for key, value in self.cw_do_states.items() if value == "on"]
-        dict_curr_ao = {key: value for key, value in self.cw_ao_values.items() if key not in ["SPCM1", "SPCM2", "RF"]}
+        dict_curr_ao = {
+            key: value
+            for key, value in self.cw_ao_values.items()
+            if key not in ["SPCM1", "SPCM2", "RF"]
+        }
         # check if any output should be set, if not stop the current qm program
         if not ls_curr_do and not dict_curr_ao:
             if self.cw_job:
@@ -94,7 +104,9 @@ class OPX(Base):  # hardware, awg,
         else:
             duration = 1 * u.us
             with program() as cw_program:
-                if ("LaserScanner_red" in dict_curr_ao.keys()) and (dict_curr_ao["LaserScanner_red"] != self.prev_LaserScanner_red_voltge):
+                if ("LaserScanner_red" in dict_curr_ao.keys()) and (
+                    dict_curr_ao["LaserScanner_red"] != self.prev_LaserScanner_red_voltge
+                ):
                     # self.log.warning(
                     #     f"Setting LaserScanner_red voltage to {dict_curr_ao['LaserScanner_red']} V (Prev voltage: {self.prev_LaserScanner_red_voltge} V)"
                     # )
@@ -107,15 +119,23 @@ class OPX(Base):  # hardware, awg,
                     dict_curr_ao.pop("LaserScanner_red", None)
                 with infinite_loop_():
                     for ao, power in dict_curr_ao.items():
-                        # checks if same element also uses digital output
-                        pulse = "pulse" if ao in ls_curr_do else "power"
-                        play(
-                            pulse * amp(self._volt2amp(power)),
-                            ao,
-                            duration=duration,
-                        )
+                        # checks if same element also has active digital output
+                        if ao in self.cw_do_states.keys():
+                            if ao in ls_curr_do:
+                                play(
+                                    "pulse" * amp(self._volt2amp(power)),
+                                    ao,
+                                    duration=duration,
+                                )
+                        else:
+                            play(
+                                "power" * amp(self._volt2amp(power)),
+                                ao,
+                                duration=duration,
+                            )
+
                     for do in ls_curr_do:
-                        if not do in dict_curr_ao.keys():
+                        if do not in dict_curr_ao.keys():
                             play("active", do, duration=duration)
 
             # self.simulate(cw_program, plot=True)
@@ -152,11 +172,13 @@ class OPX(Base):  # hardware, awg,
 
         waveform_report = job_sim.get_simulated_waveform_report()
         waveform_dict = waveform_report.to_dict()
-        if not save_path is None:
+        if save_path is not None:
             with open(os.path.join(save_path, "awg_file.json"), "w") as fp:
                 json.dump(waveform_dict, fp)
         if plot:
-            waveform_report.create_plot(samples, plot=plot, save_path="./" if save_path is None else save_path)
+            waveform_report.create_plot(
+                samples, plot=plot, save_path="./" if save_path is None else save_path
+            )
         t1 = time.time()
         print("simulation", t1 - t0)
 
@@ -170,7 +192,9 @@ class OPX(Base):  # hardware, awg,
             self._qm = self.qmm.open_qm(config=self._configuration.config)
 
         except qm.exceptions.OpenQmException:
-            self.log.warning("Could not connect to OPX with keeping previous connections. Previouse connections disconnected.")
+            self.log.warning(
+                "Could not connect to OPX with keeping previous connections. Previouse connections disconnected."
+            )
             pass  # do nothing for now...
 
     @property
@@ -186,7 +210,13 @@ class OPX(Base):  # hardware, awg,
         if self._configuration in sys.modules:
             del sys.modules[self._configuration]
         self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
-        globals().update({name: getattr(self._configuration, name) for name in dir(self._configuration) if not name.startswith("_")})
+        globals().update(
+            {
+                name: getattr(self._configuration, name)
+                for name in dir(self._configuration)
+                if not name.startswith("_")
+            }
+        )
 
     @property
     def name(self) -> str:
