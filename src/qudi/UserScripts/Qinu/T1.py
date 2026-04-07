@@ -53,14 +53,12 @@ def ret_ret_mcas(pdc):
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
                         sna.crc(mcas)
-
                         sna.electron_init(mcas, "e1", "e1_init_duration", "e1_init_power")
-                        sna.electron_init(mcas, "e2", "e2_init_duration", "e2_init_power")
-
+                        ou.pause("readout_delay")
                         if SSR_state == "e1":
-                            sna.ssr(mcas, "e1")
+                            sna.ssr(mcas, "e1", "SSR_redout_len", "Laser_620_power_readout")
                         if SSR_state == "e2":
-                            sna.ssr(mcas, "e2")
+                            sna.ssr(mcas, "e2", "SSR_redout_len", "Laser_620_pi_power_readout")
 
                         # Charge state readout
                         sna.csr(mcas)
@@ -104,18 +102,13 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 2000
 
-    e2_init_duration = np.linspace(1, 200, 10) * 1e3  # ns
-    B_amp = np.arange(200, 300, 5)  # mT
+    readout_delay = np.linspace(0, 2_000, 25) * 1e3  # ns -> us
     nuclear.parameters = OrderedDict(
         (
-            # ("B_phi", [0]),
-            # ("B_theta", [0]),
-            # ("B_amp", B_amp),
             ("sweeps", range(1)),
+            ("readout_delay", readout_delay),
             ("e1_init_power", [50]),
-            ("e1_init_duration", [3e6]),
-            ("e2_init_power", [100, 150, 200, 250]),  # nW
-            ("e2_init_duration", e2_init_duration),
+            ("e1_init_duration", [50]),
             ("click_channel", [3]),  # nW
             ("pulse_shape_ppg", ["continuous_sin"]),  # string
             ("pulse_width_ppg", [20]),  # ns
