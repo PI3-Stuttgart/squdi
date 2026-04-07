@@ -472,4 +472,4 @@ class NuclearOpsOPXUtils(LogicBase):
         self.j = declare(int)
         self.times = declare(int, size=1000)
         self.crc_attempts = declare(int)
-        self. = declare(int)
+        self.crc_counts = declare(int)
