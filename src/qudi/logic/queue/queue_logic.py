@@ -1,42 +1,41 @@
 # coding=utf-8
-from __future__ import print_function, absolute_import, division
+from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-import sys, os
-import imp
-
-# from gui.queue.Queue import queue_gui
-from queue import Empty, Queue
-from PySide2.QtCore import Signal as pyqtSignal
-from qudi.logic.qudip_enhanced import *
-from qudi.logic import magnetlogic
-
-# FIXME
-from PySide2.QtCore import QTimer
-from PySide2 import QtTest
-
-# import multi_channel_awg_seq as MCAS; reload(MCAS)
-import qudi.logic.misc as misc
+import collections
 import datetime
+import imp
+import importlib
+import logging
 import os
 import pickle
 import sys
 import threading
 import traceback
-from qudi.logic.generic_logic import GenericLogic
-from qudi.core.connector import Connector
+
+# from gui.queue.Queue import queue_gui
+from queue import Empty, Queue
+from typing import Any, Dict, List, Optional, Union
+
 import multiprocess
 import numpy as np
-import logging
+from PySide2 import QtTest
 
-import collections
-import importlib
-from typing import Any, Dict, List, Optional, Union
-from qin
+# FIXME
+from PySide2.QtCore import QTimer
+from PySide2.QtCore import Signal as pyqtSignal
+from qudi.core.connector import Connector
 
+# from qin
 # import qudi.logic.ODMR_nops as odmr; importlib.reload(odmr)
 from qudi.util.mutex import Mutex
+
+# import multi_channel_awg_seq as MCAS; reload(MCAS)
+import qudi.logic.misc as misc
+from qudi.logic import magnetlogic
+from qudi.logic.generic_logic import GenericLogic
+from qudi.logic.qudip_enhanced import *
 
 
 # from qudi.logic.currentmeasurement.current_measurement import CurrentMeasurementLogic # Voltage and Current measurements
@@ -127,17 +126,17 @@ class ScriptQueueList(collections.abc.MutableSequence):
         return str(self.list)
 
 
-from qudi.logic.transition_tracker import TransitionTracker
-from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
+from qudi.hardware.interfuse.switch_combiner_interfuse import SwitchCombinerInterfuse
+from qudi.hardware.laser.toptica_dl_pro import DlProLaser
 from qudi.hardware.OPX.OPX_holder import OPX
 from qudi.hardware.picoquant.ppg512 import PPG512
-from qudi.logic.magnetlogic import MagnetLogic
-from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
-from qudi.logic.ple.optimize_logic import PLEOptimizeScannerLogic
-from qudi.logic.AO_logic import AOLogic
 from qudi.hardware.wavemeter.high_finesse_wavemeter import HighFinesseWavemeter
-from qudi.hardware.laser.toptica_dl_pro import DlProLaser
-from qudi.hardware.interfuse.switch_combiner_interfuse import SwitchCombinerInterfuse
+from qudi.logic.AO_logic import AOLogic
+from qudi.logic.magnetlogic import MagnetLogic
+from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
+from qudi.logic.ple.optimize_logic import PLEOptimizeScannerLogic
+from qudi.logic.ple.ple_scanner_logic import PLEScannerLogic
+from qudi.logic.transition_tracker import TransitionTracker
 
 
 class queue_logic(GenericLogic):
@@ -175,8 +174,7 @@ class queue_logic(GenericLogic):
     _StopTimeout = 60.0
 
     __TIME_FORMAT_STR__ = "%Y%m%d-h%Hm%Ms%S"
-    
-    
+
     awg: OPX
     transition_tracker: TransitionTracker
     gated_counter: Any

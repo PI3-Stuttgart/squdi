@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import importlib
+
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 
 importlib.reload(sch)
@@ -25,18 +26,17 @@ import qudi.hardware.OPX.OPX_utils as OPX_utils
 
 importlib.reload(OPX_utils)
 
-from qudi.logic.qudip_enhanced import *
-
 import os
 from collections import OrderedDict
+
 from qm import qua
-from qm.qua import play, declare, fixed, for_, align, amp, infinite_loop_, wait
-
-from qualang_tools.units import unit
+from qm.qua import align, amp, declare, fixed, for_, infinite_loop_, play, wait
 from qualang_tools.loops import from_array
-from qudi.logic.NuclearOPs import NuclearOPs
-from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
+from qualang_tools.units import unit
 
+from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
+from qudi.logic.NuclearOPs import NuclearOPs
+from qudi.logic.qudip_enhanced import *
 
 ### Setup the sequence and the measurement ###
 u = unit(coerce_to_integer=True)
@@ -134,7 +134,7 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = True
+    nuclear.do_ple_refocus_A1 = False
     nuclear.ple_refocus_interval = 30
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]

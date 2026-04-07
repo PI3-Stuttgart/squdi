@@ -1,10 +1,12 @@
+import time
+
 import numpy as np
+from qm import LoopbackInterface, SimulationConfig
 from qm.qua import *
-from qudi.hardware.OPX.configuration import *
-from qm import SimulationConfig, LoopbackInterface
 from qm.quantum_machines_manager import QuantumMachinesManager
 from qualang_tools.loops import qua_linspace
-import time
+
+from qudi.hardware.OPX.configuration import *
 
 
 def qm_scan_program(aoOPX):
@@ -86,7 +88,7 @@ def qm_scan_program(aoOPX):
                 play("pulse" * amp(volt_620 * 2), "Laser_620", duration=tt_trigger_len * u.ns)
                 with for_(i, 0, i < i_avg, i + 1):
                     play("pulse" * amp(volt_620 * 2), "Laser_620", duration=laser_pulse_len * u.ns)
-                    # play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
+                    play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
                     # play("trigit", "TT_attodry_trigger", duration=laser_pulse_len * u.ns)
                     # play("pulse" * amp(volt_520), "Laser_520", duration=laser_pulse_len)  # Time tagger stop trigger
                     # measure(
@@ -110,8 +112,9 @@ def qm_scan_program(aoOPX):
 
             # scan_laser_to_target(max_ls_volt, crc_laser_voltage)
             set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-            with for_(i, 0, i < 10000, i + 1):
-                play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10000)
+            wait(3 * u.s)
+            # with for_(i, 0, i < 10000, i + 1):
+            #    play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10000)
             # crc(volt_620, volt_520, counts, counts_st)
             # scan_laser_to_target(crc_laser_voltage, min_ls_volt)
             # with for_each_(vLSBS, back_scan_ls_volt_array):
