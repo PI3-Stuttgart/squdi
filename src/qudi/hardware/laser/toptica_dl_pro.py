@@ -1,20 +1,22 @@
-from qudi.core.configoption import ConfigOption
-from typing import Iterable, Mapping, Union, Optional, Tuple, Type, Dict
-from qudi.interface.simple_laser_interface import SimpleLaserInterface
-from qudi.interface.triggered_ao_interface import TriggeredAOInterface
-from qudi.interface.simple_laser_interface import ControlMode, ShutterState, LaserState
+import functools
 from enum import IntEnum
-from qudi.interface.process_control_interface import ProcessControlConstraints
-from qudi.interface.switch_interface import SwitchInterface
-import time
+from typing import Union
+
+from qudi.core.configoption import ConfigOption
 from toptica.lasersdk.dlcpro.v2_0_3 import (
     DLCpro,
-    LaserHead,
     NetworkConnection,
-    DeviceNotFoundError,
 )
-import functools
-import asyncio
+
+from qudi.interface.process_control_interface import ProcessControlConstraints
+from qudi.interface.simple_laser_interface import (
+    ControlMode,
+    LaserState,
+    ShutterState,
+    SimpleLaserInterface,
+)
+from qudi.interface.switch_interface import SwitchInterface
+from qudi.interface.triggered_ao_interface import TriggeredAOInterface
 
 _Real = Union[int, float]
 
@@ -256,7 +258,10 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
         value = float(value)
 
         if not self.constraints.channel_value_in_range(channel, value)[0]:
-            raise ValueError(f'Setpoint {value} for channel "{channel}" out of allowed ' f"value bounds {self.constraints.channel_limits[channel]}")
+            raise ValueError(
+                f'Setpoint {value} for channel "{channel}" out of allowed '
+                f"value bounds {self.constraints.channel_limits[channel]}"
+            )
         self.dlc.laser1.wide_scan.value_set.set(value)
 
     @connect_laser
@@ -287,7 +292,9 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
         voltages in Volts
         sweep in seconds
         """
-        self.dlc.laser1.wide_scan.scan_begin.set(voltage_start - self.detune_for_trigger)  # fix the 0.01
+        self.dlc.laser1.wide_scan.scan_begin.set(
+            voltage_start - self.detune_for_trigger
+        )  # fix the 0.01
         self.dlc.laser1.wide_scan.trigger.output_threshold.set(voltage_start)
 
         self.dlc.laser1.wide_scan.scan_end.set(voltage_stop)
@@ -326,7 +333,9 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
     @property
     @connect_laser
     def ao_channel(self):
-        return get_key_by_value(self.channel_mapping, self.dlc.laser1.wide_scan.output_channel.get())
+        return get_key_by_value(
+            self.channel_mapping, self.dlc.laser1.wide_scan.output_channel.get()
+        )
 
     @ao_channel.setter
     @connect_laser

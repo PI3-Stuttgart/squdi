@@ -1,4 +1,4 @@
-from __future__ import print_function, absolute_import, division
+from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
@@ -6,27 +6,26 @@ import json
 import sys
 
 if sys.version_info.major == 2:
-    from imp import reload
+    pass
 else:
-    from importlib import reload
+    pass
 
 
 import importlib
-import zipfile
 import time
+
 import qudi.logic.misc as misc
 
 importlib.reload(misc)
-import traceback
-import datetime
-import threading
-import os
-import numpy as np
-import time
-import pandas as pd
-import logging
-from PySide2 import QtTest
 import collections
+import datetime
+import os
+import threading
+import traceback
+
+import numpy as np
+import pandas as pd
+from PySide2 import QtTest
 from qm import SimulationConfig
 
 simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
@@ -38,17 +37,17 @@ import qudi.UserScripts.helpers.snippets_awg_OPX as snippets_awg
 importlib.reload(snippets_awg)
 
 # TODO replace import with a connector to that
-from qudi.logic.qudip_enhanced.data_generation import DataGeneration
-from qudi.logic.qudip_enhanced.util import ret_property_list_element
-from qudi.logic.qudip_enhanced import save_qutip_enhanced
-
-from qudi.util.mutex import Mutex
-import qudi.logic.qudip_enhanced.data_handling as data_handling
 import base64
 import hashlib
 from collections import OrderedDict
 from typing import Any, Dict, Optional, Sequence
 
+from qudi.util.mutex import Mutex
+
+import qudi.logic.qudip_enhanced.data_handling as data_handling
+from qudi.logic.qudip_enhanced import save_qutip_enhanced
+from qudi.logic.qudip_enhanced.data_generation import DataGeneration
+from qudi.logic.qudip_enhanced.util import ret_property_list_element
 from qudi.logic.queue.queue_logic import queue_logic
 
 
@@ -90,7 +89,9 @@ class NuclearOPs(DataGeneration):
     # # Tracking stuff:
     refocus_interval = misc.ret_property_typecheck("refocus_interval", int)
     odmr_interval = misc.ret_property_typecheck("odmr_interval", Number)
-    additional_recalibration_interval = misc.ret_property_typecheck("additional_recalibration_interval", int)
+    additional_recalibration_interval = misc.ret_property_typecheck(
+        "additional_recalibration_interval", int
+    )
 
     __TITLE_DATE_FORMAT__ = "%Y%m%dh%Hm%Ms%S"
     IDLE_LASERSCANNER_DLC_SET_VOLTAGE = 60
@@ -401,7 +402,9 @@ class NuclearOPs(DataGeneration):
         y = self.queue.confocal.scanner_position["y"]
         z = self.queue.confocal.scanner_position["z"]
 
-        self.df_refocus_pos = pd.DataFrame(OrderedDict(confocal_x=[x], confocal_y=[y], confocal_z=[z]))
+        self.df_refocus_pos = pd.DataFrame(
+            OrderedDict(confocal_x=[x], confocal_y=[y], confocal_z=[z])
+        )
 
         try:
             # Setup gated counter
@@ -424,7 +427,9 @@ class NuclearOPs(DataGeneration):
 
                     # updates click channel for gated counter if defined
                     if "click_channel" in self.current_iterator_df.keys():
-                        self.queue.fast_counter_device._count_between_markers["click_channel"] = self.current_iterator_df["click_channel"].unique()[0]
+                        self.queue.fast_counter_device._count_between_markers["click_channel"] = (
+                            self.current_iterator_df["click_channel"].unique()[0]
+                        )
 
                     if self.do_ple_refocus_A1:
                         self.refocus_ple_A1(abort)
@@ -442,14 +447,49 @@ class NuclearOPs(DataGeneration):
                         break
 
                     # Save relevant data from transition tracker to data set
-                    self.data.set_observations([OrderedDict(mw_mixing_frequency=self.queue.transition_tracker.mw_mixing_frequency_L)] * self.number_of_simultaneous_measurements)
-                    self.data.set_observations([OrderedDict(mw_mixing_frequency=self.queue.transition_tracker.mw_mixing_frequency_R)] * self.number_of_simultaneous_measurements)
-                    self.data.set_observations([OrderedDict(local_oscillator_freq=self.queue.transition_tracker.current_local_oscillator_freq)] * self.number_of_simultaneous_measurements)
-                    self.data.set_observations([OrderedDict(ple_A2=self.queue.transition_tracker.ple_A2)] * self.number_of_simultaneous_measurements)  # already inlcuded in raw_clicks_processing
-                    self.data.set_observations([OrderedDict(ple_A1=self.queue.transition_tracker.ple_A1)] * self.number_of_simultaneous_measurements)  # already inlcuded in raw_clicks_processing
-                    self.data.set_observations(pd.concat([self.df_refocus_pos.iloc[-1:, :]] * self.number_of_simultaneous_measurements).reset_index(drop=True))  # already inlcuded in raw_clicks_processing
+                    self.data.set_observations(
+                        [
+                            OrderedDict(
+                                mw_mixing_frequency=self.queue.transition_tracker.mw_mixing_frequency_L
+                            )
+                        ]
+                        * self.number_of_simultaneous_measurements
+                    )
+                    self.data.set_observations(
+                        [
+                            OrderedDict(
+                                mw_mixing_frequency=self.queue.transition_tracker.mw_mixing_frequency_R
+                            )
+                        ]
+                        * self.number_of_simultaneous_measurements
+                    )
+                    self.data.set_observations(
+                        [
+                            OrderedDict(
+                                local_oscillator_freq=self.queue.transition_tracker.current_local_oscillator_freq
+                            )
+                        ]
+                        * self.number_of_simultaneous_measurements
+                    )
+                    self.data.set_observations(
+                        [OrderedDict(ple_A2=self.queue.transition_tracker.ple_A2)]
+                        * self.number_of_simultaneous_measurements
+                    )  # already inlcuded in raw_clicks_processing
+                    self.data.set_observations(
+                        [OrderedDict(ple_A1=self.queue.transition_tracker.ple_A1)]
+                        * self.number_of_simultaneous_measurements
+                    )  # already inlcuded in raw_clicks_processing
+                    self.data.set_observations(
+                        pd.concat(
+                            [self.df_refocus_pos.iloc[-1:, :]]
+                            * self.number_of_simultaneous_measurements
+                        ).reset_index(drop=True)
+                    )  # already inlcuded in raw_clicks_processing
 
-                    self.data.set_observations([OrderedDict(start_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
+                    self.data.set_observations(
+                        [OrderedDict(start_time=datetime.datetime.now())]
+                        * self.number_of_simultaneous_measurements
+                    )
 
                     # start measurement
                     self.get_trace(
@@ -460,20 +500,29 @@ class NuclearOPs(DataGeneration):
                     if abort.is_set():
                         break
 
-                    self.data.set_observations([OrderedDict(end_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
+                    self.data.set_observations(
+                        [OrderedDict(end_time=datetime.datetime.now())]
+                        * self.number_of_simultaneous_measurements
+                    )
 
                     if self.save_smartly:  # non zero to the data
                         # FIXME:  TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
                         dd = self.ana_trace.trace
                         idx = np.nonzero(dd)
                         ddd = dd[idx]
-                        self.data.set_observations([OrderedDict({"trace": (idx, ddd)})] * self.number_of_simultaneous_measurements)
+                        self.data.set_observations(
+                            [OrderedDict({"trace": (idx, ddd)})]
+                            * self.number_of_simultaneous_measurements
+                        )
                     elif self.raw_clicks_processing:
                         pass
                     elif self.no_trace:
                         pass
                     else:
-                        self.data.set_observations([OrderedDict(trace=self.ana_trace.trace)] * self.number_of_simultaneous_measurements)
+                        self.data.set_observations(
+                            [OrderedDict(trace=self.ana_trace.trace)]
+                            * self.number_of_simultaneous_measurements
+                        )
 
                     if abort.is_set():
                         break
@@ -498,7 +547,6 @@ class NuclearOPs(DataGeneration):
                 self.save()
 
         except Exception as e:
-
             self.queue.log.error("cun ERROR: Nuclear op failed in run measurement: %s", e)
             abort.set()
             self.update_current_str()
@@ -508,7 +556,9 @@ class NuclearOPs(DataGeneration):
             # self.update_current_str()
         finally:
             self.state = "idle"
-            self.data._df = data_handling.df_take_duplicate_rows(self.data.df, self.iterator_df_done)  # drops unfinished measurements,
+            self.data._df = data_handling.df_take_duplicate_rows(
+                self.data.df, self.iterator_df_done
+            )  # drops unfinished measurements,
             self.pld.new_data_arrived()
             self.update_current_str()
             if self.session_meas_count == 0:
@@ -530,14 +580,21 @@ class NuclearOPs(DataGeneration):
         if len(self.data.df) == 0 or len(self.iterator_df_done) == 0:
             return 0
         else:
-            return len(self.iterator_df_done) - len(self.data.df[(self.data.df.start_time < self.start_time) & (self.data.df.start_time > datetime.datetime(1900, 1, 1))])
+            return len(self.iterator_df_done) - len(
+                self.data.df[
+                    (self.data.df.start_time < self.start_time)
+                    & (self.data.df.start_time > datetime.datetime(1900, 1, 1))
+                ]
+            )
 
     def run_debug_sequence(self, abort: Any, **kwargs: Any) -> None:
         """Run the sequence in debug/simulation mode instead of live acquisition."""
         ## Here maybe is for the simulation mode...
 
         if any([key in kwargs for key in ["iff", "init_from_file"]]):
-            raise Exception("Error: Data initialization from file (.hdf or .csv) not allwoed in sequence debug mode.")
+            raise Exception(
+                "Error: Data initialization from file (.hdf or .csv) not allwoed in sequence debug mode."
+            )
         if len(self.parameters["sweeps"]) != 1:
             print("cun:Debug mode, number of sweeps set to one.")
             self.parameters["sweeps"] = [0]
@@ -549,14 +606,22 @@ class NuclearOPs(DataGeneration):
             for idx, _ in enumerate(self.iterator()):
                 if abort.is_set():
                     break
-                self.data.set_observations([OrderedDict(start_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
+                self.data.set_observations(
+                    [OrderedDict(start_time=datetime.datetime.now())]
+                    * self.number_of_simultaneous_measurements
+                )
 
                 # self.dowork()
-                self.setup_rf(self.current_iterator_df, hashed=False)  # self.hashed) ##Is this guy stops the main loop?
+                self.setup_rf(
+                    self.current_iterator_df, hashed=False
+                )  # self.hashed) ##Is this guy stops the main loop?
                 self.queue.awg.simulate(self.mcas.program, plot=True)
 
                 # self.queue.awg.simulate(self.queue._awg.mcas_dict[self.sequence_name], plot = True)
-                self.data.set_observations([OrderedDict(end_time=datetime.datetime.now())] * self.number_of_simultaneous_measurements)
+                self.data.set_observations(
+                    [OrderedDict(end_time=datetime.datetime.now())]
+                    * self.number_of_simultaneous_measurements
+                )
             if not abort.is_set():
                 self.state = "sequence_ok"  # FIXME why never this reaches the state?
         except Exception:
@@ -583,7 +648,13 @@ class NuclearOPs(DataGeneration):
     def confocal_pos_moving_average(self, n: int) -> pd.DataFrame:
         """Return a moving average over the stored confocal refocus positions."""
         # FIXME ?
-        return self.df_refocus_pos[["confocal_x", "confocal_y", "confocal_z"]].rolling(n, win_type="boxcar", center=True).sum().dropna() / n
+        return (
+            self.df_refocus_pos[["confocal_x", "confocal_y", "confocal_z"]]
+            .rolling(n, win_type="boxcar", center=True)
+            .sum()
+            .dropna()
+            / n
+        )
 
     @property
     def refocus_moving_average_num(self) -> int:
@@ -661,8 +732,6 @@ class NuclearOPs(DataGeneration):
         BEFORE_DEVIATION_WAIT_S = 1.0
         AFTER_DEVIATION_WAIT_S = 1.0
         LOCK_SETTLE_TIME_S = 3.0
-        DO_GREEN_REPUMP = False
-        USE_GUI_POWERS = True
 
         q = self.queue
 
@@ -683,14 +752,20 @@ class NuclearOPs(DataGeneration):
         q.dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
         q.awg.stop_awgs()
 
-        if not snippets_awg.__PLE_REFOCUS_PARAMS__["use_gui_powers"]:
-            q.ao.set_setpoint("Laser_620", snippets_awg.__PLE_REFOCUS_PARAMS__["Laser_620_power"] * 1e-9)  # nW -> W
-            q.ao.set_setpoint("Laser_620_pi", snippets_awg.__PLE_REFOCUS_PARAMS__["Laser_620_pi_power"] * 1e-9)  # nW -> W
-            q.ao.set_setpoint("Laser_520", snippets_awg.__PLE_REFOCUS_PARAMS__["Laser_520_power"] * 1e-9)  # nW -> W
-            self.sleep(1)
+        if not snippets_awg.PLE_REFOCUS_PARAMS.use_gui_powers:
+            q.ao.set_setpoint(
+                "Laser_620", snippets_awg.PLE_REFOCUS_PARAMS.laser_power_A1 * 1e-9
+            )  # nW -> W
+            q.ao.set_setpoint(
+                "Laser_620_pi", snippets_awg.PLE_REFOCUS_PARAMS.laser_power_B2 * 1e-9
+            )  # nW -> W
+            q.ao.set_setpoint(
+                "Laser_520", snippets_awg.PLE_REFOCUS_PARAMS.laser_power_repump * 1e-9
+            )  # nW -> W
+            time.sleep(1)
 
         # Green repump
-        if DO_GREEN_REPUMP:
+        if snippets_awg.PLE_REFOCUS_PARAMS.do_green_repump:
             q.do.set_state("Laser_520", "on")
             if not wait_or_abort(REPUMP_TIME_S):
                 q.do.set_state("Laser_520", "off")
@@ -717,14 +792,14 @@ class NuclearOPs(DataGeneration):
         if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
             return False
 
-        q.ao.set_setpoint("LaserScanner_red", 0)
         q.wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage)
+        q.ao.set_setpoint("Laser_620_freq", 0)
 
         # if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
         #     return False
 
-        if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
-            return False
+        # if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
+        #    return False
 
         q.tt.update_ple(wavelength)
         q.wavemeter.start_lock(wavelength)
@@ -744,12 +819,16 @@ class NuclearOPs(DataGeneration):
         if "pulse_shape_ppg" in self.current_iterator_df.keys():
             kwargs["pulse_shape"] = self.current_iterator_df["pulse_shape_ppg"].unique()[0]
         else:
-            raise ValueError("'pulse_shape_ppg' needs to be in current_iterator_df for updating ppg waveform")
+            raise ValueError(
+                "'pulse_shape_ppg' needs to be in current_iterator_df for updating ppg waveform"
+            )
 
         if "pulse_width_ppg" in self.current_iterator_df.keys():
             kwargs["pulse_width"] = self.current_iterator_df["pulse_width_ppg"].unique()[0]
         else:
-            raise ValueError("'pulse_length_ppg' needs to be in current_iterator_df for updating ppg waveform")
+            raise ValueError(
+                "'pulse_length_ppg' needs to be in current_iterator_df for updating ppg waveform"
+            )
 
         if "pulse_delay_ppg" in self.current_iterator_df.keys():
             kwargs["pulse_delay"] = self.current_iterator_df["pulse_delay_ppg"].unique()[0]
@@ -815,7 +894,13 @@ class NuclearOPs(DataGeneration):
             current_iterator_df = current_iterator_df.drop(labels=["sweeps"], axis=1)
 
         # create hash
-        hash = base64.b64encode(hashlib.sha1((str(current_iterator_df) + "\n" + str(self.queue.gated_counter.readout_duration)).encode()).digest())
+        hash = base64.b64encode(
+            hashlib.sha1(
+                (
+                    str(current_iterator_df) + "\n" + str(self.queue.gated_counter.readout_duration)
+                ).encode()
+            ).digest()
+        )
 
         self.sequence_name = "nuclear_op_hash_{}".format(hash)
 
@@ -849,24 +934,41 @@ class NuclearOPs(DataGeneration):
                 raise Exception("This was supposed to be a sanity check. The programmer made shit.")
         data = self.data if data is None else data
         if ana_trace.analyze_type is not None:
-
             # ACHTUNG!!!! trace analysis code.
             # df = ana_trace.analyze_fast().df # experimental still, but looks ok.
             df = ana_trace.analyze().df  ## TRY this for init? This was the code before.
             print(df)
-            if (df.events == 0).all() and not self.analyze_type == "consecutive" and df.at[0, "events"] != 0:
-                return True  # Means that runn was not succesfull, 0 events, ==> repeat measurements.
-            if "result_num" in df.columns:  # if there are multiple readouts of type "result", here step index is important
+            if (
+                (df.events == 0).all()
+                and not self.analyze_type == "consecutive"
+                and df.at[0, "events"] != 0
+            ):
+                return (
+                    True  # Means that runn was not succesfull, 0 events, ==> repeat measurements.
+                )
+            if (
+                "result_num" in df.columns
+            ):  # if there are multiple readouts of type "result", here step index is important
                 # Why we are going here, because we have only 1 readout anyway,
-                obs_r = df.pivot_table(values="result", columns="result_num", index="sm").rename(columns=collections.OrderedDict([(i, "result_{}".format(i)) for i in df.result_num.unique()]))
+                obs_r = df.pivot_table(values="result", columns="result_num", index="sm").rename(
+                    columns=collections.OrderedDict(
+                        [(i, "result_{}".format(i)) for i in df.result_num.unique()]
+                    )
+                )
             else:
-                obs_r = df.rename(columns={"result": "result_0"}).drop(columns=["step", "events", "sm"])
-            if not self.raw_clicks_processing:  # Do not add result (for some reason, they are analyzed already anyway)
+                obs_r = df.rename(columns={"result": "result_0"}).drop(
+                    columns=["step", "events", "sm"]
+                )
+            if (
+                not self.raw_clicks_processing
+            ):  # Do not add result (for some reason, they are analyzed already anyway)
                 data.set_observations(obs_r, start_idx=start_idx)
                 # data.set_observations(df.groupby(['sm']).agg({'thresholds': lambda x: [i for i in x]}), start_idx=start_idx)
 
             data.set_observations(df.groupby(["sm"]).agg({"events": np.sum}), start_idx=start_idx)
-            data.set_observations(df.groupby(["sm"]).agg({"average_counts": np.mean}), start_idx=start_idx)
+            data.set_observations(
+                df.groupby(["sm"]).agg({"average_counts": np.mean}), start_idx=start_idx
+            )
 
             # logging.getLogger().info(df)
             # logging.getLogger().info(ana_trace.analyze_type)
@@ -875,7 +977,9 @@ class NuclearOPs(DataGeneration):
     def reanalyze(self, do_while_run: bool = False, **kwargs: Any) -> None:
         """Re-run the stored trace analysis over existing dataframe entries."""
         if self.state == "run" and not do_while_run:
-            print("Measurement is running.\nReanalyzation will write to data.df and may interfere with the running measurement doing the same.\nIf you want to reanalyze anyway, pass argument do_while_run=True")
+            print(
+                "Measurement is running.\nReanalyzation will write to data.df and may interfere with the running measurement doing the same.\nIf you want to reanalyze anyway, pass argument do_while_run=True"
+            )
             return
         import Analysis
 
@@ -893,7 +997,11 @@ class NuclearOPs(DataGeneration):
             if (idx - 1) % ana_trace.number_of_simultaneous_measurements:
                 continue  ## What is it for? (seems that it doing nothings.
             if type(_I_["trace"]) != np.ndarray:
-                print("Interrupted reanalyzation at dataframe index {}, as trace is not a numpy array.\nMaybe, this is trace has just not been measured yet?\nTotal length of dataframe is {}".format(idx, len(self.data.df)))
+                print(
+                    "Interrupted reanalyzation at dataframe index {}, as trace is not a numpy array.\nMaybe, this is trace has just not been measured yet?\nTotal length of dataframe is {}".format(
+                        idx, len(self.data.df)
+                    )
+                )
                 break
             ana_trace.trace = _I_["trace"]
             self.analyze(ana_trace=ana_trace, start_idx=idx)
@@ -902,7 +1010,9 @@ class NuclearOPs(DataGeneration):
         """Persist measurement results and supporting metadata to disk."""
         pass
         if len(self.iterator_df_done) > 0 and not (hasattr(self, "do_save") and not self.do_save):
-            Thread1 = threading.Thread(target=super(NuclearOPs, self).save, kwargs={"notify": False})
+            Thread1 = threading.Thread(
+                target=super(NuclearOPs, self).save, kwargs={"notify": False}
+            )
             Thread1.start()
             # super(NuclearOPs, self).save(notify=False) #### IMPORTANT
             Thread1.join()
@@ -920,7 +1030,6 @@ class NuclearOPs(DataGeneration):
             for k in self._md[self.mcas.name].sequences.keys():
                 for ch in [1, 2]:
                     try:
-
                         seq_message.append(self._md[self.mcas.name].sequences[k][ch].ret_info())
                         seq_message.append("\n")
                     except Exception as e:
@@ -935,7 +1044,9 @@ class NuclearOPs(DataGeneration):
                 with open(awg_fp, "w") as fp:
                     for page in seq_message:
                         fp.write(page)
-                        fp.write("\n-------------------------------------------------------------------\n")
+                        fp.write(
+                            "\n-------------------------------------------------------------------\n"
+                        )
         else:  ## quantum machine
             seq_message.append(self.mcas.debug_info())
             awg_file_name = "awg-file.txt"
@@ -944,7 +1055,9 @@ class NuclearOPs(DataGeneration):
                 with open(awg_fp, "w") as fp:
                     for page in seq_message:
                         fp.write(json.dumps(page))
-                        fp.write("\n-------------------------------------------------------------------\n")
+                        fp.write(
+                            "\n-------------------------------------------------------------------\n"
+                        )
 
     def reset_settings(self) -> None:
         """Reset run-specific settings and drop transient sequence references."""
