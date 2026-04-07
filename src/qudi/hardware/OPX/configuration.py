@@ -1,8 +1,5 @@
 import numpy as np
 from qualang_tools.units import unit
-from qualang_tools.plot import interrupt_on_close
-from qualang_tools.results import progress_counter, fetching_tool
-from qualang_tools.loops import from_array
 
 #######################
 # AUXILIARY FUNCTIONS #
@@ -70,6 +67,9 @@ rf_frequency = 10 * u.MHz
 rf_amp = 0.1
 rf_length = 1000
 
+# AOM 620 det parameters
+aom_620_det_frequency = 390 * u.MHz
+aom_620_det_amp = 1
 # Readout parameters
 signal_threshold_1 = -1_000  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
 signal_threshold_2 = -1_000  # ADC untis, to convert to volts divide by 4096 (12 bit ADC)
@@ -118,6 +118,10 @@ config = {
                 2: {"offset": 0.0, "delay": mw_delay},  # NV Q
                 3: {"offset": 0.0, "delay": rf_delay},  # RF
                 4: {"offset": 0.0, "delay": LaserScanner_delay},  # Piezo 620 nm laser
+                5: {
+                    "offset": 0.0,
+                    "delay": AOM_power_delay_620,
+                },
                 6: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_620,
@@ -191,18 +195,6 @@ config = {
                 # "x180": "x180_pulse",
             },
         },
-        "Laser_450": {
-            "digitalInputs": {
-                "marker": {
-                    "port": ("con1", 7),
-                    "delay": laser_delay_450,
-                    "buffer": 0,
-                },
-            },
-            "operations": {
-                "active": "laser_ON",
-            },
-        },
         "Gate_Trigger": {
             "digitalInputs": {
                 "trigger": {
@@ -239,20 +231,20 @@ config = {
                 "trigit": "laser_ON",
             },
         },
-        "620_pi": {
-            "digitalInputs": {
-                "ppg": {
-                    "port": ("con1", 5),
-                    "delay": PPG_delay,  # 294
-                    "buffer": 0,
-                },
-                "AOM_620_pi": {"port": ("con1", 10), "delay": AOM_620_pi_delay, "buffer": 0 * u.ns},
-            },
-            "operations": {
-                "trigit": "TTL_only_digital",
-                "active": "TTL_only_digital",
-            },
-        },
+        # "620_pi": {
+        #     "digitalInputs": {
+        #         "ppg": {
+        #             "port": ("con1", 5),
+        #             "delay": PPG_delay,  # 294
+        #             "buffer": 0,
+        #         },
+        #         "AOM_620_pi": {"port": ("con1", 10), "delay": AOM_620_pi_delay, "buffer": 0 * u.ns},
+        #     },
+        #     "operations": {
+        #         "trigit": "TTL_only_digital",
+        #         "active": "TTL_only_digital",
+        #     },
+        # },
         "Laser_620_pi": {
             "singleInput": {
                 "port": ("con1", 7),
@@ -284,6 +276,17 @@ config = {
                 "power": "AOM_power",
                 "active": "AOM_TTL",
                 "pulse": "AOM_pulse",
+            },
+        },
+        "Laser_620_det": {
+            "singleInput": {
+                "port": ("con1", 5),
+            },
+            "intermediate_frequency": aom_620_det_frequency,
+            "operations": {
+                "power": "AOM_RF_pulse",
+                "active": "AOM_RF_pulse",
+                "pulse": "AOM_RF_pulse",
             },
         },
         "Laser_520": {
@@ -407,6 +410,11 @@ config = {
             "waveforms": {"single": "rf_const_wf"},
         },
         # AOM Pulses
+        "AOM_RF_pulse": {
+            "operation": "control",
+            "length": initialization_len_laser,  # in ns
+            "waveforms": {"single": "rf_const_wf"},
+        },
         "AOM_TTL": {
             "operation": "control",
             "length": initialization_len_laser,

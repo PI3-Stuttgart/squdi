@@ -1,14 +1,11 @@
 import importlib
-from typing import Dict, Tuple, Any, Union
-
-import qm.exceptions
-from qualang_tools.control_panel import ManualOutputControl
-import qm
+from typing import Any, Dict, Tuple, Union
 
 from qudi.core.configoption import ConfigOption
-from qudi.util.mutex import RecursiveMutex
-from qudi.interface.switch_interface import SwitchInterface
 from qudi.core.connector import Connector
+from qudi.util.mutex import RecursiveMutex
+
+from qudi.interface.switch_interface import SwitchInterface
 
 
 class DigitalSwitchOPX(SwitchInterface):
@@ -30,7 +27,7 @@ class DigitalSwitchOPX(SwitchInterface):
     _qm_config_file = ConfigOption(
         name="qm_config_file", default="configuration", missing="nothing"
     )
-    OPX = Connector(interface='OPX')
+    OPX = Connector(interface="OPX")
     _configuration: Any
     _qm_manual_output_control = None
     _opx = None
@@ -41,20 +38,18 @@ class DigitalSwitchOPX(SwitchInterface):
         super().__init__(*args, **kwargs)
         self.lock = RecursiveMutex()
 
-        self._channels = tuple() # create instance of OPX_holder
+        self._channels = tuple()  # create instance of OPX_holder
 
     def on_activate(self) -> None:
         """Loads QM config and establishs connection to OPX+"""
         # import QuantumMachines configuration python file
-        self._configuration = importlib.import_module(
-            f"qudi.hardware.OPX.{self._qm_config_file}"
-        )
+        self._configuration = importlib.import_module(f"qudi.hardware.OPX.{self._qm_config_file}")
         # Check connection to OPX+
         self._opx = self.OPX()
         if not self._opx.is_connected:
-            self.log.error('no connection to OPX')
+            self.log.error("no connection to OPX")
 
-        self._opx.cw_do_states = {do: 'off' for do in self.available_states.keys()}
+        self._opx.cw_do_states = {do: "off" for do in self.available_states.keys()}
 
     def on_deactivate(self) -> None:
         pass
@@ -80,10 +75,7 @@ class DigitalSwitchOPX(SwitchInterface):
         _states = {}
 
         for name, qm_element in self._configuration.config["elements"].items():
-            if (
-                "digitalInputs" in qm_element.keys()
-                and not "outputs" in qm_element.keys()
-            ):
+            if "active" in qm_element["operations"].keys():
                 _states[name] = ("off", "on")
 
         return _states

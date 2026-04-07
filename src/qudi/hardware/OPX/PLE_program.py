@@ -1,10 +1,5 @@
-import time
-
 import numpy as np
-from qm import LoopbackInterface, SimulationConfig
 from qm.qua import *
-from qm.quantum_machines_manager import QuantumMachinesManager
-from qualang_tools.loops import qua_linspace
 
 from qudi.hardware.OPX.configuration import *
 
@@ -51,7 +46,9 @@ def qm_scan_program(aoOPX):
     curr_do: list = [key for key, value in aoOPX._opx.cw_do_states.items() if value == "on"]
     curr_ao = {key: value for key, value in aoOPX._opx.cw_ao_values.items() if value != 0.0}
     curr_laser_scanner_volt = aoOPX.get_setpoint("Laser_620_freq") * 0.5
-    array_volts_scan_laser_to_start = np.linspace(curr_laser_scanner_volt, min_ls_volt, nr_ls_volt_steps)
+    array_volts_scan_laser_to_start = np.linspace(
+        curr_laser_scanner_volt, min_ls_volt, nr_ls_volt_steps
+    )
     # print(f"laser position: {aoOPX.get_setpoint("Laser_620_freq")}")
     with program() as ple:
         vLS = declare(fixed)  # voltge Laser scanner
@@ -112,9 +109,9 @@ def qm_scan_program(aoOPX):
 
             # scan_laser_to_target(max_ls_volt, crc_laser_voltage)
             set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-            wait(3 * u.s)
-            # with for_(i, 0, i < 10000, i + 1):
-            #    play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10000)
+            # wait(3 * u.s)
+            with for_(i, 0, i < 10000, i + 1):
+                play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10000)
             # crc(volt_620, volt_520, counts, counts_st)
             # scan_laser_to_target(crc_laser_voltage, min_ls_volt)
             # with for_each_(vLSBS, back_scan_ls_volt_array):
