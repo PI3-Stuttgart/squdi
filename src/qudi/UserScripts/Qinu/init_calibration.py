@@ -61,7 +61,10 @@ def ret_ret_mcas(pdc):
                             sna.ssr(mcas, "e1")
                         if SSR_state == "e2":
                             sna.ssr(mcas, "e2")
-
+                        if SSR_state2 == "e1":
+                            sna.ssr(mcas, "e1")
+                        if SSR_state2 == "e2":
+                            sna.ssr(mcas, "e2")
                         # Charge state readout
                         sna.csr(mcas)
 
@@ -72,7 +75,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
+    ana_seq = [["init", ">", 0, 1, 1, 1], ["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <

@@ -121,7 +121,7 @@ config = {
                 5: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_620,
-                },
+                },  # Laser 620 det
                 6: {
                     "offset": 0.0,
                     "delay": AOM_power_delay_620,
@@ -145,7 +145,9 @@ config = {
             },
             "digital_outputs": {
                 1: {},  # MW switch
-                2: {},  # For now: trigger TT attodry # Master - slave trigger RESERVED for SETUP#2.
+                2: {
+                    "inverted": True
+                },  # For now: Laser 620 det # Master - slave trigger RESERVED for SETUP#2.
                 3: {},  # Gate Trigger - to the TT ...channel 5 on the TT.
                 4: {},  # Memory Trigger - to the TT ... channel 4 on the TT
                 5: {},  # PPG trigger
@@ -278,15 +280,32 @@ config = {
                 "pulse": "AOM_pulse",
             },
         },
+        # "Laser_620_det": {
+        #     "singleInput": {
+        #         "port": ("con1", 5),
+        #     },
+        #     "intermediate_frequency": aom_620_det_frequency,
+        #     "operations": {
+        #         "power": "AOM_RF_pulse",
+        #         "active": "AOM_RF_pulse",
+        #         "pulse": "AOM_RF_pulse",
+        #     },
+        # },
         "Laser_620_det": {
             "singleInput": {
                 "port": ("con1", 5),
             },
-            "intermediate_frequency": aom_620_det_frequency,
+            "digitalInputs": {
+                "marker": {
+                    "port": ("con1", 2),
+                    "delay": AOM_delay_620,
+                    "buffer": 0,
+                },
+            },
             "operations": {
-                "power": "AOM_RF_pulse",
-                "active": "AOM_RF_pulse",
-                "pulse": "AOM_RF_pulse",
+                "power": "AOM_power",
+                "active": "AOM_TTL",
+                "pulse": "AOM_pulse",
             },
         },
         "Laser_520": {

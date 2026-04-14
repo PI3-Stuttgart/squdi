@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import importlib
+
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 
 importlib.reload(sch)
@@ -25,18 +26,17 @@ import qudi.hardware.OPX.OPX_utils as OPX_utils
 
 importlib.reload(OPX_utils)
 
-from qudi.logic.qudip_enhanced import *
-
 import os
 from collections import OrderedDict
+
 from qm import qua
-from qm.qua import play, declare, fixed, for_, align, amp, infinite_loop_, wait, set_dc_offset
-
-from qualang_tools.units import unit
+from qm.qua import align, for_, infinite_loop_, set_dc_offset, wait
 from qualang_tools.loops import from_array
-from qudi.logic.NuclearOPs import NuclearOPs
-from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
+from qualang_tools.units import unit
 
+from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
+from qudi.logic.NuclearOPs import NuclearOPs
+from qudi.logic.qudip_enhanced import *
 
 ### Setup the sequence and the measurement ###
 u = unit(coerce_to_integer=True)
@@ -60,18 +60,19 @@ def ret_ret_mcas(pdc):
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
         with qua.program() as myprog:
             with infinite_loop_():
-
                 ou.init_program()
 
                 if use_crc:
-                    set_dc_offset("Laser_620_freq", "single", self.queue.ao.get_setpoint("Laser_620_freq"))
+                    set_dc_offset(
+                        "Laser_620_freq", "single", self.queue.ao.get_setpoint("Laser_620_freq")
+                    )
                     align()
                     wait(1 * u.us)
                     align()
                     sna.crc(mcas, probe_2_power=80)
 
                 if use_detuned_laser:
-                    ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
+                    ou.set_laser_power("Laser_620_det", "Laser_620_det_power")
                 ou.set_laser_power("Laser_620", "Laser_620_power")
 
                 set_dc_offset("Laser_620_freq", "single", qua_array_1[0])
@@ -91,7 +92,10 @@ def ret_ret_mcas(pdc):
                         ou.gate_trigger()
                         align()
                         if use_detuned_laser:
-                            ou.multiple_laser_pulses(laser_names=["Laser_620", "Laser_620_pi"], duration_ns="readout_len_pixel")  # , powers_nw=["Laser_620_power", "Laser_620_pi_power"])
+                            ou.multiple_laser_pulses(
+                                laser_names=["Laser_620", "Laser_620_det"],
+                                duration_ns="readout_len_pixel",
+                            )  # , powers_nw=["Laser_620_power", "Laser_620_pi_power"])
                         else:
                             ou.laser_pulse("Laser_620", "readout_len_pixel")
                         align()
@@ -153,12 +157,14 @@ def settings(pdc={}):
             ("repump_len", [int(1e9)]),  # ns (1s)
             ("pulse_shape_ppg", ["continuous_sin"]),  # string
             ("pulse_width_ppg", [20]),  # ns
-            ("Laser_620_pi_power", [80]),  # nW
+            ("Laser_620_det_power", [80]),  # nW
             ("use_crc", [True]),
             ("use_detuned_laser", [True]),
         )
     )
-    nuclear.number_of_simultaneous_measurements = len(nuclear.queue.ou.get_fast_sweep_qua_array(0)) * len(nuclear.queue.ou.get_fast_sweep_qua_array(1))
+    nuclear.number_of_simultaneous_measurements = len(
+        nuclear.queue.ou.get_fast_sweep_qua_array(0)
+    ) * len(nuclear.queue.ou.get_fast_sweep_qua_array(1))
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,

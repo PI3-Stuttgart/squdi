@@ -1,12 +1,30 @@
 import numpy as np
-from qm.qua import *
+from qm.qua import (
+    align,
+    amp,
+    assign,
+    declare,
+    declare_stream,
+    fixed,
+    for_,
+    for_each_,
+    if_,
+    play,
+    program,
+    save,
+    set_dc_offset,
+    stream_processing,
+    time_tagging,
+    wait,
+    while_,
+)
 
+from qudi.hardware.OPX.analog_output_OPX import AnalogOutputOPX
 from qudi.hardware.OPX.configuration import *
 
 
-def qm_scan_program(aoOPX):
+def qm_scan_program(aoOPX: AnalogOutputOPX):
 
-    counts_per_second_threshold = 10  # threshold in kc/s
     scans_to_repump = 20  # number of scans before repumping regardless of counts
     i_avg = 1000  # 00  # number of averages per voltage
     nr_of_scanns = aoOPX._scan_parameters["nr_of_scans"]
@@ -33,6 +51,7 @@ def qm_scan_program(aoOPX):
     volt_620 = aoOPX.get_setpoint("Laser_620")
     volt_520 = aoOPX.get_setpoint("Laser_520")
     volt_620_pi = aoOPX.get_setpoint("Laser_620_pi")
+    volt_620_det = aoOPX.get_setpoint("Laser_620_det")
     # Repump parameters
     repump_len = back_scan_duration
 
@@ -42,13 +61,6 @@ def qm_scan_program(aoOPX):
     tt_trigger_len = 1000 * u.ns
     repump_pulse_len = repump_len / nr_ls_volt_steps / i_avg
 
-    counts_threshold = counts_per_second_threshold * sweep_duration / (nr_ls_volt_steps) * 1e-6
-    curr_do: list = [key for key, value in aoOPX._opx.cw_do_states.items() if value == "on"]
-    curr_ao = {key: value for key, value in aoOPX._opx.cw_ao_values.items() if value != 0.0}
-    curr_laser_scanner_volt = aoOPX.get_setpoint("Laser_620_freq") * 0.5
-    array_volts_scan_laser_to_start = np.linspace(
-        curr_laser_scanner_volt, min_ls_volt, nr_ls_volt_steps
-    )
     # print(f"laser position: {aoOPX.get_setpoint("Laser_620_freq")}")
     with program() as ple:
         vLS = declare(fixed)  # voltge Laser scanner
@@ -63,57 +75,31 @@ def qm_scan_program(aoOPX):
         times = declare(int, size=1000)  # QUA vector for storing the time-tags
         counts_st = declare_stream()  # stream for counts
         save(0, counts_st)
-        # Integrations of whole scan
-        # assign(total_counts_scan, 0)
-        # scan_laser_to_target(aoOPX.get_setpoint("Laser_620_freq"), min_ls_volt, repump_pulse_len, i_avg, nr_ls_volt_steps_back)
-        # ### Scan to start position
-        # with for_each_(vLS, array_volts_scan_laser_to_start):
-        #     with for_(i, 0, i < i_avg, i + 1):
-        #         set_dc_offset("Laser_620_freq", "single", vLSBS)
-        #         wait(repump_pulse_len * u.ns * 4)
-        # wait(1000 * u.ms)
-        # scan_laser_to_target(aoOPX.get_setpoint("Laser_620_freq") * 0.5, min_ls_volt)
-        set_dc_offset("Laser_620_pi", "single", volt_620_pi)
+
+        ### Set laser powers ###
+        # set_dc_offset("Laser_620_pi", "single", volt_620_pi)
+        set_dc_offset("Laser_620_det", "single", volt_620_det)
         set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-        wait(3 * u.s)
+        wait(1 * u.s)
 
         with for_(n, 0, n < nr_of_scanns, n + 1):
-            # looping over Laser scanner voltages
+            ### looping over Laser scanner voltages ###
             with for_each_(vLS, ls_volt_array):
                 set_dc_offset("Laser_620_freq", "single", vLS)
                 play("trigit", "Gate_Trigger", duration=laser_pulse_len * u.ns)
-                play("pulse" * amp(volt_620 * 2), "Laser_620", duration=tt_trigger_len * u.ns)
                 with for_(i, 0, i < i_avg, i + 1):
                     play("pulse" * amp(volt_620 * 2), "Laser_620", duration=laser_pulse_len * u.ns)
-                    play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
-                    # play("trigit", "TT_attodry_trigger", duration=laser_pulse_len * u.ns)
-                    # play("pulse" * amp(volt_520), "Laser_520", duration=laser_pulse_len)  # Time tagger stop trigger
-                    # measure(
-                    #     "readout",
-                    #     "SPCM1",
-                    #     None,
-                    #     time_tagging.analog(times, laser_pulse_len, counts),
-                    # )
-                    # assign(total_counts_point, total_counts_point + counts)
+                    # play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
+                    play("active", "Laser_620_det", duration=laser_pulse_len * u.ns)
                 align()
                 play("trigit", "Memory_Trigger", duration=tt_trigger_len * u.ns)
-                # Time tagger stop trigger
-                # with if_(total_counts_point > total_counts_scan):
-                #     assign(total_counts_scan, total_counts_point)
-                # assign(total_counts_scan, _exp=total_counts_scan + total_counts_point)
-                # assign(total_counts_point, 0)
-                # assign(IO2, total_counts_scan)
-                # wait(1000 * u.ns)
-            # Repump and laser backscan
-            # assign(count_repump, count_repump + 1)
 
-            # scan_laser_to_target(max_ls_volt, crc_laser_voltage)
+            ### Backscan ###
             set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-            # wait(3 * u.s)
             with for_(i, 0, i < 10000, i + 1):
                 play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10000)
             # crc(volt_620, volt_520, counts, counts_st)
-            # scan_laser_to_target(crc_laser_voltage, min_ls_volt)
+
             # with for_each_(vLSBS, back_scan_ls_volt_array):
             #    set_dc_offset("Laser_620_freq", "single", vLSBS)
             #    with for_(i, 0, i < i_avg, i + 1):

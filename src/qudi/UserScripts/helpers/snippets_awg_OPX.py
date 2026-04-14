@@ -119,7 +119,7 @@ def crc(
             :class:`NuclearOpsOPXUtils`.
         laser_power_A1: Probe laser power for ``Laser_620`` in nW, or a QUA key
             resolved by the OPX helper utilities.
-        laser_power_B2: Probe laser power for ``Laser_620_pi`` in nW,
+        laser_power_B2: Probe laser power for ``Laser_620_det`` in nW,
             or a QUA key resolved by the OPX helper utilities.
         laser_power_repump: Repump laser power for ``Laser_520`` in nW, or a QUA key
             resolved by the OPX helper utilities.
@@ -164,7 +164,7 @@ def crc(
     assign(ou.crc_attempts, 0)
 
     ### Set laser powers ###
-    ou.set_laser_power("Laser_620_pi", params.laser_power_B2, __pause_lp__)
+    ou.set_laser_power("Laser_620_det", params.laser_power_B2, __pause_lp__)
     ou.set_laser_power("Laser_620", params.laser_power_A1, __pause_lp__)
     ou.set_laser_power("Laser_520", params.laser_power_repump, __pause_lp__)
 
@@ -176,7 +176,7 @@ def crc(
             None,
             time_tagging.analog(ou.times, params.probe_len, ou.crc_counts),
         )
-        ou.multiple_laser_pulses(["Laser_620", "Laser_620_pi"], params.probe_len)
+        ou.multiple_laser_pulses(["Laser_620", "Laser_620_det"], params.probe_len)
 
         # Provide counts in Stream if provided
         if counts_st is not None:
@@ -206,14 +206,14 @@ def csr(
 
     The helper sets the A1 and B2 probe powers, issues the standard gate
     trigger, plays simultaneous red probe pulses on ``Laser_620`` and
-    ``Laser_620_pi``, and finally emits the memory trigger.
+    ``Laser_620_det``, and finally emits the memory trigger.
 
     Args:
         mcas: Sequence container that provides access to
             :class:`NuclearOpsOPXUtils`.
         duration: Shared probe duration in ns.
         laser_power_A1: Probe power for ``Laser_620`` in nW, or a QUA key.
-        laser_power_B2: Probe power for ``Laser_620_pi`` in nW, or a QUA key.
+        laser_power_B2: Probe power for ``Laser_620_det`` in nW, or a QUA key.
 
     Returns:
         None. The function emits QUA instructions into the active program.
@@ -224,7 +224,7 @@ def csr(
     ou: NuclearOpsOPXUtils = mcas.ou
 
     ou.set_laser_power(
-        "Laser_620_pi",
+        "Laser_620_det",
         params.laser_power_B2,
         __pause_lp__,
     )
@@ -235,7 +235,7 @@ def csr(
     )
 
     ou.gate_trigger()
-    ou.multiple_laser_pulses(["Laser_620", "Laser_620_pi"], params.duration)
+    ou.multiple_laser_pulses(["Laser_620", "Laser_620_det"], params.duration)
     align()
     ou.memory_trigger()
     align()
@@ -250,7 +250,7 @@ def electron_init(
     """Initialize the electron spin into ``e1`` or ``e2`` with a red pump pulse.
 
     The selected state determines which resonant red transition is driven:
-    ``e1`` maps to ``Laser_620_pi`` and ``e2`` maps to ``Laser_620``. The
+    ``e1`` maps to ``Laser_620_det`` and ``e2`` maps to ``Laser_620``. The
     helper updates the static laser power first and then plays the pump pulse.
 
     Args:
@@ -272,11 +272,11 @@ def electron_init(
     if params.state == QubitState.e1:
         params.update(laser_power_B2=laser_power_pump)
         ou.set_laser_power(
-            laser_name="Laser_620_pi",
+            laser_name="Laser_620_det",
             power_nw=params.laser_power_B2,
             pause_after=__pause_lp__,
         )
-        ou.laser_pulse("Laser_620_pi", params.duration)
+        ou.laser_pulse("Laser_620_det", params.duration)
     elif params.state == QubitState.e2:
         params.update(laser_power_A1=laser_power_pump)
         ou.set_laser_power(
@@ -303,7 +303,7 @@ def ssr(
         mcas: Sequence container that provides access to
             :class:`NuclearOpsOPXUtils`.
         state: Readout transition selector. ``e1`` maps to ``Laser_620`` and
-            ``e2`` maps to ``Laser_620_pi``.
+            ``e2`` maps to ``Laser_620_det``.
         duration: Probe duration in ns.
         laser_power_probe: Optional probe power override in nW, or a QUA key
             for the selected transition.
@@ -332,13 +332,13 @@ def ssr(
     elif params.state == QubitState.e2:
         params.update(laser_power_B2=laser_power_probe)
         ou.set_laser_power(
-            laser_name="Laser_620_pi",
+            laser_name="Laser_620_det",
             power_nw=params.laser_power_B2,
             pause_after=__pause_lp__,
         )
 
         ou.gate_trigger()
-        ou.laser_pulse("Laser_620_pi", params.duration)
+        ou.laser_pulse("Laser_620_det", params.duration)
         align()
         ou.memory_trigger()
     align()
