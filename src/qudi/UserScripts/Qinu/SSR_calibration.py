@@ -45,7 +45,10 @@ def ret_ret_mcas(pdc):
 
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
-        SSR_state = current_iterator_df["SSR_state"].unique()[0]
+
+        Init_state = current_iterator_df["Init_state"].unique()[0]
+        SSR_state_first = current_iterator_df["SSR_state_first"].unique()[0]
+        SSR_state_second = current_iterator_df["SSR_state_second"].unique()[0]
 
         with qua.program() as myprog:
             with infinite_loop_():
@@ -54,12 +57,15 @@ def ret_ret_mcas(pdc):
                     with for_(*from_array(ou.i_2, qua_array_2)):
                         sna.crc(mcas)
 
-                        sna.electron_init(mcas, "e1", "e1_init_duration", "e1_init_power")
-                        sna.electron_init(mcas, "e2", "e2_init_duration", "e2_init_power")
+                        ### Init in e1 or e2 ###
+                        sna.electron_init(mcas, Init_state)
 
-                        sna.ssr(mcas, SSR_state)
+                        ### first readout e1 or e2 ###
+                        sna.ssr(mcas, SSR_state_first)
+                        ou.pause("wait_between_SSR")
+                        ### second readout e1 or e2 ###
+                        sna.ssr(mcas, SSR_state_second)
 
-                        # Charge state readout
                         sna.csr(mcas)
 
         mcas.program = myprog
@@ -69,7 +75,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq =  ["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
+    ana_seq = [["init", ">", 0, 1, 1, 1], ["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
@@ -86,6 +92,7 @@ def settings(pdc={}):
         meas_code=meas_code,
     )
 
+    # nuclear.x_axis_title = "Freq [MHz]"
     # nuclear.analyze_type = 'consecutive'
     nuclear.analyze_type = "average"  # experimental feature for the fast
     nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
@@ -100,7 +107,6 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 2000
 
-    e2_init_duration = np.linspace(1, 200, 10) * 1e3  # ns
     B_amp = np.arange(200, 300, 5)  # mT
     nuclear.parameters = OrderedDict(
         (
@@ -108,14 +114,11 @@ def settings(pdc={}):
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
             ("sweeps", range(1)),
-            ("e1_init_power", [50]),
-            ("e1_init_duration", [3e6]),
-            ("e2_init_power", [100, 150, 200, 250]),  # nW
-            ("e2_init_duration", e2_init_duration),
-            ("click_channel", [3]),  # nW
-            ("pulse_shape_ppg", ["continuous_sin"]),  # string
-            ("pulse_width_ppg", [20]),  # ns
-            ("SSR_state", ["e1", "e2"]),
+            ("click_channel", [3]),
+            ("Init_state", ["e1", "e2"]),
+            ("SSR_state_first", ["e1", "e2"]),
+            ("SSR_state_second", ["e1", "e2"]),
+            ("wait_between_SSR", [100]),  # ns
         )
     )
     nuclear.number_of_simultaneous_measurements = 1
