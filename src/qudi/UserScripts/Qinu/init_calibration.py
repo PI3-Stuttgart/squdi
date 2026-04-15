@@ -52,7 +52,7 @@ def ret_ret_mcas(pdc):
                 ou.init_program()
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(mcas)
+                        # sna.crc(mcas)
 
                         sna.electron_init(mcas, "e1", "e1_init_duration", "e1_init_power")
                         sna.electron_init(mcas, "e2", "e2_init_duration", "e2_init_power")
@@ -69,7 +69,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq =  ["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
+    ana_seq = [["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
@@ -93,14 +93,15 @@ def settings(pdc={}):
 
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
-    nuclear.ple_refocus_interval = 10
+    nuclear.ple_refocus_interval = 5  # in seconds
+    nuclear.lock_laser_to_wavemeter = False
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 2000
+    nr_repeating_intergration: int = 1000
 
-    e2_init_duration = np.linspace(1, 200, 10) * 1e3  # ns
+    e2_init_duration = np.linspace(1, 500, 5) * 1e3  # ns
     B_amp = np.arange(200, 300, 5)  # mT
     nuclear.parameters = OrderedDict(
         (
@@ -108,13 +109,11 @@ def settings(pdc={}):
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
             ("sweeps", range(1)),
-            ("e1_init_power", [50]),
+            ("e1_init_power", [10]),
             ("e1_init_duration", [3e6]),
-            ("e2_init_power", [100, 150, 200, 250]),  # nW
+            ("e2_init_power", [6]),  # nW
             ("e2_init_duration", e2_init_duration),
-            ("click_channel", [3]),  # nW
-            ("pulse_shape_ppg", ["continuous_sin"]),  # string
-            ("pulse_width_ppg", [20]),  # ns
+            ("click_channel", [2]),
             ("SSR_state", ["e1", "e2"]),
         )
     )

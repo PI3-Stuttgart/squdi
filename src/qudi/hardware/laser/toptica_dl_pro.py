@@ -282,6 +282,18 @@ class DlProLaser(SimpleLaserInterface, TriggeredAOInterface, SwitchInterface):
         return self.dlc.laser1.dl.pc.voltage_act.get()
 
     @connect_laser
+    def set_slew_rate(self, slew_rate):
+        return self.dlc.laser1.dl.pc.output_filter.slew_rate.set(slew_rate)
+
+    @connect_laser
+    def get_slew_rate(self, slew_rate):
+        return self.dlc.laser1.dl.pc.output_filter.slew_rate.get()
+
+    @connect_laser
+    def use_analog_remote_control(self, use: bool):
+        return self.dlc.laser1.dl.pc.external_input.enabled.set(use)
+
+    @connect_laser
     def set_scan_parameters(
         self,
         voltage_start: _Real,

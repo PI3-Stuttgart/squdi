@@ -412,7 +412,7 @@ class NuclearOPs(DataGeneration):
 
             # Lock laser to wavemeter if specified and not continously updated by PLE refocus
             if self.lock_laser_to_wavemeter and not self.do_ple_refocus_A1:
-                self.queue.wavemeter.start_lock(use_current_wavelength=True)
+                self.start_laser_lock()
 
             for idx, _ in enumerate(self.iterator()):
                 if abort.is_set():
@@ -570,9 +570,7 @@ class NuclearOPs(DataGeneration):
                 os.rmdir(self.save_dir)
 
             self.queue.log.info("cun: Finished function run_measurement")
-            self.queue.wavemeter.stop_lock()
-            time.sleep(2)
-            self.queue.dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
+            self.stop_laser_lock()
 
     @property
     def session_meas_count(self) -> int:
@@ -726,7 +724,7 @@ class NuclearOPs(DataGeneration):
     def _run_refocus_ple_A1_sequence(self, abort) -> bool:
         """Execute the SnV PLE refocus sequence."""
         REPUMP_TIME_S = 1.0
-        OPTIMIZER_POLL_S = 0.2
+        OPTIMIZER_POLL_S = 1
         AFTER_OPTIMIZER_WAIT_S = 3.0
         BEFORE_CW_STOP_WAIT_S = 1
         BEFORE_DEVIATION_WAIT_S = 1.0
@@ -748,9 +746,8 @@ class NuclearOPs(DataGeneration):
         if abort.is_set():
             return False
 
-        q.wavemeter.stop_lock()
-        q.dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
-        q.awg.stop_awgs()
+        # q.awg.stop_awgs()
+        self.stop_laser_lock()
 
         if not snippets_awg.PLE_REFOCUS_PARAMS.use_gui_powers:
             q.ao.set_setpoint(
@@ -762,7 +759,7 @@ class NuclearOPs(DataGeneration):
             q.ao.set_setpoint(
                 "Laser_520", snippets_awg.PLE_REFOCUS_PARAMS.laser_power_repump * 1e-9
             )  # nW -> W
-            time.sleep(1)
+        time.sleep(1)
 
         # Green repump
         if snippets_awg.PLE_REFOCUS_PARAMS.do_green_repump:
@@ -786,29 +783,37 @@ class NuclearOPs(DataGeneration):
         if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
             return False
 
-        wavelength = q.wavemeter.read_single_point()[0][0] * 1e9
-        actual_voltage = int(q.dlc_pro_620.get_pc_voltage_act() * 1000)
-
-        if not wait_or_abort(BEFORE_CW_STOP_WAIT_S):
-            return False
-
-        q.wavemeter._proxy()._wavemeter_dll.SetDeviationSignal(actual_voltage)
-        q.ao.set_setpoint("Laser_620_freq", 0)
-
-        # if not wait_or_abort(BEFORE_DEVIATION_WAIT_S):
-        #     return False
-
-        # if not wait_or_abort(AFTER_DEVIATION_WAIT_S):
-        #    return False
-
-        q.tt.update_ple(wavelength)
-        q.wavemeter.start_lock(wavelength)
-        q.log.info(f"PLE refocus complete. Locked to wavelength: {wavelength:.2f} nm")
+        self.start_laser_lock()
 
         if not wait_or_abort(LOCK_SETTLE_TIME_S):
             return False
 
         return True
+
+    def start_laser_lock(self, wavelength_nm: Optional[float] = None) -> None:
+        """Lock the laser to the wavemeter at the specified wavelength or current reading."""
+        q = self.queue
+
+        if wavelength_nm is None:
+            wavelength_nm = q.wavemeter.read_single_point()[0][0] * 1e9
+
+        actual_voltage = q.dlc_pro_620.get_pc_voltage_act()
+        q.dlc_pro_620.set_slew_rate(0.0008)
+        q.dlc_pro_620.use_analog_remote_control(False)
+        q.dlc_pro_620.set_pc_voltage(actual_voltage + 0.2)
+        q.dlc_pro_620.set_slew_rate(10)
+
+        time.sleep(0.5)
+        q.wavemeter.start_lock(wavelength_nm)
+        q.tt.update_ple(wavelength_nm)
+        q.log.info(f"Laser locked to wavemeter at wavelength: {wavelength_nm:.5f} nm")
+
+    def stop_laser_lock(self):
+        q = self.queue
+        q.dlc_pro_620.set_slew_rate(0.0008)
+        q.dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
+        q.dlc_pro_620.use_analog_remote_control(True)
+        q.dlc_pro_620.set_slew_rate(10)
 
     def update_waveform_ppg(self, abort) -> bool:
         """Update the PPG waveform parameters from the current iterator row."""

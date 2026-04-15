@@ -41,13 +41,13 @@ __tt_trigg_len__: int = 20  # ns
 class CRC_PARAMS(UpdateableDataclass):
     """Default parameters for charge-readout check (CRC) helper calls."""
 
-    laser_power_A1: float | str = 80  # nW
-    laser_power_B2: float | str = 80  # nW
-    laser_power_repump: float | str = int(500e3)  # nW
+    laser_power_A1: float | str = 10  # nW
+    laser_power_B2: float | str = 6  # nW
+    laser_power_repump: float | str = int(30e3)  # nW
     probe_len: int | str = int(1e6)  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = int(500e3)  # ns
-    threshold: int | str = 15  # cts
-    threshold_repump: int | str = 7  # cts
+    threshold: int | str = 10  # cts
+    threshold_repump: int | str = 5  # cts
     wait_before_repump: int | str = int(500e3)  # ns
     wait_after_repump: int | str = int(500e3)  # ns
     max_attempts: int = 1000  # not used right now
@@ -58,7 +58,7 @@ class CRC_PARAMS(UpdateableDataclass):
 class CSR_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
-    duration: int | str = 80  # ns
+    duration: int | str = int(1e6)  # ns
     laser_power_A1: float | str = CRC_PARAMS.laser_power_A1  # nW
     laser_power_B2: float | str = CRC_PARAMS.laser_power_B2  # nW
 
@@ -68,18 +68,18 @@ class SSR_PARAMS(UpdateableDataclass):
     """Default parameters for single-shot readout (SSR) helper calls."""
 
     state: QubitState | str = QubitState.e1
-    duration: int | str = 80  # ns
-    laser_power_A1: float | str = 50  # nW # 620
-    laser_power_B2: float | str = 100  # nW # 620_pi
+    duration: int | str = int(50e3)  # ns
+    laser_power_A1: float | str = 10  # nW # 620
+    laser_power_B2: float | str = 6  # nW # 620_det
 
 
 @dataclass
 class PLE_REFOCUS_PARAMS(UpdateableDataclass):
     use_gui_powers: bool = True
     do_green_repump: bool = False
-    laser_power_A1: float = 50
-    laser_power_B2: float = 100
-    laser_power_repump: float = 500e3
+    laser_power_A1: float = 10
+    laser_power_B2: float = 6
+    laser_power_repump: float = 30e3
 
 
 @dataclass
@@ -88,8 +88,8 @@ class ELECTRON_INIT_PARAMS(UpdateableDataclass):
 
     state: QubitState = QubitState.e1
     duration: int = 3_000_000  # ns (3ms)
-    laser_power_A1: float = 100  # nW
-    laser_power_B2: float = 100  # nW
+    laser_power_A1: float = 10  # nW
+    laser_power_B2: float = 6  # nW
 
 
 def crc(
