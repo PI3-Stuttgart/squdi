@@ -1,32 +1,17 @@
 import importlib
-import sys
-from typing import Dict, Tuple, Any
-import time
+from typing import Union
 
-from qualang_tools.control_panel import ManualOutputControl
-import qm
-import numpy as np
-
+from qm.qua import *
 from qudi.core.configoption import ConfigOption
-from qudi.interface.process_control_interface import (
-    ProcessSetpointInterface,
-    ProcessControlConstraints,
-)
-from qudi.interface.triggered_ao_interface import TriggeredAOInterface
-
 from qudi.core.connector import Connector
+
+from qudi.hardware.OPX.configuration import *
 from qudi.hardware.OPX.OPX_holder import OPX as _OPX
 from qudi.hardware.picoquant.ppg512 import PPG512 as _PPG
-from qudi.hardware.OPX.configuration import *
-from PySide2.QtCore import QTimer
-
-from qm import QuantumMachinesManager
-from qm.qua import *
-from qm import SimulationConfig
-import matplotlib.pyplot as plt
-from typing import Iterable, Mapping, Union, Optional, Tuple, Type, Dict
-
-from qudi.hardware.OPX.OPX_utils import crc
+from qudi.interface.process_control_interface import (
+    ProcessControlConstraints,
+    ProcessSetpointInterface,
+)
 
 _Real = Union[int, float]
 
@@ -46,7 +31,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
     OPX: _OPX = Connector(interface="OPX")
     PPG: _PPG = Connector(interface="PPG512")
 
-    _qm_config_file = ConfigOption(name="qm_config_file", default="configuration", missing="nothing")
+    _qm_config_file = ConfigOption(
+        name="qm_config_file", default="configuration", missing="nothing"
+    )
     _switch_time = ConfigOption(name="switch_time", default=1, missing="nothing")
     _ao_options = ConfigOption(name="analog_outputs", default={}, missing="nothing")
     _configuration = None
@@ -122,7 +109,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         value is defined.
         """
         if active:
-            self.log.warning("OPX AO is always active, amplitude only can be set to zero for inactive state")
+            self.log.warning(
+                "OPX AO is always active, amplitude only can be set to zero for inactive state"
+            )
         if not active:
             self.set_setpoint(channel, 0)
 
@@ -239,7 +228,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             counting_delay (float, optional): Delay of the counting (Trigger to TT) relative to the PPG pulse in ns. Defaults to 0.
             res_power (int, optional): Power of the AOM in V (TODO: power in W)
         """
-        PPG_write_status: bool = self.pulses_definition(pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude)
+        PPG_write_status: bool = self.pulses_definition(
+            pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude
+        )
         if vccrf is not None:
             self._ppg.set_vccrf(vccrf)
         if vref is not None:
@@ -247,8 +238,8 @@ class AnalogOutputOPX(ProcessSetpointInterface):
 
         self._opx.update_config()
         with program() as arb_pulse:
-            set_dc_offset("LaserScanner_red", "single", self.get_setpoint("LaserScanner_red"))
-            set_dc_offset("620_pi_w_power", "single", res_power)
+            set_dc_offset("Laser_620_freq", "single", self.get_setpoint("Laser_620_freq"))
+            set_dc_offset("Laser_620_pi", "single", res_power)
 
             with infinite_loop_():
                 align()
@@ -256,12 +247,20 @@ class AnalogOutputOPX(ProcessSetpointInterface):
                     play(
                         "pulse" * amp(green_power),
                         "Laser_520",
-                        duration=((pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns),
+                        duration=(
+                            (pulse_width + AOM_end_buffer) * u.ns
+                            if (pulse_width + AOM_end_buffer) > 16
+                            else 16 * u.ns
+                        ),
                     )
                 play(
-                    pulse="trigit",
-                    element="620_pi",
-                    duration=((pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns),
+                    pulse="pulse",
+                    element="Laser_620_pi",
+                    duration=(
+                        (pulse_width + AOM_end_buffer) * u.ns
+                        if (pulse_width + AOM_end_buffer) > 16
+                        else 16 * u.ns
+                    ),
                 )
                 play("trigit", "Gate_Trigger", duration=20 * u.ns)
                 wait(wait_between_pulses * u.ns)
@@ -291,7 +290,9 @@ class AnalogOutputOPX(ProcessSetpointInterface):
             counting_delay (float, optional): Delay of the counting (Trigger to TT) relative to the PPG pulse in ns. Defaults to 0.
             res_power (int, optional): Power of the AOM. between 0, 1. Defaults to 0.
         """
-        PPG_write_status: bool = self.pulses_definition(pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude)
+        PPG_write_status: bool = self.pulses_definition(
+            pulse_width, pulse_shape, ppg_pulse_delay, pulse_amplitude
+        )
         if vccrf is not None:
             self._ppg.set_vccrf(vccrf)
         if vref is not None:
@@ -308,12 +309,20 @@ class AnalogOutputOPX(ProcessSetpointInterface):
                     play(
                         "pulse" * amp(green_power),
                         "Laser_520",
-                        duration=((pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns),
+                        duration=(
+                            (pulse_width + AOM_end_buffer) * u.ns
+                            if (pulse_width + AOM_end_buffer) > 16
+                            else 16 * u.ns
+                        ),
                     )
                 play(
                     pulse="trigit",
                     element="620_pi",
-                    duration=((pulse_width + AOM_end_buffer) * u.ns if (pulse_width + AOM_end_buffer) > 16 else 16 * u.ns),
+                    duration=(
+                        (pulse_width + AOM_end_buffer) * u.ns
+                        if (pulse_width + AOM_end_buffer) > 16
+                        else 16 * u.ns
+                    ),
                 )
                 play("trigit", "Gate_Trigger", duration=20 * u.ns)
                 wait(wait_between_pulses * u.ns)

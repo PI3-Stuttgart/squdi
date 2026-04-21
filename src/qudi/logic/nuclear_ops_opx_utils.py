@@ -259,7 +259,7 @@ class NuclearOpsOPXUtils(LogicBase):
             )
 
     @staticmethod
-    def duration_ns_to_qua(duration_ns: float) -> int:
+    def duration_ns_to_qua(duration_ns: float | int) -> int:
         """Convert a physical duration in ns to the QUA duration argument.
 
         ``qualang_tools.units.unit`` performs the ns-to-OPX clock-cycle
@@ -462,7 +462,9 @@ class NuclearOpsOPXUtils(LogicBase):
         _duration_ns, _duration_ns_qua = self._get_value_from_key(duration_ns)
         align()
         wait(
-            self.duration_ns_to_qua(_duration_ns if _duration_ns is not None else _duration_ns_qua)
+            self.duration_ns_to_qua(int(_duration_ns))
+            if _duration_ns is not None
+            else _duration_ns_qua
         )
         align()
 

@@ -80,7 +80,7 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
         # set_dc_offset("Laser_620_pi", "single", volt_620_pi)
         set_dc_offset("Laser_620_det", "single", volt_620_det)
         set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-        wait(1 * u.s)
+        wait(500 * u.ms)
 
         with for_(n, 0, n < nr_of_scanns, n + 1):
             ### looping over Laser scanner voltages ###

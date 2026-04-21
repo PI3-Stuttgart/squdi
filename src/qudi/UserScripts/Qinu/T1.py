@@ -45,6 +45,7 @@ def ret_ret_mcas(pdc):
 
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
+        init_state = current_iterator_df["init_state"].unique()[0]
         SSR_state = current_iterator_df["SSR_state"].unique()[0]
 
         with qua.program() as myprog:
@@ -53,13 +54,10 @@ def ret_ret_mcas(pdc):
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
                         sna.crc(mcas)
-                        sna.electron_init(mcas, "e1", "e1_init_duration", "e1_init_power")
+                        sna.electron_init(mcas, init_state)
+                        # sna.ssr(mcas, "e2" if init_state == "e1" else "e1")
                         ou.pause("readout_delay")
-                        if SSR_state == "e1":
-                            sna.ssr(mcas, "e1", "SSR_redout_len", "Laser_620_power_readout")
-                        if SSR_state == "e2":
-                            sna.ssr(mcas, "e2", "SSR_redout_len", "Laser_620_pi_power_readout")
-
+                        sna.ssr(mcas, SSR_state)
                         # Charge state readout
                         sna.csr(mcas)
 
@@ -70,7 +68,11 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
+    ana_seq = [
+        # ["init", "<", 1, 1, 0, 1],
+        ["result", ">", 3, 1, 0, 1],
+        ["init", ">", 15, 1, 0, 1],
+    ]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
@@ -102,16 +104,14 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 2000
 
-    readout_delay = np.linspace(0, 2_000, 25) * 1e3  # ns -> us
+    # readout_delay = np.linspace(0, 2_000, 10) * 1e3  # ns -> us
+    readout_delay = np.linspace(1_000, 40_000, 10) * 1e3  # ns -> us
     nuclear.parameters = OrderedDict(
         (
-            ("sweeps", range(1)),
+            ("sweeps", range(20)),
             ("readout_delay", readout_delay),
-            ("e1_init_power", [50]),
-            ("e1_init_duration", [50]),
-            ("click_channel", [3]),  # nW
-            ("pulse_shape_ppg", ["continuous_sin"]),  # string
-            ("pulse_width_ppg", [20]),  # ns
+            ("click_channel", [2]),  # nW
+            ("init_state", ["e1", "e2"]),
             ("SSR_state", ["e1", "e2"]),
         )
     )

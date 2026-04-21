@@ -570,6 +570,7 @@ class NuclearOPs(DataGeneration):
                 os.rmdir(self.save_dir)
 
             self.queue.log.info("cun: Finished function run_measurement")
+
             self.stop_laser_lock()
 
     @property
@@ -723,13 +724,10 @@ class NuclearOPs(DataGeneration):
 
     def _run_refocus_ple_A1_sequence(self, abort) -> bool:
         """Execute the SnV PLE refocus sequence."""
-        REPUMP_TIME_S = 1.0
-        OPTIMIZER_POLL_S = 1
-        AFTER_OPTIMIZER_WAIT_S = 3.0
-        BEFORE_CW_STOP_WAIT_S = 1
-        BEFORE_DEVIATION_WAIT_S = 1.0
-        AFTER_DEVIATION_WAIT_S = 1.0
-        LOCK_SETTLE_TIME_S = 3.0
+        REPUMP_TIME_S = 0.5
+        OPTIMIZER_POLL_S = 0.1
+        AFTER_OPTIMIZER_WAIT_S = 0.5
+        LOCK_SETTLE_TIME_S = 2.0
 
         q = self.queue
 
@@ -745,7 +743,7 @@ class NuclearOPs(DataGeneration):
 
         if abort.is_set():
             return False
-
+        q.awg.run_cw_mode()
         # q.awg.stop_awgs()
         self.stop_laser_lock()
 
@@ -759,7 +757,7 @@ class NuclearOPs(DataGeneration):
             q.ao.set_setpoint(
                 "Laser_520", snippets_awg.PLE_REFOCUS_PARAMS.laser_power_repump * 1e-9
             )  # nW -> W
-        time.sleep(1)
+        time.sleep(0.1)
 
         # Green repump
         if snippets_awg.PLE_REFOCUS_PARAMS.do_green_repump:
@@ -803,17 +801,20 @@ class NuclearOPs(DataGeneration):
         q.dlc_pro_620.set_pc_voltage(actual_voltage + 0.2)
         q.dlc_pro_620.set_slew_rate(10)
 
-        time.sleep(0.5)
+        time.sleep(1)
         q.wavemeter.start_lock(wavelength_nm)
         q.tt.update_ple(wavelength_nm)
         q.log.info(f"Laser locked to wavemeter at wavelength: {wavelength_nm:.5f} nm")
 
     def stop_laser_lock(self):
         q = self.queue
+        # implement running cw_mode again
+        q.wavemeter.stop_lock()
         q.dlc_pro_620.set_slew_rate(0.0008)
         q.dlc_pro_620.set_pc_voltage(self.IDLE_LASERSCANNER_DLC_SET_VOLTAGE)
         q.dlc_pro_620.use_analog_remote_control(True)
         q.dlc_pro_620.set_slew_rate(10)
+        q.log.info("Laser lock stopped")
 
     def update_waveform_ppg(self, abort) -> bool:
         """Update the PPG waveform parameters from the current iterator row."""

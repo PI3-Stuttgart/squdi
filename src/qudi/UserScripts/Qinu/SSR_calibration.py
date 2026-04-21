@@ -62,7 +62,7 @@ def ret_ret_mcas(pdc):
 
                         ### first readout e1 or e2 ###
                         sna.ssr(mcas, SSR_state_first)
-                        ou.pause("wait_between_SSR")
+                        # ou.pause("wait_between_SSR")
                         ### second readout e1 or e2 ###
                         sna.ssr(mcas, SSR_state_second)
 
@@ -75,7 +75,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["init", ">", 0, 1, 1, 1], ["result", ">", 2, 1, 1, 1], ["init", ">", 15, 1, 1, 1]]
+    ana_seq = [["result", ">", 3, 1, 1, 1], ["result", ">", 3, 1, 1, 1], ["init", ">", 20, 1, 1, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
@@ -105,7 +105,7 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 2000
+    nr_repeating_intergration: int = 5000
 
     B_amp = np.arange(200, 300, 5)  # mT
     nuclear.parameters = OrderedDict(
@@ -113,8 +113,8 @@ def settings(pdc={}):
             # ("B_phi", [0]),
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
-            ("sweeps", range(1)),
-            ("click_channel", [3]),
+            ("sweeps", range(10)),
+            ("click_channel", [2]),
             ("Init_state", ["e1", "e2"]),
             ("SSR_state_first", ["e1", "e2"]),
             ("SSR_state_second", ["e1", "e2"]),
