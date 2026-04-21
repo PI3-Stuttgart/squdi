@@ -118,6 +118,7 @@ def crc(
     max_attempts: Optional[int] = None,
     counts_st: Optional[Any] = None,
     SPCM_channel: Optional[str] = None,
+    set_laser_power: bool = True,
 ) -> None:
     """Run a count-rate check loop with optional 520 nm repumping.
 
@@ -176,9 +177,10 @@ def crc(
     assign(ou.crc_attempts, 0)
 
     ### Set laser powers ###
-    ou.set_laser_power("Laser_620_det", params.laser_power_B2, __pause_lp__)
-    ou.set_laser_power("Laser_620", params.laser_power_A1, __pause_lp__)
-    ou.set_laser_power("Laser_520", params.laser_power_repump, __pause_lp__)
+    if set_laser_power:
+        ou.set_laser_power("Laser_620_det", params.laser_power_A1, __pause_lp__)
+        ou.set_laser_power("Laser_620", params.laser_power_B2, __pause_lp__)
+        ou.set_laser_power("Laser_520", params.laser_power_repump, __pause_lp__)
 
     ### Main Loop: Repeat until sufficient photon counts are detected ###
     with while_(ou.crc_counts < params.threshold):
@@ -213,6 +215,7 @@ def csr(
     duration: Optional[int | str] = None,
     laser_power_A1: Optional[float | str] = None,
     laser_power_B2: Optional[float | str] = None,  # nW
+    set_laser_power: bool = True,
 ) -> None:
     """Run a charge-state readout pulse sequence on both transitions.
 
@@ -235,16 +238,17 @@ def csr(
 
     ou: NuclearOpsOPXUtils = mcas.ou
 
-    ou.set_laser_power(
-        "Laser_620_det",
-        params.laser_power_B2,
-        __pause_lp__,
-    )
-    ou.set_laser_power(
-        "Laser_620",
-        params.laser_power_A1,
-        __pause_lp__,
-    )
+    if set_laser_power:
+        ou.set_laser_power(
+            "Laser_620_det",
+            params.laser_power_A1,
+            __pause_lp__,
+        )
+        ou.set_laser_power(
+            "Laser_620",
+            params.laser_power_B2,
+            __pause_lp__,
+        )
 
     ou.gate_trigger()
     ou.multiple_laser_pulses(["Laser_620", "Laser_620_det"], params.duration)
@@ -258,6 +262,7 @@ def electron_init(
     state: Optional[QubitState | str] = None,
     duration: Optional[int | str] = None,
     laser_power_pump: Optional[float | str] = None,
+    set_laser_power: bool = True,
 ) -> None:
     """Initialize the electron spin into ``e1`` or ``e2`` with a red pump pulse.
 
@@ -281,22 +286,31 @@ def electron_init(
     params.update(state=state, duration=duration)
     ou: NuclearOpsOPXUtils = mcas.ou
 
-    if params.state == QubitState.e1:
-        params.update(laser_power_B2=laser_power_pump)
-        ou.set_laser_power(
-            laser_name="Laser_620_det",
-            power_nw=params.laser_power_B2,
-            pause_after=__pause_lp__,
-        )
-        ou.laser_pulse("Laser_620_det", params.duration)
-    elif params.state == QubitState.e2:
-        params.update(laser_power_A1=laser_power_pump)
-        ou.set_laser_power(
-            laser_name="Laser_620",
-            power_nw=params.laser_power_A1,
-            pause_after=__pause_lp__,
-        )
-        ou.laser_pulse("Laser_620", params.duration)
+    match params.state:
+        case QubitState.e1:
+            if set_laser_power:
+                params.update(laser_power_B2=laser_power_pump)
+                ou.set_laser_power(
+                    laser_name="Laser_620",
+                    power_nw=params.laser_power_B2,
+                    pause_after=__pause_lp__,
+                )
+            # Drive transition B2
+            ou.laser_pulse("Laser_620", params.duration)
+
+        case QubitState.e2:
+            if set_laser_power:
+                params.update(laser_power_A1=laser_power_pump)
+                ou.set_laser_power(
+                    laser_name="Laser_620_det",
+                    power_nw=params.laser_power_A1,
+                    pause_after=__pause_lp__,
+                )
+            # Drive transition A1
+            ou.laser_pulse("Laser_620_det", params.duration)
+
+        case _:
+            raise ValueError("Given state can not be initilized")
     align()
 
 
@@ -305,6 +319,7 @@ def ssr(
     state: Optional[QubitState | str] = None,
     duration: Optional[int | str] = None,
     laser_power_probe: Optional[float | str] = None,
+    set_laser_power=True,
 ) -> None:
     """Run single-shot readout on the selected red transition.
 
@@ -328,31 +343,35 @@ def ssr(
     params.update(state=state, duration=duration)
     ou: NuclearOpsOPXUtils = mcas.ou
 
-    if params.state == QubitState.e1:
-        params.update(laser_power_A1=laser_power_probe)
-        ou.set_laser_power(
-            laser_name="Laser_620",
-            power_nw=params.laser_power_A1,
-            pause_after=__pause_lp__,
-        )
+    match params.state:
+        case QubitState.e1:
+            if set_laser_power:
+                params.update(laser_power_A1=laser_power_probe)
+                ou.set_laser_power(
+                    laser_name="Laser_620_det",
+                    power_nw=params.laser_power_A1,
+                    pause_after=__pause_lp__,
+                )
+            ou.gate_trigger()
+            ou.laser_pulse("Laser_620_det", params.duration)
+            align()
+            ou.memory_trigger()
 
-        ou.gate_trigger()
-        ou.laser_pulse("Laser_620", params.duration)
-        align()
-        ou.memory_trigger()
+        case QubitState.e2:
+            if set_laser_power:
+                params.update(laser_power_B2=laser_power_probe)
+                ou.set_laser_power(
+                    laser_name="Laser_620",
+                    power_nw=params.laser_power_B2,
+                    pause_after=__pause_lp__,
+                )
+            ou.gate_trigger()
+            ou.laser_pulse("Laser_620", params.duration)
+            align()
+            ou.memory_trigger()
 
-    elif params.state == QubitState.e2:
-        params.update(laser_power_B2=laser_power_probe)
-        ou.set_laser_power(
-            laser_name="Laser_620_det",
-            power_nw=params.laser_power_B2,
-            pause_after=__pause_lp__,
-        )
-
-        ou.gate_trigger()
-        ou.laser_pulse("Laser_620_det", params.duration)
-        align()
-        ou.memory_trigger()
+        case _:
+            raise ValueError("Given state can not be readout")
     align()
 
 
@@ -361,8 +380,9 @@ def optical_pi_pulse(
     gate_trigger_delay: int = 200,  # ns
     couting_duration: int = 16,  # ns
     laser_power: float = 50,  # nW
+    set_laser_power=True,
 ) -> None:
-
+    """Runs optical (pi) pulse acting on e1"""
     params = OPTICAL_PI_PULSE_PARAMS()
     params.update(
         gate_trigger_delay=gate_trigger_delay,
@@ -370,10 +390,10 @@ def optical_pi_pulse(
         laser_power=laser_power,
     )
     ou: NuclearOpsOPXUtils = mcas.ou
-
-    ou.set_laser_power(
-        laser_name="Laser_620_pi", power_nw=params.laser_power, pause_after=__pause_lp__
-    )
+    if set_laser_power:
+        ou.set_laser_power(
+            laser_name="Laser_620_pi", power_nw=params.laser_power, pause_after=__pause_lp__
+        )
     ou.laser_pulse("Laser_620_pi", duration_ns=16)
     ou.pause(params.gate_trigger_delay)
     ou.gate_trigger()

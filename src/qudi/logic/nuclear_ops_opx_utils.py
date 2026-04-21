@@ -456,17 +456,20 @@ class NuclearOpsOPXUtils(LogicBase):
             duration=self.duration_ns_to_qua(self.TT_TRIGGER_LENGTH_NS),
         )
 
-    def pause(self, duration_ns: int | QuaVariable[int] | str) -> None:
-        """Insert a delay by playing no pulses for the specified duration. align() before and after."""
+    def pause(self, duration_ns: int | QuaVariable[int] | str, align_before: bool = True) -> None:
+        """
+        Insert a delay by playing no pulses for the specified duration.
+        align() before is default, so the wait time starts after the pulse before ends.
+        Without an align the waiting time starts with the last align in the code (For example the beginning of the last pulse)"""
 
         _duration_ns, _duration_ns_qua = self._get_value_from_key(duration_ns)
-        align()
+        if align_before:
+            align()
         wait(
             self.duration_ns_to_qua(int(_duration_ns))
             if _duration_ns is not None
             else _duration_ns_qua
         )
-        align()
 
     def init_program(self) -> None:
         self.i_1 = declare(fixed)
