@@ -36,8 +36,8 @@ class UpdateableDataclass:
 __pause_lp__: int = 10_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 12  # nW
-GENERAL_POWER_B2 = 12  # nW
+GENERAL_POWER_A1 = 7  # nW
+GENERAL_POWER_B2 = 7  # nW
 
 
 @dataclass
@@ -47,10 +47,10 @@ class CRC_PARAMS(UpdateableDataclass):
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW
     laser_power_repump: float | str = int(10e3)  # nW
-    probe_len: int | str = int(1e6)  # ns # TODO: max 1ms otherwise parallel issues with counting
-    repump_len: int | str = int(500e3)  # ns
-    threshold: int | str = 30  # cts
-    threshold_repump: int | str = 10  # cts
+    probe_len: int | str = 100_000  # ns # TODO: max 1ms otherwise parallel issues with counting
+    repump_len: int | str = 100_000  # ns
+    threshold: int | str = 4  # cts
+    threshold_repump: int | str = 1  # cts
     wait_before_repump: int | str = int(50e3)  # ns
     wait_after_repump: int | str = int(50e3)  # ns
     max_attempts: int = 1000  # not used right now
@@ -61,7 +61,7 @@ class CRC_PARAMS(UpdateableDataclass):
 class CSR_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
-    duration: int | str = int(1e6)  # ns
+    duration: int | str = int(100_000)  # ns
     laser_power_A1: float | str = CRC_PARAMS.laser_power_A1  # nW
     laser_power_B2: float | str = CRC_PARAMS.laser_power_B2  # nW
 
@@ -71,7 +71,7 @@ class SSR_PARAMS(UpdateableDataclass):
     """Default parameters for single-shot readout (SSR) helper calls."""
 
     state: QubitState | str = QubitState.e1
-    duration: int | str = int(50e3)  # ns
+    duration: int | str = 50_000  # ns
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW # 620
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW # 620_det
 
@@ -89,8 +89,8 @@ class PLE_REFOCUS_PARAMS(UpdateableDataclass):
 class OPTICAL_PI_PULSE_PARAMS(UpdateableDataclass):
     """Default parameters for optical pi pulse."""
 
-    gate_trigger_delay: int = 200  # ns
-    couting_duration: int = 16  # ns
+    gate_trigger_delay: int = 16 + 235  # ns
+    couting_duration: int = 70  # ns
     laser_power: float = 50  # nW
 
 
@@ -99,7 +99,7 @@ class ELECTRON_INIT_PARAMS(UpdateableDataclass):
     """Default parameters for resonant electron-state initialization."""
 
     state: QubitState = QubitState.e1
-    duration: int = 3_000_000  # ns (3ms)
+    duration: int = 100_000  # ns (100 us)
     laser_power_A1: float = GENERAL_POWER_A1  # 7  # nW
     laser_power_B2: float = GENERAL_POWER_B2  # 7  # nW
 
@@ -379,7 +379,7 @@ def optical_pi_pulse(
     mcas: MultiChSeq,
     gate_trigger_delay: int = 200,  # ns
     couting_duration: int = 16,  # ns
-    laser_power: float = 50,  # nW
+    laser_power: Optional[float | str] = 50,  # nW
     set_laser_power=True,
 ) -> None:
     """Runs optical (pi) pulse acting on e1"""
@@ -394,11 +394,13 @@ def optical_pi_pulse(
         ou.set_laser_power(
             laser_name="Laser_620_pi", power_nw=params.laser_power, pause_after=__pause_lp__
         )
+    align()
     ou.laser_pulse("Laser_620_pi", duration_ns=16)
-    ou.pause(params.gate_trigger_delay)
+    ou.pause(params.gate_trigger_delay, align_before=False)
     ou.gate_trigger()
-    ou.pause(params.couting_duration)
+    ou.pause(params.couting_duration, align_before=False)
     ou.memory_trigger()
+    align()
 
 
 def scan_laser_to_target(

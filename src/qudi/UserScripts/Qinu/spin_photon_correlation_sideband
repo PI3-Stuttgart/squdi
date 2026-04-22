@@ -46,6 +46,7 @@ def ret_ret_mcas(pdc):
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
 
+        init_state = current_iterator_df["init_state"].unique()[0]
         # Init_state = current_iterator_df["Init_state"].unique()[0]
         # SSR_state = current_iterator_df["SSR_state"].unique()[0]
         with qua.program() as myprog:
@@ -62,14 +63,15 @@ def ret_ret_mcas(pdc):
                         sna.crc(mcas, set_laser_power=False)
 
                         ### Init in e1 or e2 ###
-                        sna.electron_init(mcas=mcas, state="e1", set_laser_power=False)
-                        sna.ssr(mcas, "e2", set_laser_power=False)
+                        sna.electron_init(mcas=mcas, state=init_state, set_laser_power=False)
+                        sna.ssr(mcas, "e2" if init_state == "e1" else "e1", set_laser_power=False)
                         sna.optical_pi_pulse(
                             mcas,
                             gate_trigger_delay=16 + 235,
                             couting_duration=70,
                             set_laser_power=False,
                         )
+                        # sna.ssr(mcas, init_state, set_laser_power=False)
                         sna.csr(mcas, set_laser_power=False)
 
         mcas.program = myprog
@@ -129,8 +131,9 @@ def settings(pdc={}):
             # ("SSR_state", ["e1", "e2"]),
             ("pulse_shape_ppg", ["gaussian"]),
             ("pulse_width_ppg", [2]),
-            ("pulse_delay_ppg", [15]),  # ns
-            ("Laser_620_pi_power", pi_pulse_laser_power),  # nW
+            ("pulse_delay_ppg", [15]),
+            ("init_state", ["e1", "e2"]),  # ns
+            ("Laser_620_pi_power", [2_000]),  # nW
             # ("wait_between_SSR", [100]),  # ns
         )
     )

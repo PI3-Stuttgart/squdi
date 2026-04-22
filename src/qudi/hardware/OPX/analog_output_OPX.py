@@ -239,7 +239,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
         self._opx.update_config()
         with program() as arb_pulse:
             set_dc_offset("Laser_620_freq", "single", self.get_setpoint("Laser_620_freq"))
-            set_dc_offset("Laser_620_pi", "single", res_power)
+            set_dc_offset("Laser_620_pi", "single", self.get_setpoint("Laser_620_pi"))
 
             with infinite_loop_():
                 align()
@@ -254,7 +254,7 @@ class AnalogOutputOPX(ProcessSetpointInterface):
                         ),
                     )
                 play(
-                    pulse="pulse",
+                    pulse="active",
                     element="Laser_620_pi",
                     duration=(
                         (pulse_width + AOM_end_buffer) * u.ns
