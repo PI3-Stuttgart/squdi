@@ -52,7 +52,7 @@ def ret_ret_mcas(pdc):
                 ou.init_program()
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(mcas)
+                        # sna.crc(mcas)
 
                         sna.electron_init(mcas, "e1", "e1_init_duration", "e1_init_power")
                         sna.electron_init(mcas, "e2", "e2_init_duration", "e2_init_power")
@@ -69,7 +69,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["result", ">", 3, 1, 1, 1], ["init", ">", 100, 1, 1, 1]]
+    ana_seq = [["result", ">", 3, 1, 1, 1], ["init", ">", 10, 1, 1, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
@@ -101,7 +101,7 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 5000
 
-    e2_init_duration = np.linspace(1, 300, 30) * 1e3  # ns
+    e2_init_duration = np.linspace(1, 300, 10) * 1e3  # ns
     B_amp = np.arange(200, 300, 5)  # mT
     nuclear.parameters = OrderedDict(
         (
@@ -109,9 +109,9 @@ def settings(pdc={}):
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
             ("sweeps", range(20)),
-            ("e1_init_power", [10]),
+            ("e1_init_power", [20]),
             ("e1_init_duration", [3e6]),
-            ("e2_init_power", [6]),  # nW
+            ("e2_init_power", [20]),  # nW
             ("e2_init_duration", e2_init_duration),
             ("click_channel", [2]),
             ("SSR_state", ["e1", "e2"]),
