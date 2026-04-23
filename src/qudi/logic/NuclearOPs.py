@@ -179,6 +179,135 @@ class NuclearOPs(DataGeneration):
         return self.queue.gated_counter.trace  # self.queue.gated_counter.trace
 
     @property
+    def ana_traces(self) -> Dict[int, Any]:
+        """Return trace objects keyed by TimeTagger counting channel."""
+        if self.use_mixed_analysis_channels():
+            return {None: self.ana_trace}
+        traces = getattr(self.queue.gated_counter, "traces", {})
+        if len(traces) > 0:
+            return traces
+        return {self.primary_counting_channel: self.ana_trace}
+
+    @staticmethod
+    def _normalize_counting_channels(channels: Any) -> list:
+        """Return a flat, de-duplicated list of integer TimeTagger channels."""
+        if channels is None:
+            return []
+        if isinstance(channels, np.ndarray):
+            channels = channels.tolist()
+        if isinstance(channels, (list, tuple, set)):
+            out = []
+            for channel in channels:
+                out.extend(NuclearOPs._normalize_counting_channels(channel))
+        else:
+            out = [int(channels)]
+
+        unique_channels = []
+        for channel in out:
+            if channel not in unique_channels:
+                unique_channels.append(channel)
+        return unique_channels
+
+    def _channels_from_parameter_values(self, parameter_name: str) -> list:
+        """Return simultaneous channel sets from tuple/list-valued parameters."""
+        if not hasattr(self, "parameters") or parameter_name not in self.parameters:
+            return []
+
+        channels = []
+        for value in self.parameters[parameter_name]:
+            if isinstance(value, np.ndarray):
+                value = value.tolist()
+            if isinstance(value, (list, tuple, set)):
+                channels.extend(self._normalize_counting_channels(value))
+        return self._normalize_counting_channels(channels)
+
+    def _all_channels_from_parameter_values(self, parameter_name: str) -> list:
+        """Return every channel mentioned by a parameter, including scalar sweep values."""
+        if not hasattr(self, "parameters") or parameter_name not in self.parameters:
+            return []
+
+        channels = []
+        for value in self.parameters[parameter_name]:
+            channels.extend(self._normalize_counting_channels(value))
+        return self._normalize_counting_channels(channels)
+
+    def analyze_sequence_counting_channels(self) -> list:
+        """Return APD channels requested by optional 7th analyze-sequence entries."""
+        channels = []
+        analyze_sequence = getattr(self.ana_trace, "analyze_sequence", None)
+        if analyze_sequence is None:
+            return channels
+        for step in analyze_sequence:
+            if len(step) == 7:
+                channels.extend(self._normalize_counting_channels(step[6]))
+        return self._normalize_counting_channels(channels)
+
+    def use_mixed_analysis_channels(self) -> bool:
+        """Return whether the canonical analysis trace mixes APD channels per step."""
+        return len(self.analyze_sequence_counting_channels()) > 0
+
+    def configured_counting_channels(self) -> list:
+        """Return channels known before data initialization."""
+        channels = []
+        analyze_sequence_channels = self.analyze_sequence_counting_channels()
+
+        if hasattr(self, "queue") and hasattr(self.queue, "gated_counter"):
+            channels.extend(
+                self._normalize_counting_channels(
+                    getattr(self.queue.gated_counter, "counting_channels", None)
+                )
+            )
+            channels.extend(
+                self._normalize_counting_channels(
+                    getattr(self.queue.gated_counter, "active_counting_channels", None)
+                )
+            )
+
+        channels.extend(self._channels_from_parameter_values("counting_channels"))
+        channels.extend(self._channels_from_parameter_values("click_channel"))
+        channels.extend(analyze_sequence_channels)
+
+        if len(analyze_sequence_channels) > 0:
+            channels.extend(self._all_channels_from_parameter_values("counting_channels"))
+            channels.extend(self._all_channels_from_parameter_values("click_channel"))
+
+        return self._normalize_counting_channels(channels)
+
+    @property
+    def primary_counting_channel(self) -> int:
+        """Return the primary channel used for legacy single-trace aliases."""
+        if hasattr(self, "queue") and hasattr(self.queue, "gated_counter"):
+            try:
+                return self.queue.gated_counter.primary_counting_channel
+            except Exception:
+                pass
+        channels = self.configured_counting_channels()
+        return channels[0] if channels else 0
+
+    def use_channel_suffixes(self) -> bool:
+        """Return whether observations need per-channel column names."""
+        return len(self.configured_counting_channels()) > 1 and not self.use_mixed_analysis_channels()
+
+    def channel_suffix(self, channel: Optional[int]) -> str:
+        if channel is None or not self.use_channel_suffixes():
+            return ""
+        return "_ch{}".format(channel)
+
+    def channel_observation_names(self, base_name: str) -> list:
+        if not self.use_channel_suffixes():
+            return [base_name]
+        channels = self.configured_counting_channels()
+        if len(channels) <= 1:
+            return [base_name]
+        return ["{}{}".format(base_name, self.channel_suffix(channel)) for channel in channels]
+
+    def result_observation_names(self) -> list:
+        names = []
+        for result_idx in range(self.number_of_results):
+            names.extend(self.channel_observation_names("result_{}".format(result_idx)))
+        return names
+
+    @property
     def analyze_type(self) -> Any:
         """Return the active trace-analysis mode from the gated counter."""
         try:
@@ -221,15 +350,15 @@ class NuclearOPs(DataGeneration):
 
                 if self.save_smartly:
                     return (
-                        ["result_{}".format(i) for i in range(self.number_of_results)]
+                        self.result_observation_names()
                         + zpl_counters
+                        + self.channel_observation_names("trace")
+                        + self.channel_observation_names("average_counts")
+                        + self.channel_observation_names("events")
+                        + self.channel_observation_names("thresholds")
                         + [
-                            "trace",
                             "ple_A2",
                             "ple_A1",
-                            "average_counts",
-                            "events",
-                            "thresholds",
                             "start_time",
                             "end_time",
                             "mw_mixing_frequency",
@@ -261,15 +390,15 @@ class NuclearOPs(DataGeneration):
 
                 else:
                     return (
-                        ["result_{}".format(i) for i in range(self.number_of_results)]
+                        self.result_observation_names()
                         + zpl_counters
+                        + self.channel_observation_names("trace")
+                        + self.channel_observation_names("average_counts")
+                        + self.channel_observation_names("events")
+                        + self.channel_observation_names("thresholds")
                         + [
-                            "trace",
                             "ple_A2",
                             "ple_A1",
-                            "average_counts",
-                            "events",
-                            "thresholds",
                             "start_time",
                             "end_time",
                             "mw_mixing_frequency",
@@ -345,6 +474,15 @@ class NuclearOPs(DataGeneration):
                         name = "zpl_2_counter_data_{i}_{j}".format(i=i, j=j)
                         self._dtypes.update({name: "object"})
 
+            for name in self.channel_observation_names("trace"):
+                self._dtypes.update({name: "object"})
+            for name in self.channel_observation_names("events"):
+                self._dtypes.update({name: "int"})
+            for name in self.channel_observation_names("average_counts"):
+                self._dtypes.update({name: "float"})
+            for name in self.channel_observation_names("thresholds"):
+                self._dtypes.update({name: "object"})
+
         return self._dtypes
 
     @property
@@ -408,6 +546,9 @@ class NuclearOPs(DataGeneration):
 
         try:
             # Setup gated counter
+            initial_counting_channels = self.configured_counting_channels()
+            if len(initial_counting_channels) > 0:
+                self.queue.gated_counter.set_counting_channels(initial_counting_channels)
             self.queue.gated_counter.set_counter()
 
             # Lock laser to wavemeter if specified and not continously updated by PLE refocus
@@ -425,11 +566,15 @@ class NuclearOPs(DataGeneration):
                     # we can pause the mesurement by setting the variable self.manual_pause to True, setting it to False will continue the measurement
                     self.check_manual_pause(abort)
 
-                    # updates click channel for gated counter if defined
-                    if "click_channel" in self.current_iterator_df.keys():
-                        self.queue.fast_counter_device._count_between_markers["click_channel"] = (
-                            self.current_iterator_df["click_channel"].unique()[0]
-                        )
+                    # updates click channels for gated counter if defined
+                    if "counting_channels" in self.current_iterator_df.keys():
+                        counting_channels = self.current_iterator_df[
+                            "counting_channels"
+                        ].iloc[0]
+                        self.queue.gated_counter.set_counting_channels(counting_channels)
+                    elif "click_channel" in self.current_iterator_df.keys():
+                        counting_channels = self.current_iterator_df["click_channel"].iloc[0]
+                        self.queue.gated_counter.set_counting_channels(counting_channels)
 
                     if self.do_ple_refocus_A1:
                         self.refocus_ple_A1(abort)
@@ -507,21 +652,30 @@ class NuclearOPs(DataGeneration):
 
                     if self.save_smartly:  # non zero to the data
                         # FIXME:  TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
-                        dd = self.ana_trace.trace
-                        idx = np.nonzero(dd)
-                        ddd = dd[idx]
+                        observations = OrderedDict()
+                        for channel, ana_trace in self.ana_traces.items():
+                            dd = ana_trace.trace
+                            idx = np.nonzero(dd)
+                            ddd = dd[idx]
+                            observations["trace{}".format(self.channel_suffix(channel))] = (
+                                idx,
+                                ddd,
+                            )
                         self.data.set_observations(
-                            [OrderedDict({"trace": (idx, ddd)})]
-                            * self.number_of_simultaneous_measurements
+                            [observations] * self.number_of_simultaneous_measurements
                         )
                     elif self.raw_clicks_processing:
                         pass
                     elif self.no_trace:
                         pass
                     else:
+                        observations = OrderedDict()
+                        for channel, ana_trace in self.ana_traces.items():
+                            observations[
+                                "trace{}".format(self.channel_suffix(channel))
+                            ] = ana_trace.trace
                         self.data.set_observations(
-                            [OrderedDict(trace=self.ana_trace.trace)]
-                            * self.number_of_simultaneous_measurements
+                            [observations] * self.number_of_simultaneous_measurements
                         )
 
                     if abort.is_set():
@@ -931,14 +1085,30 @@ class NuclearOPs(DataGeneration):
         self,
         data: Optional[Any] = None,
         ana_trace: Optional[Any] = None,
+        channel: Optional[int] = None,
         start_idx: Optional[int] = None,
     ) -> Optional[bool]:
         """Analyze the current trace object and write observations into ``data``."""
         if ana_trace is None:
+            if len(self.ana_traces) > 1:
+                repeat_measurement = False
+                for trace_channel, trace in self.ana_traces.items():
+                    repeat_measurement = (
+                        self.analyze(
+                            data=data,
+                            ana_trace=trace,
+                            channel=trace_channel,
+                            start_idx=start_idx,
+                        )
+                        or repeat_measurement
+                    )
+                return repeat_measurement
+
             ana_trace = self.ana_trace
             if self.analyze_type != ana_trace.analyze_type:
                 raise Exception("This was supposed to be a sanity check. The programmer made shit.")
         data = self.data if data is None else data
+        suffix = self.channel_suffix(channel)
         if ana_trace.analyze_type is not None:
             # ACHTUNG!!!! trace analysis code.
             # df = ana_trace.analyze_fast().df # experimental still, but looks ok.
@@ -958,22 +1128,41 @@ class NuclearOPs(DataGeneration):
                 # Why we are going here, because we have only 1 readout anyway,
                 obs_r = df.pivot_table(values="result", columns="result_num", index="sm").rename(
                     columns=collections.OrderedDict(
-                        [(i, "result_{}".format(i)) for i in df.result_num.unique()]
+                        [
+                            (i, "result_{}{}".format(i, suffix))
+                            for i in df.result_num.unique()
+                        ]
                     )
                 )
             else:
                 obs_r = df.rename(columns={"result": "result_0"}).drop(
                     columns=["step", "events", "sm"]
                 )
+                if suffix:
+                    obs_r = obs_r.rename(
+                        columns={
+                            "result_0": "result_0{}".format(suffix),
+                            "thresholds": "thresholds{}".format(suffix),
+                            "average_counts": "average_counts{}".format(suffix),
+                        }
+                    )
             if (
                 not self.raw_clicks_processing
             ):  # Do not add result (for some reason, they are analyzed already anyway)
                 data.set_observations(obs_r, start_idx=start_idx)
                 # data.set_observations(df.groupby(['sm']).agg({'thresholds': lambda x: [i for i in x]}), start_idx=start_idx)
 
-            data.set_observations(df.groupby(["sm"]).agg({"events": np.sum}), start_idx=start_idx)
+            events = df.groupby(["sm"]).agg({"events": np.sum})
+            average_counts = df.groupby(["sm"]).agg({"average_counts": np.mean})
+            if suffix:
+                events = events.rename(columns={"events": "events{}".format(suffix)})
+                average_counts = average_counts.rename(
+                    columns={"average_counts": "average_counts{}".format(suffix)}
+                )
+
+            data.set_observations(events, start_idx=start_idx)
             data.set_observations(
-                df.groupby(["sm"]).agg({"average_counts": np.mean}), start_idx=start_idx
+                average_counts, start_idx=start_idx
             )
 
             # logging.getLogger().info(df)
@@ -987,30 +1176,57 @@ class NuclearOPs(DataGeneration):
                 "Measurement is running.\nReanalyzation will write to data.df and may interfere with the running measurement doing the same.\nIf you want to reanalyze anyway, pass argument do_while_run=True"
             )
             return
-        import Analysis
+        from qudi.logic import Analysis
 
-        ana_trace = Analysis.Trace()
-        for key in [
+        trace_setting_keys = [
             "analyze_type",
             "number_of_simultaneous_measurements",
             "analyze_sequence",
             "binning_factor",
             "average_results",
             "consecutive_valid_result_numbers",
-        ]:
-            setattr(ana_trace, key, kwargs.get(key, getattr(self.ana_trace, key)))
+        ]
+
+        def new_analysis_trace():
+            ana_trace = Analysis.Trace()
+            for key in trace_setting_keys:
+                setattr(ana_trace, key, kwargs.get(key, getattr(self.ana_trace, key)))
+            return ana_trace
+
+        channels = self.configured_counting_channels()
+        if len(channels) == 0 and hasattr(self, "data"):
+            channels = [
+                int(column.split("_ch", 1)[1])
+                for column in self.data.df.columns
+                if column.startswith("trace_ch")
+            ]
+            if len(channels) > 1:
+                try:
+                    self.queue.gated_counter.active_counting_channels = channels
+                except Exception:
+                    pass
+        if len(channels) == 0:
+            channels = [None]
+
         for idx, _I_ in self.data.df.iterrows():
+            ana_trace = new_analysis_trace()
             if (idx - 1) % ana_trace.number_of_simultaneous_measurements:
                 continue  ## What is it for? (seems that it doing nothings.
-            if type(_I_["trace"]) != np.ndarray:
-                print(
-                    "Interrupted reanalyzation at dataframe index {}, as trace is not a numpy array.\nMaybe, this is trace has just not been measured yet?\nTotal length of dataframe is {}".format(
-                        idx, len(self.data.df)
+
+            for channel in channels:
+                trace_column = "trace{}".format(self.channel_suffix(channel))
+                if trace_column not in self.data.df.columns:
+                    continue
+                if type(_I_[trace_column]) != np.ndarray:
+                    print(
+                        "Interrupted reanalyzation at dataframe index {}, as {} is not a numpy array.\nMaybe, this trace has just not been measured yet?\nTotal length of dataframe is {}".format(
+                            idx, trace_column, len(self.data.df)
+                        )
                     )
-                )
-                break
-            ana_trace.trace = _I_["trace"]
-            self.analyze(ana_trace=ana_trace, start_idx=idx)
+                    return
+                ana_trace = new_analysis_trace()
+                ana_trace.trace = _I_[trace_column]
+                self.analyze(ana_trace=ana_trace, channel=channel, start_idx=idx)
 
     def save(self) -> None:
         """Persist measurement results and supporting metadata to disk."""
@@ -1067,6 +1283,14 @@ class NuclearOPs(DataGeneration):
 
     def reset_settings(self) -> None:
         """Reset run-specific settings and drop transient sequence references."""
+        for attr in ["_dtypes", "_observation_names"]:
+            if hasattr(self, attr):
+                delattr(self, attr)
+        try:
+            self.queue.gated_counter.counting_channels = None
+            self.queue.gated_counter.active_counting_channels = []
+        except Exception:
+            pass
         self.additional_recalibration_interval = 0
         self.ret_mcas = None
         self.mcas = None

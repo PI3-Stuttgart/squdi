@@ -61,7 +61,7 @@ class BaseTrace:
             if len(value) == 0:
                 raise Exception("'analyze_sequence' can not be of length zero.")
             for idx, step in enumerate(value):
-                if len(step) != 6:
+                if len(step) not in [6, 7]:
                     raise Exception('Error: {}, {}'.format(idx, value))
                 if not isinstance(step, list):
                     raise Exception('Error: {}, {}'.format(idx, value))
@@ -78,8 +78,10 @@ class BaseTrace:
                 if not type(step[4]) in [int, float]:
                     raise Exception('Error: {}, {}'.format(idx, value))
 
-                if not isinstance(step[5], int) and step[5] >= 1:
+                if not isinstance(step[5], int) or step[5] < 1:
                     raise Exception('When given, the last (6th) entry in an analyze_sequence step must be of type int. It represents the alternating_repetitions also used in snippets_awg.SSR()')
+                if len(step) == 7 and not isinstance(step[6], int):
+                    raise Exception('When given, the 7th entry in an analyze_sequence step must be the integer APD/counting channel used for live plotting.')
             self._analyze_sequence = value
         elif value is None:
             self._analyze_sequence = value
@@ -88,7 +90,7 @@ class BaseTrace:
 
     @property
     def number_of_results(self):
-        return sum([step[-1] for step in self.analyze_sequence if step[0] == 'result'])
+        return sum([step[5] for step in self.analyze_sequence if step[0] == 'result'])
 
     @property
     def period_run(self):
@@ -156,6 +158,12 @@ class BaseTrace:
         df = self.df_rebin(df)
         for idx, cn in enumerate(['st', 'op', 'thr', 'rep', 'thr_diff', 'n_mem']):
             self.append_column(df, cn, [step[idx] for step in self.analyze_sequence])
+        if any(len(step) == 7 for step in self.analyze_sequence):
+            self.append_column(
+                df,
+                'apd_channel',
+                [step[6] if len(step) == 7 else None for step in self.analyze_sequence],
+            )
         df['thr'] = df['thr'].astype('object')
         return df
 
@@ -325,8 +333,8 @@ class Trace(BaseTrace):
         d = collections.OrderedDict([
             ('run', np.repeat(range(self.number_of_runs), self.period_run)),
             ('sm', np.tile(np.repeat(range(self.number_of_simultaneous_measurements), self.period_measurement), self.number_of_runs)),
-            ('step', np.tile(np.concatenate([np.tile([i], step[-1]) for i, step in enumerate(self.analyze_sequence)]), self.number_of_runs*self.number_of_simultaneous_measurements)),
-            ('memory', np.tile(np.concatenate([range(step[-1]) for step in self.analyze_sequence]), self.number_of_runs*self.number_of_simultaneous_measurements)),
+            ('step', np.tile(np.concatenate([np.tile([i], step[5]) for i, step in enumerate(self.analyze_sequence)]), self.number_of_runs*self.number_of_simultaneous_measurements)),
+            ('memory', np.tile(np.concatenate([range(step[5]) for step in self.analyze_sequence]), self.number_of_runs*self.number_of_simultaneous_measurements)),
             ('n', self.trace_cut)
         ])
         return pd.DataFrame.from_dict(d)

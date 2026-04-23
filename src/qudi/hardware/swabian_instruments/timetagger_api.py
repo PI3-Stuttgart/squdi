@@ -1,21 +1,19 @@
-from os.path import join, getsize, isfile
-import numpy as np
-from TimeTagger import (
-    createTimeTagger,
-    createTimeTaggerNetwork,
-    AccessMode,
-    Dump,
-    Correlation,
-    Histogram,
-    Counter,
-    CountBetweenMarkers,
-    FileWriter,
-    Countrate,
-    Combiner,
-    TimeDifferences,
-)
 from qudi.core.configoption import ConfigOption
 from qudi.core.module import Base
+from TimeTagger import (
+    AccessMode,
+    Combiner,
+    Correlation,
+    CountBetweenMarkers,
+    Counter,
+    Countrate,
+    Dump,
+    FileWriter,
+    Histogram,
+    TimeDifferences,
+    createTimeTagger,
+    createTimeTaggerNetwork,
+)
 
 
 class TT(Base):
@@ -74,7 +72,9 @@ class TT(Base):
         try:
             if self._remote_tagger_ip is not None:
                 print("Hello")
-                self.tagger = createTimeTaggerNetwork(f"{self._remote_tagger_ip}:{self._remote_tagger_port}")
+                self.tagger = createTimeTaggerNetwork(
+                    f"{self._remote_tagger_ip}:{self._remote_tagger_port}"
+                )
                 print("Connected to remote tagger _ 2")
             else:
                 if self._serial is not None:
@@ -85,8 +85,10 @@ class TT(Base):
                 self.log.info(f"Tagger initialization successful: {self.tagger.getSerial()}")
 
         except Exception as e:
-            self.log.error(f"\nCheck if the TimeTagger device is being used by another instance. \n Error: {e}")
-            Exception(f"\nCheck if the TimeTagger device is being used by another instance.")
+            self.log.error(
+                f"\nCheck if the TimeTagger device is being used by another instance. \n Error: {e}"
+            )
+            Exception("\nCheck if the TimeTagger device is being used by another instance.")
 
         self._constraints = {"hist": self._hist, "corr": self._corr, "counter": self._counter}
 
@@ -119,7 +121,13 @@ class TT(Base):
         get data by hist.getData()
         """
 
-        return Histogram(self.tagger, kwargs["channel"], kwargs["trigger_channel"], kwargs["bin_width"], kwargs["number_of_bins"])
+        return Histogram(
+            self.tagger,
+            kwargs["channel"],
+            kwargs["trigger_channel"],
+            kwargs["bin_width"],
+            kwargs["number_of_bins"],
+        )
 
     # @remote_tagger
     def correlation(self, **kwargs):
@@ -133,7 +141,13 @@ class TT(Base):
         get data by corr.getData()
         """
 
-        return Correlation(self.tagger, kwargs["channel_start"], kwargs["channel_stop"], kwargs["bin_width"], kwargs["number_of_bins"])
+        return Correlation(
+            self.tagger,
+            kwargs["channel_start"],
+            kwargs["channel_stop"],
+            kwargs["bin_width"],
+            kwargs["number_of_bins"],
+        )
 
     # FIX!
     # @remote_tagger
@@ -175,7 +189,11 @@ class TT(Base):
     # @remote_tagger
     def count_between_markers(self, click_channel, begin_channel, end_channel, n_values):
 
-        kwargs = {"click_channel": click_channel, "begin_channel": begin_channel, "n_values": n_values}
+        kwargs = {
+            "click_channel": click_channel,
+            "begin_channel": begin_channel,
+            "n_values": n_values,
+        }
 
         if end_channel is not None:
             kwargs["end_channel"] = end_channel
@@ -185,7 +203,11 @@ class TT(Base):
         ## Adapted to work best with nuclear ops, might be rewritten with return statement, but takes time to see
         ## how it affects usage of the class.
         print("Setting the gated counter with n values", n_values)
-        print("channels: start stop -- ", self._count_between_markers["begin_channel"], self._count_between_markers["end_channel"])
+        print(
+            "channels: start stop -- ",
+            self._count_between_markers["begin_channel"],
+            self._count_between_markers["end_channel"],
+        )
         print("click channel -- ", self._count_between_markers["click_channel"])
         # TODO parse the channels from kwargs, otherwise if not present keep default.
         # something liek this.  cl_ch = getattr(kwargs['cl_ch'], self._click_channel)
@@ -199,7 +221,9 @@ class TT(Base):
         )
 
     # @remote_tagger
-    def time_differences(self, click_channel, start_channel, next_channel, binwidth, n_bins, n_histograms):
+    def time_differences(
+        self, click_channel, start_channel, next_channel, binwidth, n_bins, n_histograms
+    ):
 
         return TimeDifferences(
             self.tagger,
