@@ -286,7 +286,9 @@ class NuclearOPs(DataGeneration):
 
     def use_channel_suffixes(self) -> bool:
         """Return whether observations need per-channel column names."""
-        return len(self.configured_counting_channels()) > 1 and not self.use_mixed_analysis_channels()
+        return (
+            len(self.configured_counting_channels()) > 1 and not self.use_mixed_analysis_channels()
+        )
 
     def channel_suffix(self, channel: Optional[int]) -> str:
         if channel is None or not self.use_channel_suffixes():
@@ -568,9 +570,7 @@ class NuclearOPs(DataGeneration):
 
                     # updates click channels for gated counter if defined
                     if "counting_channels" in self.current_iterator_df.keys():
-                        counting_channels = self.current_iterator_df[
-                            "counting_channels"
-                        ].iloc[0]
+                        counting_channels = self.current_iterator_df["counting_channels"].iloc[0]
                         self.queue.gated_counter.set_counting_channels(counting_channels)
                     elif "click_channel" in self.current_iterator_df.keys():
                         counting_channels = self.current_iterator_df["click_channel"].iloc[0]
@@ -671,9 +671,9 @@ class NuclearOPs(DataGeneration):
                     else:
                         observations = OrderedDict()
                         for channel, ana_trace in self.ana_traces.items():
-                            observations[
-                                "trace{}".format(self.channel_suffix(channel))
-                            ] = ana_trace.trace
+                            observations["trace{}".format(self.channel_suffix(channel))] = (
+                                ana_trace.trace
+                            )
                         self.data.set_observations(
                             [observations] * self.number_of_simultaneous_measurements
                         )
@@ -1128,10 +1128,7 @@ class NuclearOPs(DataGeneration):
                 # Why we are going here, because we have only 1 readout anyway,
                 obs_r = df.pivot_table(values="result", columns="result_num", index="sm").rename(
                     columns=collections.OrderedDict(
-                        [
-                            (i, "result_{}{}".format(i, suffix))
-                            for i in df.result_num.unique()
-                        ]
+                        [(i, "result_{}{}".format(i, suffix)) for i in df.result_num.unique()]
                     )
                 )
             else:
@@ -1161,9 +1158,7 @@ class NuclearOPs(DataGeneration):
                 )
 
             data.set_observations(events, start_idx=start_idx)
-            data.set_observations(
-                average_counts, start_idx=start_idx
-            )
+            data.set_observations(average_counts, start_idx=start_idx)
 
             # logging.getLogger().info(df)
             # logging.getLogger().info(ana_trace.analyze_type)

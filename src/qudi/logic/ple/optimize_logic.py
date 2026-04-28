@@ -20,21 +20,17 @@ You should have received a copy of the GNU Lesser General Public License along w
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-
-import numpy as np
-from PySide2 import QtCore
-import itertools
 import copy as cp
 import time
 
-from qudi.core.module import LogicBase
-from qudi.util.mutex import RecursiveMutex
+import numpy as np
+from PySide2 import QtCore
 from qudi.core.connector import Connector
-from qudi.core.configoption import ConfigOption
+from qudi.core.module import LogicBase
 from qudi.core.statusvariable import StatusVar
-from qudi.util.fit_models.gaussian import Gaussian2D, Gaussian
+from qudi.util.fit_models.gaussian import Gaussian, Gaussian2D
 from qudi.util.fit_models.lorentzian import Lorentzian
-from qudi.interface.scanning_probe_interface import ScanData
+from qudi.util.mutex import RecursiveMutex
 
 
 class PLEOptimizeScannerLogic(LogicBase):
@@ -93,12 +89,17 @@ class PLEOptimizeScannerLogic(LogicBase):
         except:
             self._max_move_velocity = None
 
-        self.log.debug(f"Opt settings at startup, type {type(self._scan_range)} {self._scan_range, self._scan_resolution}")
+        self.log.debug(
+            f"Opt settings at startup, type {type(self._scan_range)} {self._scan_range, self._scan_resolution}"
+        )
 
         self._avail_axes = tuple(axes.values())
         if self._scan_sequence is None:
             if len(self._avail_axes) >= 3:
-                self._scan_sequence = [(self._avail_axes[0].name, self._avail_axes[1].name), (self._avail_axes[2].name,)]
+                self._scan_sequence = [
+                    (self._avail_axes[0].name, self._avail_axes[1].name),
+                    (self._avail_axes[2].name,),
+                ]
             elif len(self._avail_axes) == 2:
                 self._scan_sequence = [(self._avail_axes[0].name, self._avail_axes[1].name)]
             elif len(self._avail_axes) == 1:
@@ -121,7 +122,9 @@ class PLEOptimizeScannerLogic(LogicBase):
         self._optimal_position = dict()
 
         self._sigNextSequenceStep.connect(self._next_sequence_step, QtCore.Qt.QueuedConnection)
-        self._scan_logic().sigScanStateChanged.connect(self._scan_state_changed, QtCore.Qt.QueuedConnection)
+        self._scan_logic().sigScanStateChanged.connect(
+            self._scan_state_changed, QtCore.Qt.QueuedConnection
+        )
         self._ple_tracking_timer = QtCore.QTimer()
         self._ple_tracking_timer.setSingleShot(False)
         self._ple_tracking_timer.timeout.connect(self.start_optimize, QtCore.Qt.QueuedConnection)
@@ -165,7 +168,9 @@ class PLEOptimizeScannerLogic(LogicBase):
         list(axs_flat.extend(item) for item in sequence)
         avail_axes = [ax.name for ax in self._avail_axes]
         if not all(elem in avail_axes for elem in axs_flat):
-            raise ValueError(f"Optimizer sequence {sequence} must contain only" f" available axes ({avail_axes})")
+            raise ValueError(
+                f"Optimizer sequence {sequence} must contain only available axes ({avail_axes})"
+            )
 
         self._scan_sequence = sequence
 
@@ -210,11 +215,20 @@ class PLEOptimizeScannerLogic(LogicBase):
         for key, val in settings.items():
             if not check_valid(settings, key):
                 if key == "scan_range":
-                    settings["scan_range"] = {ax.name: abs(ax.value_range[1] - ax.value_range[0]) / 100 for ax in hw_axes.values()}
+                    settings["scan_range"] = {
+                        ax.name: abs(ax.value_range[1] - ax.value_range[0]) / 100
+                        for ax in hw_axes.values()
+                    }
                 if key == "scan_resolution":
-                    settings["scan_resolution"] = {ax.name: max(ax.min_resolution, min(16, ax.max_resolution)) for ax in hw_axes.values()}
+                    settings["scan_resolution"] = {
+                        ax.name: max(ax.min_resolution, min(16, ax.max_resolution))
+                        for ax in hw_axes.values()
+                    }
                 if key == "scan_frequency":
-                    settings["scan_frequency"] = {ax.name: max(ax.min_frequency, min(50, ax.max_frequency)) for ax in hw_axes.values()}
+                    settings["scan_frequency"] = {
+                        ax.name: max(ax.min_frequency, min(50, ax.max_frequency))
+                        for ax in hw_axes.values()
+                    }
                 if key == "data_channel":
                     settings["data_channel"] = list(sig_channels.keys())[0]
                 if key == "tracking_period":
@@ -225,9 +239,11 @@ class PLEOptimizeScannerLogic(LogicBase):
             dummy_seq = OptimizerScanSequence(tuple(self._scan_logic().scanner_axes.keys()))
 
             if len(dummy_seq.available_opt_sequences) == 0:
-                raise ValueError(f"Configured optimizer" f" doesn't yield any sensible scan sequence.")
+                raise ValueError("Configured optimizer doesn't yield any sensible scan sequence.")
 
-            if settings["scan_sequence"] not in [seq.sequence for seq in dummy_seq.available_opt_sequences]:
+            if settings["scan_sequence"] not in [
+                seq.sequence for seq in dummy_seq.available_opt_sequences
+            ]:
                 new_seq = dummy_seq.available_opt_sequences[0].sequence
                 settings["scan_sequence"] = new_seq
 
@@ -291,13 +307,18 @@ class PLEOptimizeScannerLogic(LogicBase):
 
             # Set scan ranges
             curr_pos = self._scan_logic().scanner_target
-            optim_ranges = {ax: (pos - self._scan_range[ax] / 2, pos + self._scan_range[ax] / 2) for ax, pos in curr_pos.items()}
+            optim_ranges = {
+                ax: (pos - self._scan_range[ax] / 2, pos + self._scan_range[ax] / 2)
+                for ax, pos in curr_pos.items()
+            }
             actual_setting = self._scan_logic().set_scan_range(optim_ranges)
             # FIXME: Comparing floats by inequality here
             if any(val != optim_ranges[ax] for ax, val in actual_setting.items()):
                 self.log.warning("Some optimize scan ranges have been changed by the scanner.")
                 self.module_state.unlock()
-                self.set_optimize_settings({"scan_range": {ax: abs(r[1] - r[0]) for ax, r in actual_setting.items()}})
+                self.set_optimize_settings(
+                    {"scan_range": {ax: abs(r[1] - r[0]) for ax, r in actual_setting.items()}}
+                )
                 self.module_state.lock()
 
             # Set scan frequency
@@ -337,16 +358,26 @@ class PLEOptimizeScannerLogic(LogicBase):
         if self._max_move_velocity == None:
             sleep_time = 0.1
         else:
-            worst_case_distance = (self.scan_range["x"] ** 2 + self.scan_range["y"] ** 2 + self.scan_range["z"] ** 2) ** 0.5
+            worst_case_distance = (
+                self.scan_range["x"] ** 2 + self.scan_range["y"] ** 2 + self.scan_range["z"] ** 2
+            ) ** 0.5
             sleep_time = 2 * worst_case_distance / self._max_move_velocity + 0.1
         time.sleep(sleep_time)
         with self._thread_lock:
-
             if self.module_state() == "idle":
                 return
 
-            if self._scan_logic().toggle_scan(True, self._scan_sequence[self._sequence_index], self.module_uuid) < 0:
-                self.log.error("Unable to start {0} scan. Optimize aborted.".format(self._scan_sequence[self._sequence_index]))
+            if (
+                self._scan_logic().toggle_scan(
+                    True, self._scan_sequence[self._sequence_index], self.module_uuid
+                )
+                < 0
+            ):
+                self.log.error(
+                    "Unable to start {0} scan. Optimize aborted.".format(
+                        self._scan_sequence[self._sequence_index]
+                    )
+                )
                 self.stop_optimize()
             return
 
@@ -359,21 +390,31 @@ class PLEOptimizeScannerLogic(LogicBase):
                 try:
                     if data.scan_dimension == 1:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
-                        opt_pos, fit_data, fit_res = self._get_pos_from_1d_lorentian_fit(x, data.data[self._data_channel])
+                        opt_pos, fit_data, fit_res = self._get_pos_from_1d_lorentian_fit(
+                            x, data.data[self._data_channel]
+                        )
                     else:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
                         y = np.linspace(*data.scan_range[1], data.scan_resolution[1])
                         xy = np.meshgrid(x, y, indexing="ij")
-                        opt_pos, fit_data, fit_res = self._get_pos_from_2d_gauss_fit(xy, data.data[self._data_channel].ravel())
+                        opt_pos, fit_data, fit_res = self._get_pos_from_2d_gauss_fit(
+                            xy, data.data[self._data_channel].ravel()
+                        )
                     #!ADD CHECK THE Rsquared VALUE OF THE FIT
                     position_update = {ax: opt_pos[ii] for ii, ax in enumerate(data.scan_axes)}
                     # Abort optimize if fit failed
                     self._last_fit_results = fit_res
-                    if (fit_data is None) or (fit_res is None) or (fit_res is not None and fit_res.rsquared < self._min_r_squared):
+                    if (
+                        (fit_data is None)
+                        or (fit_res is None)
+                        or (fit_res is not None and fit_res.rsquared < self._min_r_squared)
+                    ):
                         try:
                             self._scan_logic().set_target_position(opt_pos)
                         except Exception:
-                            self.log.exception("Failed to restore scanner position after failed fit.")
+                            self.log.exception(
+                                "Failed to restore scanner position after failed fit."
+                            )
 
                             self.log.warning("Stopping optimization due to failed fit.")
                             self.stop_optimize()
@@ -444,7 +485,11 @@ class PLEOptimizeScannerLogic(LogicBase):
             self.log.exception("2D Gaussian fit unsuccessful.")
             return (x_middle, y_middle), None, None
 
-        return (fit_result.best_values["center_x"], fit_result.best_values["center_y"]), fit_result.best_fit.reshape(xy[0].shape), fit_result
+        return (
+            (fit_result.best_values["center_x"], fit_result.best_values["center_y"]),
+            fit_result.best_fit.reshape(xy[0].shape),
+            fit_result,
+        )
 
     def _get_pos_from_1d_gauss_fit(self, x, data):
         model = Gaussian()
@@ -519,8 +564,10 @@ class OptimizerScanSequence:
         """
         @param sequence: list of tuples, eg. [('x','y'), ('z')]
         """
-        if not sequence in self._available_opt_seqs_raw():
-            raise ValueError(f"Given {sequence} sequence incompatible with axes= {self._avail_axes}")
+        if sequence not in self._available_opt_seqs_raw():
+            raise ValueError(
+                f"Given {sequence} sequence incompatible with axes= {self._avail_axes}"
+            )
 
         self._sequence = sequence
 
@@ -530,7 +577,9 @@ class OptimizerScanSequence:
         Based on the given plot dimensions and axes configuration, give all possible permutations of scan sequences.
         """
 
-        return [OptimizerScanSequence(self._avail_axes, seq) for seq in self._available_opt_seqs_raw()]
+        return [
+            OptimizerScanSequence(self._avail_axes, seq) for seq in self._available_opt_seqs_raw()
+        ]
 
     def _available_opt_seqs_raw(self, remove_1d_in_2d=True):
         """

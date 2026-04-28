@@ -93,8 +93,8 @@ AOM_delay_575 = 0 * u.ns
 AOM_delay_620 = 0 * u.ns
 
 # AOM / EOM 620 pi path
-AOM_620_pi_delay = 110 * u.ns
-PPG_delay = 382 * u.ns
+AOM_620_pi_delay = 0 * u.ns
+PPG_delay = 560 * u.ns
 
 AOM_power_delay_520 = 0 * u.ns
 AOM_power_delay_575 = 0 * u.ns
@@ -103,7 +103,7 @@ AOM_power_delay_620 = 0 * u.ns
 mw_delay = 0 * u.ns
 rf_delay = 0 * u.ns
 
-counter_delay = 600 * u.ns  # delay was 600 * u.ns changed it to test
+counter_delay = 815 * u.ns
 
 
 wait_between_runs = 1500

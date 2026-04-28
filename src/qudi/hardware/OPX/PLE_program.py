@@ -79,8 +79,10 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
         ### Set laser powers ###
         # set_dc_offset("Laser_620_pi", "single", volt_620_pi)
         set_dc_offset("Laser_620_det", "single", volt_620_det)
+        set_dc_offset("Laser_620", "input1", volt_620)
+        set_dc_offset("Laser_620", "input2", volt_620)
         set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-        wait(500 * u.ms)
+        wait(1_000 * u.ms)
 
         with for_(n, 0, n < nr_of_scanns, n + 1):
             ### looping over Laser scanner voltages ###
@@ -88,16 +90,19 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
                 set_dc_offset("Laser_620_freq", "single", vLS)
                 play("trigit", "Gate_Trigger", duration=laser_pulse_len * u.ns)
                 with for_(i, 0, i < i_avg, i + 1):
-                    play("pulse" * amp(volt_620 * 2), "Laser_620", duration=laser_pulse_len * u.ns)
+                    play("active", "Laser_620", duration=laser_pulse_len * u.ns)
                     # play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
                     play("active", "Laser_620_det", duration=laser_pulse_len * u.ns)
                 align()
                 play("trigit", "Memory_Trigger", duration=tt_trigger_len * u.ns)
 
             ### Backscan ###
+            align()
             set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-            with for_(i, 0, i < 10000, i + 1):
-                play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10000)
+            # with for_(i, 0, i < 10_000, i + 1):
+            # play("pulse" * amp(volt_520 * 2), "Laser_520", duration=1 * u.s / 10_000)
+
+            wait(1 * u.s)
             # crc(volt_620, volt_520, counts, counts_st)
 
             # with for_each_(vLSBS, back_scan_ls_volt_array):

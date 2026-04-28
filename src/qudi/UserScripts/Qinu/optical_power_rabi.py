@@ -49,14 +49,13 @@ def ret_ret_mcas(pdc):
         # Init_state = current_iterator_df["Init_state"].unique()[0]
         # SSR_state = current_iterator_df["SSR_state"].unique()[0]
         with qua.program() as myprog:
+            ou.init_program()
+            ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
+            ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
+            ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
+            ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
+            ou.pause(10_000)
             with infinite_loop_():
-                ou.init_program()
-                ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
-                ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
-                ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
-                ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
-                ou.pause(10_000)
-
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
                         sna.crc(mcas, set_laser_power=False)
@@ -66,15 +65,14 @@ def ret_ret_mcas(pdc):
                         sna.ssr(mcas, "e2", set_laser_power=False)
                         sna.optical_pi_pulse(
                             mcas,
-                            gate_trigger_delay=16 + 235,
-                            couting_duration=70,
+                            couting_duration=30,
                             set_laser_power=False,
                         )
                         sna.csr(mcas, set_laser_power=False)
-
         mcas.program = myprog
-
-        mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (382 + 200) * u.ns)
+        mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (560) * u.ns)
+        mcas.qm.set_digital_delay("Laser_620_pi", "AOM_620_pi", (0) * u.ns)
+        mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (815) * u.ns)
 
         return mcas
 
@@ -82,7 +80,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
@@ -117,19 +115,19 @@ def settings(pdc={}):
     nr_repeating_intergration: int = 100_000
 
     B_amp = np.arange(200, 300, 5)  # mT
-    pi_pulse_laser_power = np.linspace(500, 2000, num=30)  # nW
+    pi_pulse_laser_power = np.linspace(500, 100_000, 10)  # nW
     nuclear.parameters = OrderedDict(
         (
             # ("B_phi", [0]),
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
             ("sweeps", range(100)),
-            ("click_channel", [2]),
+            ("click_channel", [3]),
             # ("Init_state", ["e1", "e2"]),
             # ("SSR_state", ["e1", "e2"]),
             ("pulse_shape_ppg", ["gaussian"]),
             ("pulse_width_ppg", [2]),
-            ("pulse_delay_ppg", [15]),  # ns
+            ("pulse_delay_ppg", [0]),  # ns
             ("Laser_620_pi_power", pi_pulse_laser_power),  # nW
             # ("wait_between_SSR", [100]),  # ns
         )

@@ -50,41 +50,46 @@ def ret_ret_mcas(pdc):
         # Init_state = current_iterator_df["Init_state"].unique()[0]
         # SSR_state = current_iterator_df["SSR_state"].unique()[0]
         with qua.program() as myprog:
+            ou.init_program()
+            ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
+            ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
+            ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
+            ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
+            ou.pause(10_000)
             with infinite_loop_():
-                ou.init_program()
-                ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
-                ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
-                ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
-                ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
-                ou.pause(10_000)
-
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(mcas, set_laser_power=False)
+                        # sna.crc(mcas, set_laser_power=False)
 
                         ### Init in e1 or e2 ###
-                        sna.electron_init(mcas=mcas, state=init_state, set_laser_power=False)
-                        sna.ssr(mcas, "e2" if init_state == "e1" else "e1", set_laser_power=False)
+                        # sna.electron_init(mcas=mcas, state=init_state, set_laser_power=False)
+                        # sna.ssr(mcas, "e2" if init_state == "e1" else "e1", set_laser_power=False)
                         sna.optical_pi_pulse(
                             mcas,
-                            gate_trigger_delay=16 + 235,
-                            couting_duration=70,
+                            couting_duration=30,
                             set_laser_power=False,
                         )
+                        ou.pause(1_000)
                         # sna.ssr(mcas, init_state, set_laser_power=False)
-                        sna.csr(mcas, set_laser_power=False)
+                        # sna.csr(mcas, set_laser_power=False)
 
         mcas.program = myprog
 
-        mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (382 + 200) * u.ns)
-
+        mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (560) * u.ns)
+        mcas.qm.set_digital_delay("Laser_620_pi", "AOM_620_pi", (0) * u.ns)
+        mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (815) * u.ns)
         return mcas
 
     return ret_mcas
 
 
 def settings(pdc={}):
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
+    ana_seq = [
+        # ["init", "<", 1, 1, 0, 1],
+        ["result", ">", 1, 1, 0, 1],
+        # ["init", ">", 2, 1, 0, 1],
+        # ["init", ">", 3, 1, 0, 1],
+    ]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
@@ -109,9 +114,9 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = True
-    nuclear.lock_laser_to_wavemeter = False
-    nuclear.ple_refocus_interval = 20
+    nuclear.do_ple_refocus_A1 = False
+    nuclear.lock_laser_to_wavemeter = True
+    nuclear.ple_refocus_interval = 60 * 5
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
@@ -131,9 +136,9 @@ def settings(pdc={}):
             # ("SSR_state", ["e1", "e2"]),
             ("pulse_shape_ppg", ["gaussian"]),
             ("pulse_width_ppg", [2]),
-            ("pulse_delay_ppg", [15]),
+            ("pulse_delay_ppg", [0]),
             ("init_state", ["e1", "e2"]),  # ns
-            ("Laser_620_pi_power", [2_000]),  # nW
+            ("Laser_620_pi_power", [10_000]),  # nW
             # ("wait_between_SSR", [100]),  # ns
         )
     )

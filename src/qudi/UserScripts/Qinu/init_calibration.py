@@ -52,12 +52,13 @@ def ret_ret_mcas(pdc):
                 ou.init_program()
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        # sna.crc(mcas)
+                        sna.crc(mcas)
 
-                        sna.electron_init(mcas, "e1", "e1_init_duration", "e1_init_power")
-                        sna.electron_init(mcas, "e2", "e2_init_duration", "e2_init_power")
+                        sna.electron_init(mcas, "e1")
+                        sna.ssr(mcas, "e2")
+                        sna.electron_init(mcas, "e2", "e2_init_duration")
 
-                        sna.ssr(mcas, SSR_state, laser_power_probe=10)
+                        sna.ssr(mcas, SSR_state)
 
                         # Charge state readout
                         sna.csr(mcas)
@@ -69,7 +70,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["result", ">", 3, 1, 1, 1], ["init", ">", 10, 1, 1, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
