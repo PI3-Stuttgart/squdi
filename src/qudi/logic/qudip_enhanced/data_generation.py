@@ -54,21 +54,6 @@ class DataGeneration:
     @parameters.setter
     @printexception
     def parameters(self, val):
-        def hashable_parameter_value(value):
-            if isinstance(value, np.ndarray):
-                value = value.tolist()
-            if isinstance(value, (list, tuple)):
-                return tuple(hashable_parameter_value(item) for item in value)
-            if isinstance(value, set):
-                return tuple(sorted(hashable_parameter_value(item) for item in value))
-            if isinstance(value, dict):
-                return tuple(
-                    sorted(
-                        (key, hashable_parameter_value(item)) for key, item in value.items()
-                    )
-                )
-            return value
-
         if type(val) != OrderedDict:
             raise Exception("Error: {}, {}".format(type(val), val))
         for k, v in val.items():
@@ -76,13 +61,7 @@ class DataGeneration:
             _ = check_array_like(v, "value_in_{}".format(k))
             if len(v) == 0:
                 raise Exception("Error: parameter {} has length zero.".format(k))
-            items_occuring_more_than_once = [
-                item_val
-                for item_val, number_of_occurences in Counter(
-                    hashable_parameter_value(item) for item in v
-                ).items()
-                if number_of_occurences > 1
-            ]
+            items_occuring_more_than_once = [item_val for item_val, number_of_occurences in Counter(v).items() if number_of_occurences > 1]
             if len(items_occuring_more_than_once) > 0:
                 raise Exception("Error: parameter {} has duplicate items {}".format(k, items_occuring_more_than_once))
         self._parameters = val
@@ -140,10 +119,7 @@ class DataGeneration:
     def set_iterator_df(self):
         self.iterator_df = pd.DataFrame(list(itertools.product(*self.parameters.values())), columns=list(self.parameters.keys()))
         for cn in self.iterator_df.columns:
-            sample = self.parameters[cn][0]
-            if isinstance(sample, (list, tuple, set, np.ndarray, dict)):
-                continue
-            self.iterator_df[cn] = self.iterator_df[cn].astype(type(sample))
+            self.iterator_df[cn] = self.iterator_df[cn].astype(type(self.parameters[cn][0]))
 
     @property
     def progress(self):
