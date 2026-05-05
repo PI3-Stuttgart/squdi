@@ -59,24 +59,25 @@ def ret_ret_mcas(pdc):
             with infinite_loop_():
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(mcas, set_laser_power=False)
+                        # sna.crc(mcas, set_laser_power=False)
 
                         ### Init in e1 or e2 ###
-                        sna.electron_init(mcas=mcas, state=init_state, set_laser_power=False)
-                        sna.ssr(mcas, "e2" if init_state == "e1" else "e1", set_laser_power=False)
+                        # sna.electron_init(mcas=mcas, state=init_state, set_laser_power=False)
+                        # sna.ssr(mcas, "e2" if init_state == "e1" else "e1", set_laser_power=False)
                         sna.optical_pi_pulse(
                             mcas,
-                            couting_duration=50,
+                            couting_duration=30,
                             set_laser_power=False,
                         )
-                        sna.ssr(mcas, init_state, set_laser_power=False)
-                        sna.csr(mcas, set_laser_power=False)
+                        ou.pause(1_000)
+                        # sna.ssr(mcas, init_state, set_laser_power=False)
+                        # sna.csr(mcas, set_laser_power=False)
 
         mcas.program = myprog
 
         mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (560) * u.ns)
         mcas.qm.set_digital_delay("Laser_620_pi", "AOM_620_pi", (0) * u.ns)
-        mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (820) * u.ns)  # 815
+        mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (815) * u.ns)
         return mcas
 
     return ret_mcas
@@ -84,10 +85,10 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     ana_seq = [
-        ["init", "<", 2, 1, 0, 1],
+        # ["init", "<", 1, 1, 0, 1],
         ["result", ">", 1, 1, 0, 1],
-        ["init", ">", 1, 1, 0, 1],
-        ["init", ">", 2, 1, 0, 1],
+        # ["init", ">", 2, 1, 0, 1],
+        # ["init", ">", 3, 1, 0, 1],
     ]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -115,7 +116,7 @@ def settings(pdc={}):
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
     nuclear.lock_laser_to_wavemeter = False
-    nuclear.ple_refocus_interval = 20
+    nuclear.ple_refocus_interval = 60 * 5
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
@@ -130,7 +131,7 @@ def settings(pdc={}):
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
             ("sweeps", range(100)),
-            ("click_channel", [3]),
+            ("click_channel", [2]),
             # ("Init_state", ["e1", "e2"]),
             # ("SSR_state", ["e1", "e2"]),
             ("pulse_shape_ppg", ["gaussian"]),

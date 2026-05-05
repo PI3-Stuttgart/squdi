@@ -36,8 +36,8 @@ class UpdateableDataclass:
 __pause_lp__: int = 10_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 15  # nW
-GENERAL_POWER_B2 = 15  # nW
+GENERAL_POWER_A1 = 10  # nW
+GENERAL_POWER_B2 = 10  # nW
 
 
 @dataclass
@@ -49,7 +49,7 @@ class CRC_PARAMS(UpdateableDataclass):
     laser_power_repump: float | str = int(20e3)  # nW
     probe_len: int | str = 100_000  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
-    threshold: int | str = 3  # cts
+    threshold: int | str = 4  # cts
     threshold_repump: int | str = 1  # cts
     wait_before_repump: int | str = int(50e3)  # ns
     wait_after_repump: int | str = int(50e3)  # ns

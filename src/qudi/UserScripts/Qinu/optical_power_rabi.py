@@ -5,7 +5,7 @@ import os
 from collections import OrderedDict
 
 from qm import qua
-from qm.qua import for_, infinite_loop_
+from qm.qua import assign, declare, for_, if_, infinite_loop_
 from qualang_tools.loops import from_array
 from qualang_tools.units import unit
 
@@ -45,10 +45,13 @@ def ret_ret_mcas(pdc):
 
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
+        crc_period = 10
 
         # Init_state = current_iterator_df["Init_state"].unique()[0]
         # SSR_state = current_iterator_df["SSR_state"].unique()[0]
         with qua.program() as myprog:
+            crc_rep = declare(int)
+            assign(crc_rep, crc_period)
             ou.init_program()
             ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
             ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
@@ -58,21 +61,24 @@ def ret_ret_mcas(pdc):
             with infinite_loop_():
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(mcas, set_laser_power=False)
+                        with if_(crc_rep >= crc_period):
+                            sna.crc(mcas)
+                            assign(crc_rep, 0)
 
                         ### Init in e1 or e2 ###
                         sna.electron_init(mcas=mcas, state="e1", set_laser_power=False)
-                        sna.ssr(mcas, "e2", set_laser_power=False)
+                        sna.ssr(mcas, state="e2", set_laser_power=False)
                         sna.optical_pi_pulse(
                             mcas,
-                            couting_duration=30,
+                            couting_duration=50,
                             set_laser_power=False,
                         )
                         sna.csr(mcas, set_laser_power=False)
+                        assign(crc_rep, crc_rep + 1)
         mcas.program = myprog
-        mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (560) * u.ns)
-        mcas.qm.set_digital_delay("Laser_620_pi", "AOM_620_pi", (0) * u.ns)
-        mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (815) * u.ns)
+        # mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (560) * u.ns)
+        # mcas.qm.set_digital_delay("Laser_620_pi", "AOM_620_pi", (0) * u.ns)
+        # mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (815) * u.ns)
 
         return mcas
 
@@ -80,7 +86,8 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
+    # ana_seq = [["result", ">", 0, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
@@ -105,9 +112,9 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = True
-    nuclear.lock_laser_to_wavemeter = False
-    nuclear.ple_refocus_interval = 20
+    nuclear.do_ple_refocus_A1 = False
+    nuclear.lock_laser_to_wavemeter = True
+    nuclear.ple_refocus_interval = 30 * 60
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
@@ -115,20 +122,21 @@ def settings(pdc={}):
     nr_repeating_intergration: int = 100_000
 
     B_amp = np.arange(200, 300, 5)  # mT
-    pi_pulse_laser_power = np.linspace(500, 100_000, 10)  # nW
+    pi_pulse_laser_power = np.linspace(14, 300, 20) ** 2  # nW
+
     nuclear.parameters = OrderedDict(
         (
             # ("B_phi", [0]),
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
-            ("sweeps", range(100)),
-            ("click_channel", [3]),
+            ("sweeps", range(10)),
+            ("click_channel", [2]),
             # ("Init_state", ["e1", "e2"]),
             # ("SSR_state", ["e1", "e2"]),
             ("pulse_shape_ppg", ["gaussian"]),
             ("pulse_width_ppg", [2]),
             ("pulse_delay_ppg", [0]),  # ns
-            ("Laser_620_pi_power", pi_pulse_laser_power),  # nW
+            ("Laser_620_pi_power", pi_pulse_laser_power),
             # ("wait_between_SSR", [100]),  # ns
         )
     )
