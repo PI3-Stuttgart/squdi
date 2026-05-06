@@ -79,7 +79,8 @@ def ret_ret_mcas(pdc):
         # mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (560) * u.ns)
         # mcas.qm.set_digital_delay("Laser_620_pi", "AOM_620_pi", (0) * u.ns)
         # mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (815) * u.ns)
-
+        mcas.qm.set_digital_delay("Laser_620_det", "marker", 1230 * u.ns)
+        mcas.qm.set_digital_delay("Laser_620", "marker", 1130 * u.ns)
         return mcas
 
     return ret_mcas
@@ -112,9 +113,9 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = False
-    nuclear.lock_laser_to_wavemeter = True
-    nuclear.ple_refocus_interval = 30 * 60
+    nuclear.do_ple_refocus_A1 = True
+    nuclear.lock_laser_to_wavemeter = False
+    nuclear.ple_refocus_interval = 3 * 60
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
@@ -122,14 +123,14 @@ def settings(pdc={}):
     nr_repeating_intergration: int = 100_000
 
     B_amp = np.arange(200, 300, 5)  # mT
-    pi_pulse_laser_power = np.linspace(14, 300, 20) ** 2  # nW
-
+    # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
+    pi_pulse_laser_power = np.array([8_000])  # nW
     nuclear.parameters = OrderedDict(
         (
             # ("B_phi", [0]),
             # ("B_theta", [0]),
             # ("B_amp", B_amp),
-            ("sweeps", range(10)),
+            ("sweeps", range(20)),
             ("click_channel", [2]),
             # ("Init_state", ["e1", "e2"]),
             # ("SSR_state", ["e1", "e2"]),

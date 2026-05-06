@@ -90,7 +90,8 @@ LaserScanner_delay = 0 * u.ns
 # AOMs
 AOM_delay_520 = 120 * u.ns
 AOM_delay_575 = 0 * u.ns
-AOM_delay_620 = 0 * u.ns
+AOM_delay_620 = 1130 * u.ns
+AOM_delay_620_det = 1230 * u.ns
 
 # AOM / EOM 620 pi path
 AOM_620_pi_delay = 0 * u.ns
@@ -298,7 +299,7 @@ config = {
             "digitalInputs": {
                 "marker": {
                     "port": ("con1", 2),
-                    "delay": AOM_delay_620,
+                    "delay": AOM_delay_620_det,
                     "buffer": 0,
                 },
             },

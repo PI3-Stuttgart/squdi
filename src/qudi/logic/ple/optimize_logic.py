@@ -21,7 +21,6 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 import copy as cp
-import time
 
 import numpy as np
 from PySide2 import QtCore
@@ -342,7 +341,7 @@ class PLEOptimizeScannerLogic(LogicBase):
             # optimizer scans are never saved
             self._scan_logic().set_scan_settings({"save_to_history": False})
 
-            self._scan_logic()._number_of_repeats = 1
+            # self._scan_logic()._number_of_repeats = 10
 
             self._sequence_index = 0
             self._optimal_position = dict()
@@ -355,14 +354,14 @@ class PLEOptimizeScannerLogic(LogicBase):
         # This means that for the sequence xy, z the scanner will not be on the bright spot in xy when the scan in z is started.
         # This will mess up the scan.
         # Sleeping for some time should fix it.
-        if self._max_move_velocity == None:
-            sleep_time = 0.1
-        else:
-            worst_case_distance = (
-                self.scan_range["x"] ** 2 + self.scan_range["y"] ** 2 + self.scan_range["z"] ** 2
-            ) ** 0.5
-            sleep_time = 2 * worst_case_distance / self._max_move_velocity + 0.1
-        time.sleep(sleep_time)
+        # if self._max_move_velocity == None:
+        #     sleep_time = 0.1
+        # else:
+        #     worst_case_distance = (
+        #         self.scan_range["x"] ** 2 + self.scan_range["y"] ** 2 + self.scan_range["z"] ** 2
+        #     ) ** 0.5
+        #     sleep_time = 2 * worst_case_distance / self._max_move_velocity + 0.1
+        # time.sleep(sleep_time)
         with self._thread_lock:
             if self.module_state() == "idle":
                 return
@@ -388,20 +387,31 @@ class PLEOptimizeScannerLogic(LogicBase):
                 return
             elif data is not None:
                 try:
+                    print(f"###### Optimize dimension {data.scan_dimension} ######")
+                    optimizer_data = self._get_accumulated_optimizer_data(data)
                     if data.scan_dimension == 1:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
                         opt_pos, fit_data, fit_res = self._get_pos_from_1d_lorentian_fit(
-                            x, data.data[self._data_channel]
+                            x, optimizer_data
                         )
+                        position_update = {data.scan_axes[0]: opt_pos[0]}
                     else:
                         x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
-                        y = np.linspace(*data.scan_range[1], data.scan_resolution[1])
-                        xy = np.meshgrid(x, y, indexing="ij")
-                        opt_pos, fit_data, fit_res = self._get_pos_from_2d_gauss_fit(
-                            xy, data.data[self._data_channel].ravel()
+                        data_1d = optimizer_data.sum(axis=1)
+
+                        opt_pos, fit_data, fit_res = self._get_pos_from_1d_gauss_fit(
+                            x,
+                            data_1d,
                         )
+                        position_update = {data.scan_axes[0]: opt_pos[0]}
+                        if False:
+                            x = np.linspace(*data.scan_range[0], data.scan_resolution[0])
+                            y = np.linspace(*data.scan_range[1], data.scan_resolution[1])
+                            xy = np.meshgrid(x, y, indexing="ij")
+                            opt_pos, fit_data, fit_res = self._get_pos_from_2d_gauss_fit(
+                                xy, optimizer_data.ravel()
+                            )
                     #!ADD CHECK THE Rsquared VALUE OF THE FIT
-                    position_update = {ax: opt_pos[ii] for ii, ax in enumerate(data.scan_axes)}
                     # Abort optimize if fit failed
                     self._last_fit_results = fit_res
                     if (
@@ -442,6 +452,20 @@ class PLEOptimizeScannerLogic(LogicBase):
             else:
                 self._sigNextSequenceStep.emit()
             return
+
+    def _get_accumulated_optimizer_data(self, data):
+        channel = self._data_channel
+        if data.accumulated is None or channel not in data.accumulated:
+            return data.data[channel]
+
+        accumulated = data.accumulated[channel]
+        data_new = accumulated[~np.all(accumulated == 0, axis=1)]
+        if data_new.size > 1:
+            last_row = data_new[-1, :]
+            mask = np.ones_like(data_new, dtype=bool)
+            mask[-1, :] = last_row != 0
+            return np.sum(mask * data_new, axis=0) / np.sum(mask, axis=0)
+        return accumulated.mean(axis=0)
 
     def toggle_ple_tracking(self, enable, tracking_period=None):
         if tracking_period is not None:

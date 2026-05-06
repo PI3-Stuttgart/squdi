@@ -762,10 +762,11 @@ class PLEScanGui(GuiBase):
 
             if caller_id is self._optimizer_id:
                 channel = self._osd.settings["data_channel"]
+                optimizer_data = self._get_optimizer_display_data(scan_data, channel)
                 if scan_data.scan_dimension == 2:
                     x_ax, y_ax = scan_data.scan_axes
                     self.optimizer_dockwidget.set_image(
-                        image=scan_data.data[channel],
+                        image=optimizer_data,
                         extent=scan_data.scan_range,
                         axs=scan_data.scan_axes,
                     )
@@ -785,7 +786,7 @@ class PLEScanGui(GuiBase):
                     x_ax = scan_data.scan_axes[0]
                     self.optimizer_dockwidget.set_plot_data(
                         x=np.linspace(*scan_data.scan_range[0], scan_data.scan_resolution[0]),
-                        y=scan_data.data[channel],
+                        y=optimizer_data,
                         axs=scan_data.scan_axes,
                     )
                     self.optimizer_dockwidget.set_plot_label(
@@ -811,6 +812,19 @@ class PLEScanGui(GuiBase):
         # self.scanner_settings_toggle_gui_lock(is_running)
 
         return
+
+    def _get_optimizer_display_data(self, scan_data, channel):
+        if scan_data.accumulated is None or channel not in scan_data.accumulated:
+            return scan_data.data[channel]
+
+        accumulated = scan_data.accumulated[channel]
+        data_new = accumulated[~np.all(accumulated == 0, axis=1)]
+        if data_new.size > 1:
+            last_row = data_new[-1, :]
+            mask = np.ones_like(data_new, dtype=bool)
+            mask[-1, :] = last_row != 0
+            return np.sum(mask * data_new, axis=0) / np.sum(mask, axis=0)
+        return accumulated.mean(axis=0)
 
     def _toggle_enable_actions(self, enable, exclude_action=None):
         # self._mw.action_optimize_position.setChecked(enable)
