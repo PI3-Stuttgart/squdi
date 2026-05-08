@@ -46,7 +46,7 @@ class CRC_PARAMS(UpdateableDataclass):
 
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW
-    laser_power_repump: float | str = int(100e3)  # nW
+    laser_power_repump: float | str = int(20e3)  # nW
     probe_len: int | str = 100_000  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
     threshold: int | str = 4  # cts
@@ -89,7 +89,7 @@ class PLE_REFOCUS_PARAMS(UpdateableDataclass):
 class OPTICAL_PI_PULSE_PARAMS(UpdateableDataclass):
     """Default parameters for optical pi pulse."""
 
-    couting_duration: int = 70  # ns
+    couting_duration: int = 30  # ns
     laser_power: float = 50  # nW
 
 
@@ -393,7 +393,7 @@ def optical_pi_pulse(
         )
     align()
     ou.gate_trigger()
-    # ou.laser_pulse("Laser_620_pi", duration_ns=16)
+    ou.laser_pulse("Laser_620_pi", duration_ns=16)
     ou.pause(params.couting_duration, align_before=False)
     ou.memory_trigger()
     align()
