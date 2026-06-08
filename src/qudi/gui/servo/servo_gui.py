@@ -21,28 +21,80 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 import os
-from core.connector import Connector
-from gui.guibase import GUIBase
-from qtpy import QtCore
-from qtpy import QtWidgets
-from qtpy import uic
+from qudi.core.connector import Connector
+from qudi.core.module import GuiBase
+from PySide2 import QtCore
+from PySide2 import QtWidgets
+from qudi.util import uic
 
 
 class ServoWindow(QtWidgets.QMainWindow):
-    """ Create the Main Window based on the *.ui file. """
+    """ Programmatic fallback GUI for servo control (no .ui dependency). """
 
     def __init__(self):
-        # Get the path to the *.ui file
-        this_dir = os.path.dirname(__file__)
-        ui_file = os.path.join(this_dir, 'ui_servo.ui')
-
-        # Load it
         super().__init__()
-        uic.loadUi(ui_file, self)
+
+        # Central widget: show main status and a simple readout
+        central = QtWidgets.QWidget(self)
+        central_layout = QtWidgets.QVBoxLayout(central)
+        self.statusLabel = QtWidgets.QLabel("Status: Unknown", central)
+        central_layout.addWidget(self.statusLabel)
+        # filler/stretch for possible plots / display area
+        central_layout.addStretch(1)
+        self.setCentralWidget(central)
+
+        # Create actions / menus
+        self.actionReset_View = QtWidgets.QAction("Reset View", self)
+        menubar = self.menuBar()
+        view_menu = menubar.addMenu("View")
+        view_menu.addAction(self.actionReset_View)
+
+        # Create control dock widget
+        self.controlDockWidget = QtWidgets.QDockWidget("Controls", self)
+        self.controlDockWidget.setObjectName("controlDockWidget")
+        dock_container = QtWidgets.QWidget()
+        dock_layout = QtWidgets.QFormLayout(dock_container)
+
+        # Servo selector
+        self.servoSelector = QtWidgets.QComboBox(dock_container)
+        self.servoSelector.addItems(["Servo 1", "Servo 2"])
+        self.servoSelector.setObjectName("servoSelector")
+        dock_layout.addRow("Servo:", self.servoSelector)
+
+        # Position spinbox
+        self.positionSpinBox = QtWidgets.QDoubleSpinBox(dock_container)
+        self.positionSpinBox.setRange(-1e9, 1e9)
+        self.positionSpinBox.setDecimals(3)
+        self.positionSpinBox.setSingleStep(0.1)
+        self.positionSpinBox.setObjectName("positionSpinBox")
+        dock_layout.addRow("Position:", self.positionSpinBox)
+
+        # Step spinbox
+        self.stepSpinBox = QtWidgets.QDoubleSpinBox(dock_container)
+        self.stepSpinBox.setRange(0.0, 1e6)
+        self.stepSpinBox.setValue(1.0)
+        self.stepSpinBox.setSingleStep(0.1)
+        self.stepSpinBox.setObjectName("stepSpinBox")
+        dock_layout.addRow("Step:", self.stepSpinBox)
+
+        # Move / increment / decrement buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.moveButton = QtWidgets.QPushButton("Move", dock_container)
+        self.incrementButton = QtWidgets.QPushButton("+", dock_container)
+        self.decrementButton = QtWidgets.QPushButton("-", dock_container)
+        btn_layout.addWidget(self.decrementButton)
+        btn_layout.addWidget(self.moveButton)
+        btn_layout.addWidget(self.incrementButton)
+        dock_layout.addRow(btn_layout)
+
+        self.controlDockWidget.setWidget(dock_container)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.controlDockWidget)
+
+        # Ensure attributes referenced by existing code exist
         self.show()
 
 
-class ServoGui(GUIBase):
+class ServoGui(GuiBase):
     """ Main GUI for servo control """
 
     # declare connectors

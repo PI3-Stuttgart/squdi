@@ -1,74 +1,39 @@
 # -*- coding: utf-8 -*-
-
-"""
-This file contains the Qudi Interface for servo control.
-
-
-Qudi is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Qudi is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Qudi. If not, see <http://www.gnu.org/licenses/>.
-
-Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
-top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
-"""
-
-from abc import abstractmethod
-from core.interface import abstract_interface_method
-from core.meta import InterfaceMetaclass
+from abc import ABC, abstractmethod
+from typing import Sequence, Tuple, Dict, Optional
 
 
-class servo_interface(metaclass=InterfaceMetaclass):
-    """ Interface for controlling servo motors through serial communication """
+# Do NOT inherit qudi.core.module.Base here — keep a plain abstract interface
+class servo_interface(ABC):
+    """Interface for controlling servo motors (serial/usb controllers)."""
 
-    @abstract_interface_method
-    def send_position(self, servo_id, position):
-        """ Send a position command to a servo motor
+    @property
+    @abstractmethod
+    def constraints(self) -> Dict:
+        """Return a dict-like constraints object describing limits and available servos."""
+        raise NotImplementedError
 
-        @param int servo_id: ID of the servo motor to control
-        @param float position: Target position for the servo motor
-        @return bool: Success of the operation
-        """
-        pass
+    @property
+    @abstractmethod
+    def is_connected(self) -> bool:
+        """Return True if the hardware connection is active."""
+        raise NotImplementedError
 
-    @abstract_interface_method
-    def get_last_position(self, servo_id):
-        """ Get the last known position of a servo motor
+    @abstractmethod
+    def send_position(self, servo_id: str, position: float) -> None:
+        """Send a position command to the servo with id servo_id."""
+        raise NotImplementedError
 
-        @param int servo_id: ID of the servo motor
-        @return float: Last known position of the servo motor
-        """
-        pass
+    @abstractmethod
+    def get_last_position(self, servo_id: str) -> Optional[float]:
+        """Return the last known position for servo_id or None if unknown."""
+        raise NotImplementedError
 
-    @abstract_interface_method
-    def is_connected(self):
-        """ Check if the serial connection to the servo controller is active
+    @abstractmethod
+    def get_available_servos(self) -> Sequence[str]:
+        """Return a sequence of available servo ids (strings)."""
+        raise NotImplementedError
 
-        @return bool: True if connected, False if not
-        """
-        pass
-
-    @abstract_interface_method
-    def get_available_servos(self):
-        """ Get a list of available servo IDs that can be controlled
-
-        @return list: List of available servo IDs
-        """
-        pass
-
-    @abstract_interface_method
-    def get_position_limits(self, servo_id):
-        """ Get the minimum and maximum position limits for a servo
-
-        @param int servo_id: ID of the servo motor
-        @return tuple: (min_position, max_position) in the same units as position
-        """
-        pass
+    @abstractmethod
+    def get_position_limits(self, servo_id: str) -> Tuple[Optional[float], Optional[float]]:
+        """Return (min, max) position limits for the given servo_id (None if not set)."""

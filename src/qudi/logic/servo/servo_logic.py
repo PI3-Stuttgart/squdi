@@ -1,36 +1,39 @@
-from core.module import Base, Connector
-from core.configoption import ConfigOption
-from core.meta import InterfaceMetaclass
-from core.interface import abstract_interface_method
-from qtpy import QtCore
+from qudi.core.module import Base
+from qudi.core.connector import Connector
+from qudi.core.configoption import ConfigOption
+from abc import abstractmethod, ABC
+from PySide2 import QtCore
 import time
 
-class servo_logic(metaclass=InterfaceMetaclass):
-    """ Interface for servo logic module """
-    @abstract_interface_method
+
+class servo_logic(ABC):
+    """Abstract interface for servo logic (do NOT inherit Base here)."""
+
+    @abstractmethod
     def move_servo_to(self, servo_id, position):
-        """ Move servo to specified position """
-        pass
+        """Move servo to specified position."""
+        raise NotImplementedError
 
-    @abstract_interface_method
+    @abstractmethod
     def change_servo_id(self, new_id):
-        """ Change active servo ID """
-        pass
+        """Change active servo ID."""
+        raise NotImplementedError
 
-    @abstract_interface_method
+    @abstractmethod
     def get_position_limits(self, servo_id=None):
-        """ Get position limits for servo """
-        pass
+        """Get position limits for servo."""
+        raise NotImplementedError
 
-    @abstract_interface_method
+    @abstractmethod
     def get_available_servos(self):
-        """ Get list of available servos """
-        pass
+        """Get list of available servos."""
+        raise NotImplementedError
 
-    @abstract_interface_method
+    @abstractmethod
     def get_last_position(self, servo_id=None):
-        """ Get last known position """
-        pass
+        """Get last known position."""
+        raise NotImplementedError
+
 
 class ServoLogic(Base, servo_logic):
     servo_interface = Connector(interface='servo_interface')
@@ -82,7 +85,7 @@ class ServoLogic(Base, servo_logic):
             
             # Clear all data structures
             self.log.info("Clearing data structures...")
-            self.data = {'time': [], '1': [], '2': []}4
+            self.data = {'time': [], '1': [], '2': []}
             self.available_servos = []
             self.position_limits = {}
             self.servo_position = 0

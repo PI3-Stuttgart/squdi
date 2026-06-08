@@ -1,678 +1,547 @@
-# -*- coding: utf-8 -*-
-"""
-Red Pitaya GUI module for oscilloscope, signal generation, and PID control.
-
-Copyright (c) 2021, the qudi developers. See the AUTHORS.md file at the top-level directory of this
-distribution and on <https://github.com/Ulm-IQO/qudi-iqo-modules/>
-
-This file is part of qudi.
-
-Qudi is free software: you can redistribute it and/or modify it under the terms of
-the GNU Lesser General Public License as published by the Free Software Foundation,
-either version 3 of the License, or (at your option) any later version.
-
-Qudi is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-See the GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along with qudi.
-If not, see <https://www.gnu.org/licenses/>.
-"""
-
 import os
 import numpy as np
-from PySide2 import QtCore, QtWidgets, QtGui
+from PySide2 import QtCore, QtWidgets, QtUiTools
 import pyqtgraph as pg
 
 from qudi.core.connector import Connector
-from qudi.core.configoption import ConfigOption
 from qudi.core.statusvariable import StatusVar
 from qudi.core.module import GuiBase
 from qudi.util.colordefs import QudiPalette as palette
 
+class RedPitayaPyrplGui(GuiBase):
+    """PyRPL-based GUI for Red Pitaya control."""
 
-class RedPitayaGui(GuiBase):
-    """GUI module for Red Pitaya control and monitoring.
-    
-    Example config for copy-paste:
-    
-    redpitaya_gui:
-        module.Class: 'redpitaya.redpitaya_gui.RedPitayaGui'
-        connect:
-            redpitaya_logic: 'redpitaya_logic'
-    """
-    
     # Connectors
-    _redpitaya_logic = Connector(name='redpitaya_logic', interface='RedPitayaLogic')
-    
+    _redpitaya_logic = Connector(name='redpitaya_logic', interface='RedPitayaPyrplLogic')
+
+    # fixed UI file (not configurable)
+    _ui_filename = 'redpitaya_pyrpl.ui'
+
     # Status variables
-    _current_tab = StatusVar('current_tab', 0)
-    _plot_colors = StatusVar('plot_colors', ['#1f77b4', '#ff7f0e'])
-    
-    # Signals
-    sigStartAcquisition = QtCore.Signal()
-    sigStopAcquisition = QtCore.Signal()
-    sigConfigurePid = QtCore.Signal(int, str, float, float, float, float)
-    sigEnablePid = QtCore.Signal(int, bool)
-    sigConfigureAsg = QtCore.Signal(int, str, float, float, float, bool)
-    
+    _window_geometry = StatusVar('window_geometry', None)
+    _window_state = StatusVar('window_state', None)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        # Main window
         self._mw = None
+        self.plots = {}
         
-        # Plot widgets
-        self.oscilloscope_plot = None
-        self.ch1_curve = None
-        self.ch2_curve = None
-        
-        # Data storage
-        self.time_data = np.array([])
-        self.ch1_data = np.array([])
-        self.ch2_data = np.array([])
+        # Setup acquisition timer with reasonable interval
+        self._acq_timer = QtCore.QTimer()
+        self._acq_timer.setInterval(300)  # 50ms refresh rate (20 Hz)
+        self._acq_timer.timeout.connect(self._on_acq_timer)
+        self._acq_running = False
 
     def on_activate(self):
-        """Initialize and show the GUI."""
-        self._setup_ui()
-        self._connect_signals()
-        self._restore_window_geometry(self._mw)
-        
-        # Initialize plots
+        """Initialize the GUI on activation."""
+        # Load UI file (fixed filename in this module)
+        ui_file = os.path.join(os.path.dirname(__file__), self._ui_filename)
+        if not os.path.isfile(ui_file):
+            raise FileNotFoundError(f"UI file not found: {ui_file}")
+
+        qfile = QtCore.QFile(ui_file)
+        if not qfile.open(QtCore.QIODevice.ReadOnly):
+            raise IOError(f"Could not open UI file: {ui_file}")
+
+        loader = QtUiTools.QUiLoader()
+        self._mw = loader.load(qfile)
+        qfile.close()
+
+        if self._mw is None:
+            raise RuntimeError(f"QUiLoader failed to load UI: {ui_file}")
+
+        # Set up plots
         self._setup_plots()
         
-        # Update initial values
-        self._update_device_status()
-        
+        # Start continuous acquisition immediately
+        self._start_acquisition()
+
+        # Add controls
+        self._ensure_continuous_controls()   # creates start/stop + integration time
+        self._ensure_scope_controls()        # trigger / inputs / apply
+
+        # Connect signals
+        self._connect_signals()
+
+        # Restore window geometry
+        try:
+            if self._window_geometry:
+                self._mw.restoreGeometry(self._window_geometry)
+            if self._window_state:
+                self._mw.restoreState(self._window_state)
+        except Exception:
+            self.log.warning("Failed to restore window geometry/state")
+
+        # Show window
         self.show()
 
     def on_deactivate(self):
-        """Disconnect signals and close GUI."""
+        """Clean up before deactivating module."""
+        self._stop_acquisition()
+        if self._mw is None:
+            return
+        # Save window geometry
+        try:
+            self._window_geometry = self._mw.saveGeometry()
+            self._window_state = self._mw.saveState()
+        except Exception:
+            pass
+
+        # Disconnect signals and close window
         self._disconnect_signals()
-        self._save_window_geometry(self._mw)
-        self._mw.close()
+        try:
+            self._mw.close()
+        except Exception:
+            pass
 
     def show(self):
         """Show the main window."""
+        if self._mw is None:
+            return
         self._mw.show()
         self._mw.raise_()
-        self._mw.activateWindow()
 
-    def _setup_ui(self):
-        """Set up the user interface."""
-        # Create main window
-        self._mw = RedPitayaMainWindow()
-        
-        # Set window properties
-        self._mw.setWindowTitle('Red Pitaya Control')
-        self._mw.setMinimumSize(800, 600)
-        
-        # Create central widget with tab widget
-        central_widget = QtWidgets.QWidget()
-        self._mw.setCentralWidget(central_widget)
-        
-        layout = QtWidgets.QVBoxLayout(central_widget)
-        
-        # Create tab widget
-        self.tab_widget = QtWidgets.QTabWidget()
-        layout.addWidget(self.tab_widget)
-        
-        # Create tabs
-        self._create_oscilloscope_tab()
-        self._create_signal_generator_tab()
-        self._create_pid_control_tab()
-        self._create_device_status_tab()
-        
-        # Set current tab
-        self.tab_widget.setCurrentIndex(self._current_tab)
-        
-        # Create status bar
-        self._mw.statusBar().showMessage('Red Pitaya GUI Ready')
-
-    def _create_oscilloscope_tab(self):
-        """Create the oscilloscope control tab."""
-        tab = QtWidgets.QWidget()
-        self.tab_widget.addTab(tab, 'Oscilloscope')
-        
-        layout = QtWidgets.QHBoxLayout(tab)
-        
-        # Control panel
-        control_panel = QtWidgets.QGroupBox('Acquisition Control')
-        control_layout = QtWidgets.QVBoxLayout(control_panel)
-        
-        # Duration control
-        duration_layout = QtWidgets.QHBoxLayout()
-        duration_layout.addWidget(QtWidgets.QLabel('Duration (s):'))
-        self.duration_spinbox = QtWidgets.QDoubleSpinBox()
-        self.duration_spinbox.setRange(0.001, 10.0)
-        self.duration_spinbox.setValue(1.0)
-        self.duration_spinbox.setDecimals(3)
-        duration_layout.addWidget(self.duration_spinbox)
-        control_layout.addLayout(duration_layout)
-        
-        # Decimation control
-        decimation_layout = QtWidgets.QHBoxLayout()
-        decimation_layout.addWidget(QtWidgets.QLabel('Decimation:'))
-        self.decimation_spinbox = QtWidgets.QSpinBox()
-        self.decimation_spinbox.setRange(1, 65536)
-        self.decimation_spinbox.setValue(1)
-        decimation_layout.addWidget(self.decimation_spinbox)
-        control_layout.addLayout(decimation_layout)
-        
-        # Trigger source
-        trigger_layout = QtWidgets.QHBoxLayout()
-        trigger_layout.addWidget(QtWidgets.QLabel('Trigger:'))
-        self.trigger_combo = QtWidgets.QComboBox()
-        self.trigger_combo.addItems(['immediately', 'ch1', 'ch2', 'ext'])
-        trigger_layout.addWidget(self.trigger_combo)
-        control_layout.addLayout(trigger_layout)
-        
-        # Acquisition buttons
-        self.acquire_button = QtWidgets.QPushButton('Acquire')
-        self.acquire_button.setStyleSheet(f'background-color: {palette.c1.name()}')
-        control_layout.addWidget(self.acquire_button)
-        
-        self.stop_button = QtWidgets.QPushButton('Stop')
-        self.stop_button.setStyleSheet(f'background-color: {palette.c2.name()}')
-        self.stop_button.setEnabled(False)
-        control_layout.addWidget(self.stop_button)
-        
-        # Statistics display
-        stats_group = QtWidgets.QGroupBox('Statistics')
-        stats_layout = QtWidgets.QVBoxLayout(stats_group)
-        
-        self.ch1_stats_label = QtWidgets.QLabel('CH1: No data')
-        self.ch2_stats_label = QtWidgets.QLabel('CH2: No data')
-        stats_layout.addWidget(self.ch1_stats_label)
-        stats_layout.addWidget(self.ch2_stats_label)
-        
-        control_layout.addWidget(stats_group)
-        control_layout.addStretch()
-        
-        layout.addWidget(control_panel, 1)
-        
-        # Plot widget
-        self.oscilloscope_plot = pg.PlotWidget()
-        self.oscilloscope_plot.setLabel('left', 'Amplitude', units='V')
-        self.oscilloscope_plot.setLabel('bottom', 'Time', units='s')
-        self.oscilloscope_plot.setTitle('Oscilloscope Data')
-        layout.addWidget(self.oscilloscope_plot, 3)
-
-    def _create_signal_generator_tab(self):
-        """Create the signal generator control tab."""
-        tab = QtWidgets.QWidget()
-        self.tab_widget.addTab(tab, 'Signal Generator')
-        
-        layout = QtWidgets.QVBoxLayout(tab)
-        
-        # ASG0 Control
-        asg0_group = QtWidgets.QGroupBox('ASG0 (Output 1)')
-        asg0_layout = QtWidgets.QGridLayout(asg0_group)
-        
-        # Waveform
-        asg0_layout.addWidget(QtWidgets.QLabel('Waveform:'), 0, 0)
-        self.asg0_waveform_combo = QtWidgets.QComboBox()
-        self.asg0_waveform_combo.addItems(['sin', 'square', 'triangle', 'noise'])
-        asg0_layout.addWidget(self.asg0_waveform_combo, 0, 1)
-        
-        # Frequency
-        asg0_layout.addWidget(QtWidgets.QLabel('Frequency (Hz):'), 1, 0)
-        self.asg0_frequency_spinbox = QtWidgets.QDoubleSpinBox()
-        self.asg0_frequency_spinbox.setRange(0.1, 62.5e6)
-        self.asg0_frequency_spinbox.setValue(1000)
-        self.asg0_frequency_spinbox.setDecimals(1)
-        asg0_layout.addWidget(self.asg0_frequency_spinbox, 1, 1)
-        
-        # Amplitude
-        asg0_layout.addWidget(QtWidgets.QLabel('Amplitude (V):'), 2, 0)
-        self.asg0_amplitude_spinbox = QtWidgets.QDoubleSpinBox()
-        self.asg0_amplitude_spinbox.setRange(0.0, 1.0)
-        self.asg0_amplitude_spinbox.setValue(0.1)
-        self.asg0_amplitude_spinbox.setDecimals(3)
-        asg0_layout.addWidget(self.asg0_amplitude_spinbox, 2, 1)
-        
-        # Offset
-        asg0_layout.addWidget(QtWidgets.QLabel('Offset (V):'), 3, 0)
-        self.asg0_offset_spinbox = QtWidgets.QDoubleSpinBox()
-        self.asg0_offset_spinbox.setRange(-1.0, 1.0)
-        self.asg0_offset_spinbox.setValue(0.0)
-        self.asg0_offset_spinbox.setDecimals(3)
-        asg0_layout.addWidget(self.asg0_offset_spinbox, 3, 1)
-        
-        # Enable button
-        self.asg0_enable_button = QtWidgets.QPushButton('Enable ASG0')
-        self.asg0_enable_button.setCheckable(True)
-        asg0_layout.addWidget(self.asg0_enable_button, 4, 0, 1, 2)
-        
-        layout.addWidget(asg0_group)
-        
-        # ASG1 Control (similar to ASG0)
-        asg1_group = QtWidgets.QGroupBox('ASG1 (Output 2)')
-        asg1_layout = QtWidgets.QGridLayout(asg1_group)
-        
-        # Waveform
-        asg1_layout.addWidget(QtWidgets.QLabel('Waveform:'), 0, 0)
-        self.asg1_waveform_combo = QtWidgets.QComboBox()
-        self.asg1_waveform_combo.addItems(['sin', 'square', 'triangle', 'noise'])
-        asg1_layout.addWidget(self.asg1_waveform_combo, 0, 1)
-        
-        # Frequency
-        asg1_layout.addWidget(QtWidgets.QLabel('Frequency (Hz):'), 1, 0)
-        self.asg1_frequency_spinbox = QtWidgets.QDoubleSpinBox()
-        self.asg1_frequency_spinbox.setRange(0.1, 62.5e6)
-        self.asg1_frequency_spinbox.setValue(1000)
-        self.asg1_frequency_spinbox.setDecimals(1)
-        asg1_layout.addWidget(self.asg1_frequency_spinbox, 1, 1)
-        
-        # Amplitude
-        asg1_layout.addWidget(QtWidgets.QLabel('Amplitude (V):'), 2, 0)
-        self.asg1_amplitude_spinbox = QtWidgets.QDoubleSpinBox()
-        self.asg1_amplitude_spinbox.setRange(0.0, 1.0)
-        self.asg1_amplitude_spinbox.setValue(0.1)
-        self.asg1_amplitude_spinbox.setDecimals(3)
-        asg1_layout.addWidget(self.asg1_amplitude_spinbox, 2, 1)
-        
-        # Offset
-        asg1_layout.addWidget(QtWidgets.QLabel('Offset (V):'), 3, 0)
-        self.asg1_offset_spinbox = QtWidgets.QDoubleSpinBox()
-        self.asg1_offset_spinbox.setRange(-1.0, 1.0)
-        self.asg1_offset_spinbox.setValue(0.0)
-        self.asg1_offset_spinbox.setDecimals(3)
-        asg1_layout.addWidget(self.asg1_offset_spinbox, 3, 1)
-        
-        # Enable button
-        self.asg1_enable_button = QtWidgets.QPushButton('Enable ASG1')
-        self.asg1_enable_button.setCheckable(True)
-        asg1_layout.addWidget(self.asg1_enable_button, 4, 0, 1, 2)
-        
-        layout.addWidget(asg1_group)
-        layout.addStretch()
-
-    def _create_pid_control_tab(self):
-        """Create the PID control tab."""
-        tab = QtWidgets.QWidget()
-        self.tab_widget.addTab(tab, 'PID Control')
-        
-        layout = QtWidgets.QVBoxLayout(tab)
-        
-        # Create PID controllers
-        self.pid_groups = {}
-        self.pid_controls = {}
-        
-        for pid_id in range(3):
-            group = QtWidgets.QGroupBox(f'PID{pid_id}')
-            group_layout = QtWidgets.QGridLayout(group)
-            
-            controls = {}
-            
-            # Input source
-            group_layout.addWidget(QtWidgets.QLabel('Input:'), 0, 0)
-            controls['input_combo'] = QtWidgets.QComboBox()
-            controls['input_combo'].addItems(['in1', 'in2', 'asg0', 'asg1'])
-            group_layout.addWidget(controls['input_combo'], 0, 1)
-            
-            # Setpoint
-            group_layout.addWidget(QtWidgets.QLabel('Setpoint:'), 1, 0)
-            controls['setpoint_spinbox'] = QtWidgets.QDoubleSpinBox()
-            controls['setpoint_spinbox'].setRange(-1.0, 1.0)
-            controls['setpoint_spinbox'].setValue(0.0)
-            controls['setpoint_spinbox'].setDecimals(6)
-            group_layout.addWidget(controls['setpoint_spinbox'], 1, 1)
-            
-            # P gain
-            group_layout.addWidget(QtWidgets.QLabel('P:'), 2, 0)
-            controls['p_spinbox'] = QtWidgets.QDoubleSpinBox()
-            controls['p_spinbox'].setRange(-1000.0, 1000.0)
-            controls['p_spinbox'].setValue(0.0)
-            controls['p_spinbox'].setDecimals(6)
-            group_layout.addWidget(controls['p_spinbox'], 2, 1)
-            
-            # I gain
-            group_layout.addWidget(QtWidgets.QLabel('I:'), 3, 0)
-            controls['i_spinbox'] = QtWidgets.QDoubleSpinBox()
-            controls['i_spinbox'].setRange(-1000.0, 1000.0)
-            controls['i_spinbox'].setValue(0.0)
-            controls['i_spinbox'].setDecimals(6)
-            group_layout.addWidget(controls['i_spinbox'], 3, 1)
-            
-            # D gain
-            group_layout.addWidget(QtWidgets.QLabel('D:'), 4, 0)
-            controls['d_spinbox'] = QtWidgets.QDoubleSpinBox()
-            controls['d_spinbox'].setRange(-1000.0, 1000.0)
-            controls['d_spinbox'].setValue(0.0)
-            controls['d_spinbox'].setDecimals(6)
-            group_layout.addWidget(controls['d_spinbox'], 4, 1)
-            
-            # Output display
-            group_layout.addWidget(QtWidgets.QLabel('Output:'), 5, 0)
-            controls['output_label'] = QtWidgets.QLabel('0.000000')
-            group_layout.addWidget(controls['output_label'], 5, 1)
-            
-            # Enable button
-            controls['enable_button'] = QtWidgets.QPushButton(f'Enable PID{pid_id}')
-            controls['enable_button'].setCheckable(True)
-            group_layout.addWidget(controls['enable_button'], 6, 0, 1, 2)
-            
-            # Configure button
-            controls['configure_button'] = QtWidgets.QPushButton('Configure')
-            group_layout.addWidget(controls['configure_button'], 7, 0, 1, 2)
-            
-            self.pid_groups[pid_id] = group
-            self.pid_controls[pid_id] = controls
-            layout.addWidget(group)
-        
-        layout.addStretch()
-
-    def _create_device_status_tab(self):
-        """Create the device status tab."""
-        tab = QtWidgets.QWidget()
-        self.tab_widget.addTab(tab, 'Device Status')
-        
-        layout = QtWidgets.QVBoxLayout(tab)
-        
-        # Device info
-        info_group = QtWidgets.QGroupBox('Device Information')
-        info_layout = QtWidgets.QVBoxLayout(info_group)
-        
-        self.device_info_text = QtWidgets.QTextEdit()
-        self.device_info_text.setReadOnly(True)
-        info_layout.addWidget(self.device_info_text)
-        
-        layout.addWidget(info_group)
-        
-        # Control buttons
-        button_layout = QtWidgets.QHBoxLayout()
-        
-        self.refresh_button = QtWidgets.QPushButton('Refresh Status')
-        button_layout.addWidget(self.refresh_button)
-        
-        self.reset_button = QtWidgets.QPushButton('Reset Device')
-        self.reset_button.setStyleSheet(f'background-color: {palette.c2.name()}')
-        button_layout.addWidget(self.reset_button)
-        
-        button_layout.addStretch()
-        layout.addLayout(button_layout)
+    def _ensure_tab_widget(self, object_name):
+        """Find a widget by name on the loaded UI and ensure it has a layout.
+        If not found, create a QWidget and insert it into central layout as fallback.
+        """
+        widget = getattr(self._mw, object_name, None)
+        if widget is None:
+            widget = self._mw.findChild(QtWidgets.QWidget, object_name)
+        if widget is None:
+            # fallback: try to add to centralwidget layout or create standalone
+            central = getattr(self._mw, 'centralwidget', None)
+            if central is not None and central.layout() is not None:
+                widget = QtWidgets.QWidget()
+                widget.setObjectName(object_name)
+                central.layout().addWidget(widget)
+            else:
+                # put into main window as central widget
+                widget = QtWidgets.QWidget()
+                widget.setObjectName(object_name)
+                try:
+                    self._mw.setCentralWidget(widget)
+                except Exception:
+                    pass
+        if widget.layout() is None:
+            widget.setLayout(QtWidgets.QVBoxLayout())
+        return widget
 
     def _setup_plots(self):
-        """Set up the plot widgets."""
-        # Configure oscilloscope plot
-        self.oscilloscope_plot.setBackground('w')
-        self.oscilloscope_plot.showGrid(x=True, y=True)
+        """Initialize plot widgets."""
+        # Time domain plot only
+        time_tab = self._ensure_tab_widget('timePlotTab')
+        time_plot = pg.PlotWidget()
+        time_plot.setLabel('left', 'Voltage', units='V')
+        time_plot.setLabel('bottom', 'Time', units='s')
+        time_plot.addLegend()
         
-        # Create curves
-        self.ch1_curve = self.oscilloscope_plot.plot(
-            pen=pg.mkPen(color=self._plot_colors[0], width=2),
+        # Create plot curves with clear style
+        self.plots['ch1'] = time_plot.plot(
+            pen=pg.mkPen(color=palette.c1.name(), width=2),
             name='CH1'
         )
-        self.ch2_curve = self.oscilloscope_plot.plot(
-            pen=pg.mkPen(color=self._plot_colors[1], width=2),
+        self.plots['ch2'] = time_plot.plot(
+            pen=pg.mkPen(color=palette.c2.name(), width=2),
             name='CH2'
         )
         
-        # Add legend
-        self.oscilloscope_plot.addLegend()
+        # Store the plot widget for later access
+        self.time_plot_widget = time_plot
+        time_tab.layout().addWidget(time_plot)
 
     def _connect_signals(self):
-        """Connect GUI signals to logic."""
-        # Connect to logic signals
-        self._redpitaya_logic().sigDataAcquired.connect(self._update_oscilloscope_data)
-        self._redpitaya_logic().sigPidStateChanged.connect(self._update_pid_state)
-        self._redpitaya_logic().sigDeviceStatusChanged.connect(self._update_device_info)
-        
-        # Connect GUI signals
-        self.acquire_button.clicked.connect(self._start_acquisition)
-        self.stop_button.clicked.connect(self._stop_acquisition)
-        
-        # ASG signals
-        self.asg0_enable_button.toggled.connect(lambda checked: self._configure_asg(0, checked))
-        self.asg1_enable_button.toggled.connect(lambda checked: self._configure_asg(1, checked))
-        
-        # PID signals
-        for pid_id in range(3):
-            controls = self.pid_controls[pid_id]
-            controls['enable_button'].toggled.connect(
-                lambda checked, pid=pid_id: self._enable_pid(pid, checked)
-            )
-            controls['configure_button'].clicked.connect(
-                lambda _, pid=pid_id: self._configure_pid(pid)
-            )
-        
-        # Device status signals
-        self.refresh_button.clicked.connect(self._update_device_status)
-        self.reset_button.clicked.connect(self._reset_device)
-        
-        # Tab change signal
-        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+        """Connect all GUI signals safely (check existence first)."""
+        if self._mw is None:
+            return
 
-    def _disconnect_signals(self):
-        """Disconnect all signals."""
+        # Start/Stop button and scope apply
         try:
-            self._redpitaya_logic().sigDataAcquired.disconnect(self._update_oscilloscope_data)
-            self._redpitaya_logic().sigPidStateChanged.disconnect(self._update_pid_state)
-            self._redpitaya_logic().sigDeviceStatusChanged.disconnect(self._update_device_info)
-        except:
+            if hasattr(self._mw, 'startStopButton'):
+                self._mw.startStopButton.toggled.connect(self._on_startstop_toggled)
+            if hasattr(self._mw, 'integrationSpin'):
+                self._mw.integrationSpin.valueChanged.connect(self._on_integration_changed)
+            if hasattr(self._mw, 'applyScopeButton'):
+                self._mw.applyScopeButton.clicked.connect(self._on_apply_scope)
+        except Exception:
+            self.log.warning("Failed to connect control signals")
+
+        # Logic connections
+        try:
+            red_logic = self._redpitaya_logic()
+            if hasattr(red_logic, 'sigDataAcquired'):
+                red_logic.sigDataAcquired.connect(self._update_plots)
+            if hasattr(red_logic, 'sigScopeStateChanged'):
+                red_logic.sigScopeStateChanged.connect(self._on_scope_state_changed)
+        except Exception:
+            self.log.warning("Failed to connect to redpitaya logic signals")
+
+        # Menu actions
+        try:
+            if hasattr(self._mw, 'actionSave_Data'):
+                self._mw.actionSave_Data.triggered.connect(self._save_data)
+            if hasattr(self._mw, 'actionLoad_Settings'):
+                self._mw.actionLoad_Settings.triggered.connect(self._load_settings)
+            if hasattr(self._mw, 'actionSave_Settings'):
+                self._mw.actionSave_Settings.triggered.connect(self._save_settings)
+            if hasattr(self._mw, 'actionExit'):
+                self._mw.actionExit.triggered.connect(self._mw.close)
+        except Exception:
             pass
 
-    @QtCore.Slot()
-    def _start_acquisition(self):
-        """Start data acquisition."""
-        duration = self.duration_spinbox.value()
-        trigger_source = self.trigger_combo.currentText()
-        
-        # Update decimation in logic
-        decimation = self.decimation_spinbox.value()
-        self._redpitaya_logic().decimation = decimation
-        
-        success = self._redpitaya_logic().start_acquisition(duration, trigger_source)
-        
-        if success:
-            self.acquire_button.setEnabled(False)
-            self.stop_button.setEnabled(True)
-            self._mw.statusBar().showMessage('Acquiring data...')
+    def _disconnect_signals(self):
+        """Disconnect all signals safely."""
+        try:
+            red_logic = self._redpitaya_logic()
+            if hasattr(red_logic, 'sigDataAcquired'):
+                red_logic.sigDataAcquired.disconnect(self._update_plots)
+            if hasattr(red_logic, 'sigScopeStateChanged'):
+                red_logic.sigScopeStateChanged.disconnect(self._on_scope_state_changed)
+        except Exception:
+            pass
+        try:
+            if hasattr(self._mw, 'startStopButton'):
+                try:
+                    self._mw.startStopButton.toggled.disconnect(self._on_startstop_toggled)
+                except Exception:
+                    pass
+            if hasattr(self._mw, 'integrationSpin'):
+                try:
+                    self._mw.integrationSpin.valueChanged.disconnect(self._on_integration_changed)
+                except Exception:
+                    pass
+            if hasattr(self._mw, 'applyScopeButton'):
+                try:
+                    self._mw.applyScopeButton.clicked.disconnect(self._on_apply_scope)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-    @QtCore.Slot()
+    def _ensure_continuous_controls(self):
+        """Ensure the UI has a single Start/Stop control and an integration time control."""
+        # place controls in scopeControlGroup or central layout as fallback
+        scope_group = getattr(self._mw, 'scopeControlGroup', None)
+        parent_layout = None
+        if scope_group is not None and scope_group.layout() is not None:
+            parent_layout = scope_group.layout()
+        else:
+            central = getattr(self._mw, 'centralwidget', None)
+            if central is not None and central.layout() is not None:
+                parent_layout = central.layout()
+
+        if parent_layout is None:
+            return
+
+        # Start/Stop toggle button (single control to start and stop acquisition)
+        if not hasattr(self._mw, 'startStopButton'):
+            btn = QtWidgets.QPushButton("Start")
+            btn.setObjectName('startStopButton')
+            btn.setCheckable(True)
+            btn.setChecked(False)
+            parent_layout.addWidget(btn)
+            self._mw.startStopButton = btn
+
+        # Integration time (seconds)
+        if not hasattr(self._mw, 'integrationSpin'):
+            spin = QtWidgets.QDoubleSpinBox()
+            spin.setObjectName('integrationSpin')
+            spin.setRange(0.0001, 10.0)
+            spin.setDecimals(4)
+            spin.setSingleStep(0.001)
+            spin.setValue(0.1)  # default integration time
+            spin.setSuffix(' s')
+            parent_layout.addWidget(QtWidgets.QLabel("Integration time:"))
+            parent_layout.addWidget(spin)
+            self._mw.integrationSpin = spin
+
+    @QtCore.Slot(bool)
+    def _on_startstop_toggled(self, enabled):
+        """Handle single acquisition when Acquire button is pressed."""
+        if enabled:
+            try:
+                self._mw.startStopButton.setEnabled(False)  # Disable button during acquisition
+                self._mw.startStopButton.setText("Acquiring...")
+                # Get duration from spinbox
+                duration = self._mw.integrationSpin.value()
+                # Trigger single acquisition
+                self._redpitaya_logic().get_scope_data(duration)
+            except Exception as e:
+                self.log.error(f"Acquisition failed: {e}")
+                self._mw.startStopButton.setChecked(False)
+                self._mw.startStopButton.setText("Acquire")
+                self._mw.startStopButton.setEnabled(True)
+
+    @QtCore.Slot(float)
+    def _on_integration_changed(self, value):
+        """Update integration time used for each acquisition (seconds)."""
+        try:
+            self._continuous_duration = float(value)
+        except Exception:
+            pass
+
+    def _start_continuous(self):
+        """Start periodic acquisition. Prevent overlapping acquisitions."""
+        if self._acq_timer.isActive():
+            return
+        # Read integration time from UI if available
+        duration = 0.1
+        try:
+            if hasattr(self._mw, 'integrationSpin'):
+                duration = float(self._mw.integrationSpin.value())
+        except Exception:
+            pass
+        self._continuous_duration = duration
+        self._acq_running = False
+        # set timer interval to 0 => refresh as fast as possible (event-loop driven)
+        self._acq_timer.setInterval(self._acq_interval_ms)
+        self._acq_timer.start()
+        try:
+            if hasattr(self._mw, 'statusbar'):
+                self._mw.statusbar.showMessage('Continuous acquisition started')
+        except Exception:
+            pass
+
+    def _stop_continuous(self):
+        """Stop periodic acquisition."""
+        if self._acq_timer.isActive():
+            self._acq_timer.stop()
+        self._acq_running = False
+        try:
+            if hasattr(self._mw, 'statusbar'):
+                self._mw.statusbar.showMessage('Continuous acquisition stopped')
+            if hasattr(self._mw, 'startStopButton'):
+                self._mw.startStopButton.setChecked(False)
+                self._mw.startStopButton.setText("Start")
+        except Exception:
+            pass
+
+    def _start_acquisition(self):
+        """Start continuous data acquisition."""
+        if not self._acq_running:
+            self._acq_running = True
+            self._acq_timer.setInterval(50)  # 100ms refresh rate
+            self._acq_timer.start()
+
     def _stop_acquisition(self):
-        """Stop data acquisition."""
-        self._redpitaya_logic().stop_acquisition()
-        self.acquire_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self._mw.statusBar().showMessage('Acquisition stopped')
+        """Stop continuous acquisition."""
+        self._acq_timer.stop()
+        self._acq_running = False
+        self.log.info("Stopped acquisition")
+
+    def _on_acq_timer(self):
+        """Timer callback to get new data and update plots."""
+        if not self._acq_running:
+            return
+            
+        try:
+            # Get 8 seconds of data instead of 1
+            times, ch1, ch2 = self._redpitaya_logic().get_scope_data(8.0)
+            if all(x is not None for x in (times, ch1, ch2)):
+                self._update_plots(times, ch1, ch2)
+                
+        except Exception as e:
+            self.log.error(f"Acquisition failed: {e}")
+            self._stop_acquisition()
 
     @QtCore.Slot(object, object, object)
-    def _update_oscilloscope_data(self, time_data, ch1_data, ch2_data):
-        """Update oscilloscope plot with new data."""
-        self.time_data = time_data
-        self.ch1_data = ch1_data
-        self.ch2_data = ch2_data
-        
-        # Update curves
-        self.ch1_curve.setData(time_data, ch1_data)
-        self.ch2_curve.setData(time_data, ch2_data)
-        
-        # Update statistics
-        self._update_statistics()
-        
-        # Re-enable acquire button
-        self.acquire_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self._mw.statusBar().showMessage('Data acquired successfully')
+    def _update_plots(self, time_data, ch1_data, ch2_data):
+        """Update plots with new data."""
+        if time_data is None or ch1_data is None or ch2_data is None:
+            return
 
-    def _update_statistics(self):
-        """Update statistics display."""
-        if len(self.ch1_data) > 0:
-            ch1_stats = self._redpitaya_logic().calculate_statistics(1)
-            if 'error' not in ch1_stats:
-                self.ch1_stats_label.setText(
-                    f"CH1: Mean={ch1_stats['mean']:.3f}V, "
-                    f"RMS={ch1_stats['rms']:.3f}V, "
-                    f"Samples={ch1_stats['samples']}"
-                )
-        
-        if len(self.ch2_data) > 0:
-            ch2_stats = self._redpitaya_logic().calculate_statistics(2)
-            if 'error' not in ch2_stats:
-                self.ch2_stats_label.setText(
-                    f"CH2: Mean={ch2_stats['mean']:.3f}V, "
-                    f"RMS={ch2_stats['rms']:.3f}V, "
-                    f"Samples={ch2_stats['samples']}"
-                )
+        try:
+            # Update time domain plots
+            self.plots['ch1'].setData(time_data, ch1_data)
+            self.plots['ch2'].setData(time_data, ch2_data)
+            
+            # Set x-axis range to show full 8 seconds
+            min_time = min(time_data)
+            max_time = max(time_data)
+            self.time_plot_widget.setXRange(min_time, max_time, padding=0.02)
+            
+        except Exception as e:
+            self.log.error(f"Plot update failed: {e}")
 
-    def _configure_asg(self, channel, enable):
-        """Configure ASG output."""
-        if channel == 0:
-            waveform = self.asg0_waveform_combo.currentText()
-            frequency = self.asg0_frequency_spinbox.value()
-            amplitude = self.asg0_amplitude_spinbox.value()
-            offset = self.asg0_offset_spinbox.value()
-        else:
-            waveform = self.asg1_waveform_combo.currentText()
-            frequency = self.asg1_frequency_spinbox.value()
-            amplitude = self.asg1_amplitude_spinbox.value()
-            offset = self.asg1_offset_spinbox.value()
-        
-        success = self._redpitaya_logic().configure_signal_generator(
-            channel, waveform, frequency, amplitude, offset, enable
-        )
-        
-        if success:
-            self._mw.statusBar().showMessage(f'ASG{channel} {"enabled" if enable else "disabled"}')
-        else:
-            # Reset button state on failure
-            if channel == 0:
-                self.asg0_enable_button.setChecked(False)
-            else:
-                self.asg1_enable_button.setChecked(False)
-
-    def _configure_pid(self, pid_id):
-        """Configure PID controller."""
-        controls = self.pid_controls[pid_id]
-        
-        input_signal = controls['input_combo'].currentText()
-        setpoint = controls['setpoint_spinbox'].value()
-        p = controls['p_spinbox'].value()
-        i = controls['i_spinbox'].value()
-        d = controls['d_spinbox'].value()
-        
-        success = self._redpitaya_logic().configure_pid(
-            pid_id, input_signal, setpoint, p, i, d
-        )
-        
-        if success:
-            self._mw.statusBar().showMessage(f'PID{pid_id} configured')
-
-    def _enable_pid(self, pid_id, enable):
-        """Enable or disable PID controller."""
-        success = self._redpitaya_logic().enable_pid(pid_id, enable)
-        
-        if success:
-            self._mw.statusBar().showMessage(f'PID{pid_id} {"enabled" if enable else "disabled"}')
-        else:
-            # Reset button state on failure
-            self.pid_controls[pid_id]['enable_button'].setChecked(False)
-
-    @QtCore.Slot(int, bool)
-    def _update_pid_state(self, pid_id, enabled):
-        """Update PID state display."""
-        controls = self.pid_controls[pid_id]
-        controls['enable_button'].setChecked(enabled)
-        
-        # Update output display if enabled
-        if enabled:
-            output = self._redpitaya_logic().get_pid_output(pid_id)
-            controls['output_label'].setText(f'{output:.6f}')
-        else:
-            controls['output_label'].setText('0.000000')
+    def _ensure_scope_controls(self):
+        """Setup scope controls and apply initial settings."""
+        try:
+            # Apply initial scope settings
+            self._redpitaya_logic().setup_scope(
+                input1='out1',
+                input2='out2',
+                trigger_source='immediately',
+                decimation=64,
+                average=False
+            )
+            # Rolling mode is now started automatically in setup_scope
+            
+        except Exception as e:
+            self.log.error(f"Error setting up scope controls: {e}")
 
     @QtCore.Slot()
-    def _update_device_status(self):
-        """Update device status display."""
-        status = self._redpitaya_logic().get_device_status()
-        self._update_device_info(status)
+    def _on_apply_scope(self):
+        """Apply scope parameters from UI to the hardware via logic."""
+        try:
+            if self._mw is None:
+                return
+                
+            # Disable apply button during update
+            apply_btn = getattr(self._mw, 'applyScopeButton', None)
+            if apply_btn is not None:
+                apply_btn.setEnabled(False)
+                apply_btn.setText("Applying...")
+            
+            # Get current values from UI
+            params = {}
+            
+            # Input sources
+            if hasattr(self._mw, 'input1Combo'):
+                params['ch1_input'] = self._mw.input1Combo.currentText()
+            if hasattr(self._mw, 'input2Combo'):
+                params['ch2_input'] = self._mw.input2Combo.currentText()
+                
+            # Trigger settings
+            if hasattr(self._mw, 'triggerSourceCombo'):
+                params['trigger_source'] = self._mw.triggerSourceCombo.currentText()
+            if hasattr(self._mw, 'triggerLevelSpin'):
+                params['trigger_level'] = self._mw.triggerLevelSpin.value()
+            if hasattr(self._mw, 'triggerHystSpin'):
+                params['trigger_hysteresis'] = self._mw.triggerHystSpin.value()
+            if hasattr(self._mw, 'triggerDelaySpin'):
+                params['trigger_delay'] = self._mw.triggerDelaySpin.value()
+                
+            # Scope settings
+            if hasattr(self._mw, 'decimationSpinBox'):
+                params['decimation'] = self._mw.decimationSpinBox.value()
+            if hasattr(self._mw, 'averageCheckBox'):
+                params['average'] = self._mw.averageCheckBox.isChecked()
+            
+            # Apply settings to hardware
+            if params:
+                try:
+                    self._redpitaya_logic().setup_scope(**params)
+                    # Update UI with actual hardware state
+                    try:
+                        state = self._redpitaya_logic().get_scope_status()
+                        self._on_scope_state_changed(state)
+                        if hasattr(self._mw, 'statusbar'):
+                            self._mw.statusbar.showMessage('Scope settings applied')
+                    except Exception as e:
+                        self.log.error(f"Failed to update scope state: {e}")
+                        if hasattr(self._mw, 'statusbar'):
+                            self._mw.statusbar.showMessage('Failed to update scope state')
+                except Exception as e:
+                    self.log.error(f"Failed to apply scope settings: {e}")
+                    if hasattr(self._mw, 'statusbar'):
+                        self._mw.statusbar.showMessage('Failed to apply scope settings')
+        except Exception as e:
+            self.log.error(f"_on_apply_scope: {e}")
+            if hasattr(self._mw, 'statusbar'):
+                self._mw.statusbar.showMessage('Error applying scope settings')
+        finally:
+            # Re-enable the apply button
+            if apply_btn is not None:
+                apply_btn.setEnabled(True)
+                apply_btn.setText("Apply Settings")
 
     @QtCore.Slot(dict)
-    def _update_device_info(self, info):
-        """Update device information display."""
-        info_text = "Device Information:\n\n"
-        info_text += f"IP Address: {info.get('ip_address', 'N/A')}\n"
-        info_text += f"Sampling Rate: {info.get('sampling_rate', 0)/1e6:.1f} MHz\n"
-        info_text += f"Decimation: {info.get('decimation', 1)}\n"
-        info_text += f"Connected: {info.get('connected', False)}\n"
-        info_text += "\nOutput States:\n"
-        info_text += f"ASG0: {'Enabled' if info.get('asg_states', {}).get(0, False) else 'Disabled'}\n"
-        info_text += f"ASG1: {'Enabled' if info.get('asg_states', {}).get(1, False) else 'Disabled'}\n"
-        
-        self.device_info_text.setPlainText(info_text)
+    def _on_scope_state_changed(self, state):
+        """Update UI controls to reflect current hardware scope state."""
+        try:
+            if not state:
+                return
+            # Inputs
+            if hasattr(self._mw, 'input1Combo') and 'input1' in state:
+                i = self._mw.input1Combo.findText(str(state['input1']))
+                if i >= 0:
+                    self._mw.input1Combo.setCurrentIndex(i)
+            if hasattr(self._mw, 'input2Combo') and 'input2' in state:
+                i = self._mw.input2Combo.findText(str(state['input2']))
+                if i >= 0:
+                    self._mw.input2Combo.setCurrentIndex(i)
+            # Trigger
+            if hasattr(self._mw, 'triggerSourceCombo') and 'trigger_source' in state:
+                i = self._mw.triggerSourceCombo.findText(str(state['trigger_source']))
+                if i >= 0:
+                    self._mw.triggerSourceCombo.setCurrentIndex(i)
+            if hasattr(self._mw, 'triggerLevelSpin') and 'trigger_level' in state:
+                self._mw.triggerLevelSpin.setValue(float(state['trigger_level']))
+            if hasattr(self._mw, 'triggerHystSpin') and 'trigger_hysteresis' in state:
+                self._mw.triggerHystSpin.setValue(float(state['trigger_hysteresis']))
+            if hasattr(self._mw, 'triggerDelaySpin') and 'trigger_delay' in state:
+                self._mw.triggerDelaySpin.setValue(int(state['trigger_delay']))
+            # Decimation and averaging
+            if hasattr(self._mw, 'decimationSpinBox') and 'decimation' in state:
+                self._mw.decimationSpinBox.setValue(int(state['decimation']))
+            if hasattr(self._mw, 'averageCheckBox') and 'average' in state:
+                self._mw.averageCheckBox.setChecked(bool(state['average']))
+        except Exception:
+            # Best-effort sync
+            pass
 
-    @QtCore.Slot()
-    def _reset_device(self):
-        """Reset the Red Pitaya device."""
-        reply = QtWidgets.QMessageBox.question(
-            self._mw, 'Reset Device',
-            'Are you sure you want to reset the Red Pitaya device?',
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No
-        )
-        
-        if reply == QtWidgets.QMessageBox.Yes:
-            success = self._redpitaya_logic().reset_device()
-            if success:
-                self._mw.statusBar().showMessage('Device reset successfully')
-                # Reset GUI state
-                self._reset_gui_state()
-            else:
-                self._mw.statusBar().showMessage('Device reset failed')
+    def _update_statistics(self):
+        """Update the statistics display."""
+        try:
+            if self._data['ch1'] is not None and hasattr(self._mw, 'ch1StatsLabel'):
+                ch1_stats = f"CH1: Mean={np.mean(self._data['ch1']):.3f}V, "
+                ch1_stats += f"RMS={np.sqrt(np.mean(self._data['ch1']**2)):.3f}V, "
+                ch1_stats += f"Pk-Pk={np.ptp(self._data['ch1']):.3f}V"
+                self._mw.ch1StatsLabel.setText(ch1_stats)
+        except Exception:
+            pass
 
-    def _reset_gui_state(self):
-        """Reset GUI to initial state."""
-        # Reset ASG buttons
-        self.asg0_enable_button.setChecked(False)
-        self.asg1_enable_button.setChecked(False)
-        
-        # Reset PID buttons
-        for pid_id in range(3):
-            self.pid_controls[pid_id]['enable_button'].setChecked(False)
-            self.pid_controls[pid_id]['output_label'].setText('0.000000')
-        
-        # Clear plots
-        self.ch1_curve.setData([], [])
-        self.ch2_curve.setData([], [])
-        
-        # Clear statistics
-        self.ch1_stats_label.setText('CH1: No data')
-        self.ch2_stats_label.setText('CH2: No data')
+        try:
+            if self._data['ch2'] is not None and hasattr(self._mw, 'ch2StatsLabel'):
+                ch2_stats = f"CH2: Mean={np.mean(self._data['ch2']):.3f}V, "
+                ch2_stats += f"RMS={np.sqrt(np.mean(self._data['ch2']**2)):.3f}V, "
+                ch2_stats += f"Pk-Pk={np.ptp(self._data['ch2']):.3f}V"
+                self._mw.ch2StatsLabel.setText(ch2_stats)
+        except Exception:
+            pass
 
-    @QtCore.Slot(int)
-    def _on_tab_changed(self, index):
-        """Handle tab change."""
-        self._current_tab = index
+    def _save_data(self):
+        """Save acquired data to file."""
+        if self._data['time'] is None:
+            try:
+                QtWidgets.QMessageBox.warning(self._mw, 'No Data', 'No data available to save.')
+            except Exception:
+                pass
+            return
 
+        try:
+            file_name, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self._mw,
+                'Save Data',
+                '',
+                'CSV files (*.csv);;All files (*.*)'
+            )
 
-class RedPitayaMainWindow(QtWidgets.QMainWindow):
-    """Main window for Red Pitaya GUI."""
-    
-    def __init__(self):
-        # Call parent class constructor properly
-        super().__init__()
-        
-        # Create central widget and layout
-        self.central_widget = QtWidgets.QWidget()
-        self.setCentralWidget(self.central_widget)
-        self.layout = QtWidgets.QVBoxLayout(self.central_widget)
-        
-        # Create tab widget
-        self.tab_widget = QtWidgets.QTabWidget()
-        self.layout.addWidget(self.tab_widget)
-        
-        # Create tabs
-        self.oscilloscope_tab = QtWidgets.QWidget()
-        self.generator_tab = QtWidgets.QWidget()
-        self.pid_tab = QtWidgets.QWidget()
-        
-        # Add tabs to widget
-        self.tab_widget.addTab(self.oscilloscope_tab, "Oscilloscope")
-        self.tab_widget.addTab(self.generator_tab, "Signal Generator")
-        self.tab_widget.addTab(self.pid_tab, "PID Control")
-        
-        # Set window properties
-        self.setWindowTitle("Red Pitaya Control")
-        self.resize(800, 600)
+            if file_name:
+                data = np.column_stack((
+                    self._data['time'],
+                    self._data['ch1'],
+                    self._data['ch2']
+                ))
+                np.savetxt(
+                    file_name,
+                    data,
+                    delimiter=',',
+                    header='Time (s),CH1 (V),CH2 (V)',
+                    comments=''
+                )
+                if hasattr(self._mw, 'statusbar'):
+                    self._mw.statusbar.showMessage(f'Data saved to {file_name}')
+        except Exception as e:
+            try:
+                QtWidgets.QMessageBox.critical(self._mw, 'Error', f'Failed to save data: {str(e)}')
+            except Exception:
+                pass
+
+    def _load_settings(self):
+        """Load settings from file (not implemented)."""
+        QtWidgets.QMessageBox.information(self._mw, 'Not implemented', 'Loading settings is not implemented.')
+
+    def _save_settings(self):
+        """Save settings to file (not implemented)."""
+        QtWidgets.QMessageBox.information(self._mw, 'Not implemented', 'Saving settings is not implemented.')

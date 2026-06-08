@@ -20,117 +20,69 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from abc import abstractmethod
-from qudi.core.module import Base
-import numpy as np
 
 
-class RedPitayaInterface(Base):
-    """Interface for Red Pitaya devices using PyRPL."""
 
-    # Oscilloscope methods
+class RedPitayaInterface:
+    """Interface class for Red Pitaya hardware control."""
+
     @abstractmethod
-    def acquire_data(self, duration=1.0, trigger_source='immediately'):
-        """
-        Acquire oscilloscope data.
-        
-        Args:
-            duration (float): Acquisition duration in seconds
-            trigger_source (str): Trigger source ('immediately', 'ch1', 'ch2', etc.)
-            
-        Returns:
-            tuple: (time_array, ch1_data, ch2_data)
-        """
+    def setup_scope(self, input1=None, input2=None, trigger_source='ch1_positive_edge',
+                   trigger_level=0.0, trigger_hysteresis=0.01, trigger_delay=0,
+                   decimation=64, average=False):
+        """Configure the oscilloscope settings."""
         pass
 
     @abstractmethod
-    def set_oscilloscope_config(self, decimation=1, trigger_delay=0):
-        """
-        Configure oscilloscope settings.
-        
-        Args:
-            decimation (int): Decimation factor
-            trigger_delay (int): Trigger delay in samples
-        """
-        pass
-
-    # Signal generator methods
-    @abstractmethod
-    def set_asg_output(self, channel, waveform='sin', frequency=1000, amplitude=0.1, offset=0):
-        """
-        Configure arbitrary signal generator output.
-        
-        Args:
-            channel (int): ASG channel (0 or 1)
-            waveform (str): Waveform type ('sin', 'square', 'triangle', 'noise')
-            frequency (float): Frequency in Hz
-            amplitude (float): Amplitude in V
-            offset (float): DC offset in V
-        """
+    def get_last_seconds(self, seconds):
+        """Get the last N seconds of scope data."""
         pass
 
     @abstractmethod
-    def enable_asg_output(self, channel, enable=True):
-        """
-        Enable or disable ASG output.
-        
-        Args:
-            channel (int): ASG channel (0 or 1)
-            enable (bool): Enable/disable output
-        """
-        pass
-
-    # PID controller methods
-    @abstractmethod
-    def configure_pid(self, pid_id, input_signal, setpoint=0, p=0, i=0, d=0):
-        """
-        Configure PID controller.
-        
-        Args:
-            pid_id (int): PID controller ID (0, 1, or 2)
-            input_signal (str): Input signal source
-            setpoint (float): PID setpoint
-            p (float): Proportional gain
-            i (float): Integral gain
-            d (float): Derivative gain
-        """
+    def setup_asg(self, channel, freq=0, amp=0, start_p=0, wf='sin', trig_source='immediately'):
+        """Configure arbitrary signal generator."""
         pass
 
     @abstractmethod
-    def enable_pid(self, pid_id, enable=True):
-        """
-        Enable or disable PID controller.
-        
-        Args:
-            pid_id (int): PID controller ID
-            enable (bool): Enable/disable PID
-        """
+    def activate_asg(self, channel, outputchannel):
+        """Activate ASG output on specified channel."""
         pass
 
     @abstractmethod
-    def get_pid_output(self, pid_id):
-        """
-        Get current PID output value.
-        
-        Args:
-            pid_id (int): PID controller ID
-            
-        Returns:
-            float: Current PID output
-        """
-        pass
-
-    # General methods
-    @abstractmethod
-    def get_device_info(self):
-        """
-        Get device information.
-        
-        Returns:
-            dict: Device information
-        """
+    def get_scope_status(self):
+        """Get current scope status."""
         pass
 
     @abstractmethod
-    def reset_device(self):
-        """Reset the Red Pitaya device."""
+    def setup_pid(self, pid_channel, input_signal, output_direct='out1',
+                 p=0.0, i=0.0, d=0.0, ival=0.0, input_filter=None,
+                 invert_signal=False, max_voltage=1, min_voltage=-1, setpoint=0):
+        """Configure PID controller."""
+        pass
+
+    @abstractmethod
+    def get_pid_status(self, pid_channel):
+        """Get PID controller status."""
+        pass
+
+    @abstractmethod
+    def reset_pid_integrator(self, pid_channel, value=0.0):
+        """Reset PID integrator."""
+        pass
+
+    @abstractmethod
+    def setup_iq(self, iq_channel, frequency, bandwidth, input_signal,
+                output_direct='off', output_signal='quadrature', phase=0.0,
+                gain=0.0, acbandwidth=50000, amplitude=0.1, quadrature_factor=20):
+        """Configure IQ demodulator."""
+        pass
+
+    @abstractmethod
+    def get_iq_data(self, iq_channel, num_samples=1, timeout=1.0):
+        """Get IQ demodulator data."""
+        pass
+
+    @abstractmethod
+    def get_iq_status(self, iq_channel):
+        """Get IQ demodulator status."""
         pass

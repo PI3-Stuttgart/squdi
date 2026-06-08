@@ -1,47 +1,46 @@
-from core.module import Base
-from core.configoption import ConfigOption
-from interface.servo_interface import servo_interface
+from qudi.core.module import Base
+from qudi.interface.servo_interface import servo_interface
+from qudi.core.configoption import ConfigOption
 
 import serial
 import serial.tools.list_ports
 import time
+from typing import Optional, Sequence, Tuple
 
+# class must inherit the interface so Connector can validate it
 class ServoSerialInterface(Base, servo_interface):
-    """ Hardware class to define the controls for the ESP32 servo controller.
     
-    Example config for copy-paste:
-    
-    servo_control:
-        module.Class: 'servo.servo_control.ServoSerialInterface'
-        port: 'COM3'
-        baudrate: 115200
-        servo_limits:
-            '1': [0, 360]    # ND-Filter servo
-            '2': [0, 135]    # Laser-Tuning servo
-    """
 
-    _port = ConfigOption('port', 'COM3', missing='warn')
-    _baud = ConfigOption('baudrate', 115200, missing='warn')
-    _servo_limits = ConfigOption('servo_limits', {'1': (0, 180)}, missing='warn')
+    # ensure ConfigOption variables exist (if not already present)
+    _port = ConfigOption('port', 'COM5', missing='warn')
+    _baudrate = ConfigOption('baudrate', 115200, missing='warn')
+    _servo_limits = ConfigOption('servo_limits', {'1': None, '2': None}, missing='warn')
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
-        self.log.debug('The following configuration was found.')
-        for key in config.keys():
-            self.log.info('{0}: {1}'.format(key, config[key]))
-        
-        self.last_positions = {}
-        self.available_servos = list(self._servo_limits.keys())
+        # initialize runtime state expected by the interface
         self.ser = None
-        self.is_startup = True  # Flag to track if we're in startup phase
+        self.last_positions = {}
+        self.is_startup = True
+        # expose runtime collections used throughout the class
+        self.available_servos = list(self._servo_limits.keys()) if isinstance(self._servo_limits, dict) else []
+        self.position_limits = dict(self._servo_limits) if isinstance(self._servo_limits, dict) else {}
+
+    @property
+    def constraints(self) -> dict:
+        """Return constraints required by the servo_interface (available servos + limits)."""
+        return {
+            'available_servos': list(self._available_servos),
+            'position_limits': dict(self._position_limits)
+        }
 
     def on_activate(self):
         """ Activate the module """
         try:
-            port = self.auto_detect_port() or self._port
+            port =  self._port
             self.ser = serial.Serial(
                 port=port,
-                baudrate=self._baud,
+                baudrate=self._baudrate,
                 timeout=1,
                 write_timeout=1
             )
@@ -50,12 +49,12 @@ class ServoSerialInterface(Base, servo_interface):
             self.is_startup = True
         except Exception as e:
             self.log.error(f"Failed to activate servo interface: {str(e)}")
-            if self.ser is not None:
+            if getattr(self, 'ser', None) is not None:
                 try:
                     self.ser.close()
-                except:
+                except Exception:
                     pass
-                self.ser = None
+            self.ser = None
 
     def auto_detect_port(self):
         """ Try to automatically detect the ESP32 port """
@@ -132,7 +131,7 @@ class ServoSerialInterface(Base, servo_interface):
             self.log.error(f"Servo: Error requesting position: {str(e)}")
             return None
 
-    def send_position(self, servo_id, position):
+    def send_position(self, servo_id: str, position: float) -> None:
         """ Send a position command to a servo motor """
         if not self.is_connected():
             self.log.error("Cannot send position - not connected")
@@ -212,7 +211,7 @@ class ServoSerialInterface(Base, servo_interface):
                 self.log.error(f"Error closing serial port: {str(e)}")
             self.ser = None
 
-    def get_last_position(self, servo_id):
+    def get_last_position(self, servo_id: str) -> Optional[float]:
         """ Get the last known position of a servo motor """
         servo_id = str(servo_id)
         if self.is_startup:
@@ -227,20 +226,24 @@ class ServoSerialInterface(Base, servo_interface):
         self.log.debug(f"Last known position for servo {servo_id}: {position}")
         return position
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         """ Check if the serial connection is active """
         return self.ser is not None and self.ser.is_open
 
-    def get_available_servos(self):
+    def get_available_servos(self) -> Sequence[str]:
         """ Get a list of available servo IDs """
         return self.available_servos
 
-    def get_position_limits(self, servo_id):
+    def get_position_limits(self, servo_id: str) -> Tuple[Optional[float], Optional[float]]:
         """ Get the position limits for a servo """
-        limits = self._servo_limits.get(str(servo_id), (None, None))
+        limits = self.position_limits.get(str(servo_id))
         if limits is None:
             return (None, None)
-        return limits
+        # Normalize to tuple
+        try:
+            return tuple(limits)
+        except Exception:
+            return (None, None)
 
     def process_serial_data(self):
         """ Process any incoming serial data """

@@ -30,7 +30,7 @@ import time
 from PySide2 import QtCore
 
 
-class RedPitayaPyrpl(Base):
+class RedPitayaPyrpl(Base, RedPitayaInterface):
     """Hardware module for controlling Red Pitaya using PyRPL library."""
 
     # Config options - simplified to just IP address
@@ -80,9 +80,9 @@ class RedPitayaPyrpl(Base):
 
     def setup_asg(self, channel , freq = 0 , amp = 0, start_p= 0 , wf= 'sin'  , trig_source = 'immediately'):
         if channel == 0:
-            self._asg0.setup(frequency=freq, amplitude=amp, start_phase=start_p, waveform=wf, trigger_source=trig_source)
+            self._asg0.setup(frequency=freq, amplitude=amp, offset=0, start_phase=start_p, waveform=wf, trigger_source=trig_source)
         elif channel == 1:
-            self._asg1.setup(frequency=freq, amplitude=amp, start_phase=start_p, waveform=wf, trigger_source=trig_source)
+            self._asg1.setup(frequency=freq, amplitude=amp, offset=0, start_phase=start_p, waveform=wf, trigger_source=trig_source)
         else:
             raise ValueError("Invalid channel")
 
@@ -91,7 +91,7 @@ class RedPitayaPyrpl(Base):
         
         Args:
             channel (int): ASG channel (0 or 1)
-            outputchannel (str): Output channel ('off', 'out1', 'out2', or 'both')
+            outputchannel (str): Output channel ('off', 'out1', 'out2')
         """
         if channel == 0:
             self._asg0.output_direct = outputchannel
@@ -123,36 +123,49 @@ class RedPitayaPyrpl(Base):
             self._scope.input2 = input2
             
         self._scope.trigger_source = trigger_source
-        self._scope.threshold_ch1 = trigger_level
-        self._scope.hysteresis_ch1 = trigger_hysteresis
+        self._scope.threshold = trigger_level
+        self._scope.hysteresis = trigger_hysteresis
         self._scope.trigger_delay = trigger_delay
         self._scope.decimation = decimation
         self._scope.average = average
-        
-    def get_scope_data(self, timeout=1.0):
-        """Acquire data from the oscilloscope.
+
+    def start_rolling_mode(self, seconds):
+        """Setup and start rolling mode acquisition.
         
         Args:
-            timeout (float): Maximum time to wait for data in seconds
-            
-        Returns:
-            tuple: (time_array, ch1_data, ch2_data) in volts and seconds
+            seconds (float): Duration of data buffer in seconds
         """
-        # Start async acquisition
-        future = self._scope.curve_async()
-        
-        # Wait for acquisition to complete
-        start_time = time.time()
-        while not self._scope.curve_ready():
-            if time.time() - start_time > timeout:
-                raise TimeoutError("Scope acquisition timed out")
-            time.sleep(0.001)
-            
-        # Get the data
-        ch1, ch2 = future.result()
-        times = self._scope.times
-        
-        return times, ch1, ch2
+        # Ensure rolling mode buffer is large enough
+        target_duration = max(0.1, float(seconds))
+        self._scope.duration = target_duration
+        self._scope.rolling_mode = True
+
+        # Start rolling acquisition mode
+        try:
+            self._scope._start_acquisition_rolling_mode()
+        except Exception as e:
+            self.log.error(f"Failed to start rolling mode: {e}")
+
+    def get_last_seconds(self, seconds):
+        """Get the last N seconds of scope data in rolling mode."""
+        try:
+            # Grab rolling curve (times in seconds, datas shape: (2, N))
+            times, datas = self._scope._get_rolling_curve()
+
+            # Times are shifted so that last sample is ~0; slice last `seconds`
+            mask_time = times >= -seconds
+            t = times[mask_time]
+            ch1 = datas[0][mask_time]
+            ch2 = datas[1][mask_time]
+
+            # Remove NaNs injected during acquisition transitions
+            finite_mask = np.isfinite(ch1) & np.isfinite(ch2)
+            return t[finite_mask], ch1[finite_mask], ch2[finite_mask]
+
+        except Exception as e:
+            self.log.error(f"Error getting scope data: {e}")
+            return None, None, None
+
         
     def get_voltage(self, channel):
         """Get current voltage on a channel.
@@ -178,8 +191,8 @@ class RedPitayaPyrpl(Base):
         """
         return {
             'trigger_source': self._scope.trigger_source,
-            'trigger_level': self._scope.threshold_ch1,
-            'trigger_hysteresis': self._scope.hysteresis_ch1,
+            'trigger_level': self._scope.threshold,
+            'trigger_hysteresis': self._scope.hysteresis,
             'trigger_delay': self._scope.trigger_delay,
             'decimation': self._scope.decimation,
             'average': self._scope.average,
@@ -194,7 +207,7 @@ class RedPitayaPyrpl(Base):
     # PID controller methods
     def setup_pid(self, pid_channel, input_signal, output_direct='out1', 
                  p=0.0, i=0.0, d=0.0, ival=0.0, 
-                 input_filter=None, invert_signal=False):
+                 input_filter=None, invert_signal=False,max_voltage=1 , min_voltage = -1, setpoint= 0):
         """Configure a PID controller.
         
         Args:
@@ -204,7 +217,7 @@ class RedPitayaPyrpl(Base):
             p (float): Proportional gain (0.0 to 1.0)
             i (float): Integral unity-gain frequency in Hz
             d (float): Derivative time constant in seconds
-            ival (float): Initial integral value (-4.0 to 4.0 V)
+            ival (float): Initial integrator value (-4.0 to 4.0 V)
             input_filter (list): List of 4 filter coefficients [f1, f2, f3, f4]
             invert_signal (bool): Whether to invert the input signal
         """
@@ -225,6 +238,9 @@ class RedPitayaPyrpl(Base):
         pid.i = i
         pid.d = d
         pid.ival = ival
+        pid.max_voltage = max_voltage
+        pid.min_voltage = min_voltage 
+        pid.setpoint = setpoint
         
         # Apply input filter if provided
         if input_filter is not None:
@@ -271,22 +287,6 @@ class RedPitayaPyrpl(Base):
             'setpoint': pid.setpoint
         }
         
-    def set_pid_setpoint(self, pid_channel, setpoint):
-        """Set the setpoint for a PID controller.
-        
-        Args:
-            pid_channel (int): PID controller number (0, 1, or 2)
-            setpoint (float): Desired setpoint in volts
-        """
-        if pid_channel == 0:
-            self._pid0.setpoint = setpoint
-        elif pid_channel == 1:
-            self._pid1.setpoint = setpoint
-        elif pid_channel == 2:
-            self._pid2.setpoint = setpoint
-        else:
-            raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
-            
     def reset_pid_integrator(self, pid_channel, value=0.0):
         """Reset the integrator of a PID controller.
         
@@ -304,8 +304,8 @@ class RedPitayaPyrpl(Base):
             raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
             
     # IQ module methods
-    def setup_iq(self, iq_channel, frequency, bandwidth, input_signal, output_direct='out1',
-                output_signal='quadrature', phase=0.0, gain=0.0, acbandwidth=50000, amplitude=0.1):
+    def setup_iq(self, iq_channel, frequency, bandwidth, input_signal, output_direct='off',
+                output_signal='quadrature', phase=0.0, gain=0.0, acbandwidth=50000, amplitude=0.1,quadrature_factor= 20):
         """Configure an IQ module for lock-in detection or signal processing.
         
         Args:
@@ -335,17 +335,16 @@ class RedPitayaPyrpl(Base):
             bandwidth = [bandwidth, bandwidth]
             
         # Configure the IQ module
-        iq.setup(
-            frequency=frequency,
-            bandwidth=bandwidth,
-            input=input_signal,
-            output_direct=output_direct,
-            output_signal=output_signal,
-            phase=phase,
-            gain=gain,
-            acbandwidth=acbandwidth,
-            amplitude=amplitude
-        )
+        iq.setup(frequency=frequency,
+                bandwidth=bandwidth,
+                gain=gain,
+                phase= phase, 
+                acbandwidth=acbandwidth, 
+                amplitude=amplitude,
+                input=input_signal,
+                output_direct=output_direct,
+                output_signal=output_signal,
+                quadrature_factor=quadrature_factor)
         
     def get_iq_data(self, iq_channel, num_samples=1, timeout=1.0):
         """Get demodulated I and Q data from an IQ module.
