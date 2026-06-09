@@ -1,5 +1,5 @@
 import csv
-from PyCRC.CRCCCITT import CRCCCITT
+from pycrc.CRCCCITT import CRCCCITT
 # CRC-CCITT
 # polynom: 0x1021
 # seed: 0xFFFF

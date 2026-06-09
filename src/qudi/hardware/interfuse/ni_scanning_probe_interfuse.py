@@ -682,62 +682,56 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
     def _get_scan_lines(self, scan_data):
         if scan_data.scan_dimension == 1:
-
             axis = scan_data.scan_axes[0]
             horizontal_resolution = scan_data.scan_resolution[0]
 
+            # Forward scan line
             horizontal = np.linspace(scan_data.scan_range[0][0], scan_data.scan_range[0][1],
-                                     horizontal_resolution)
+                                   horizontal_resolution)
+            # Return to zero position
             horizontal_return_line = np.linspace(scan_data.scan_range[0][1], scan_data.scan_range[0][0],
-                                                 self._backwards_line_resolution)
-            # TODO Return line for 1d included due to possible hysteresis. Might be able to drop it,
-            #  but then get_scan_data needs to be changed accordingly
+                                               self._backwards_line_resolution)
 
-            horizontal_single_line = np.concatenate((horizontal,
-                                                     horizontal_return_line))
+            horizontal_single_line = np.concatenate((horizontal, horizontal_return_line))
 
             coord_dict = {axis: horizontal_single_line}
 
-        elif scan_data.scan_dimension == 2:
+            # Sleep happens after the line is complete, no need to modify arrays
 
+        elif scan_data.scan_dimension == 2:
             horizontal_resolution = scan_data.scan_resolution[0]
             vertical_resolution = scan_data.scan_resolution[1]
 
             # horizontal scan array / "fast axis"
             horizontal_axis = scan_data.scan_axes[0]
+            vertical_axis = scan_data.scan_axes[1]
 
+            # Forward scan line
             horizontal = np.linspace(scan_data.scan_range[0][0], scan_data.scan_range[0][1],
-                                     horizontal_resolution)
+                                   horizontal_resolution)
+            # Return to zero position
+            horizontal_return_line = np.linspace(scan_data.scan_range[0][1], scan_data.scan_range[0][0],
+                                               self._backwards_line_resolution)
 
-            horizontal_return_line = np.linspace(scan_data.scan_range[0][1],
-                                                 scan_data.scan_range[0][0],
-                                                 self._backwards_line_resolution)
-            # a single back and forth line
+            # Single line pattern (forward + return)
             horizontal_single_line = np.concatenate((horizontal, horizontal_return_line))
-            # need as much lines as we have in the vertical directions
+            points_per_line = len(horizontal_single_line)
+
+            # Create full scan arrays
             horizontal_scan_array = np.tile(horizontal_single_line, vertical_resolution)
 
-            # vertical scan array / "slow axis"
-            vertical_axis = scan_data.scan_axes[1]
-            vertical = np.linspace(scan_data.scan_range[1][0], scan_data.scan_range[1][1],
-                                   vertical_resolution)
+            # Create vertical positions
+            vertical_positions = np.linspace(scan_data.scan_range[1][0], 
+                                           scan_data.scan_range[1][1],
+                                           vertical_resolution)
+            vertical_scan_array = np.repeat(vertical_positions, points_per_line)
 
-            # during horizontal line, the vertical line keeps its value
-            vertical_lines = np.repeat(vertical.reshape(vertical_resolution, 1), horizontal_resolution, axis=1)
-            # during backscan of horizontal, the vertical axis increases its value by "one index"
-            vertical_return_lines = np.linspace(vertical[:-1], vertical[1:], self._backwards_line_resolution).T
-            # need to extend the vertical lines at the end, as we reach it earlier then for the horizontal axes
-            vertical_return_lines = np.concatenate((vertical_return_lines,
-                                                    np.ones((1, self._backwards_line_resolution)) * vertical[-1]
-                                                    ))
-
-            vertical_scan_array = np.concatenate((vertical_lines, vertical_return_lines), axis=1).ravel()
-
-            # TODO We could drop the last return line in the initialization, as it is not read in anyways till yet.
-
-            coord_dict = {horizontal_axis: horizontal_scan_array,
-                          vertical_axis: vertical_scan_array
+            coord_dict = {
+                horizontal_axis: horizontal_scan_array,
+                vertical_axis: vertical_scan_array
             }
+
+            # Sleep happens after each line, no need to modify arrays
 
         else:
             raise ValueError(f"Not supported scan dimension: {scan_data.scan_dimension}")

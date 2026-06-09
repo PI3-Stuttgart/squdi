@@ -2,7 +2,8 @@
 import serial
 import csv
 import numpy as np
-from qudi.hardware.picoquant.crc import get_chck_summ # file supplied by picoquant
+from qudi.hardware.picoquant.crc import get_chck_summ # file supplied by picoquant.
+# for this to work you need to pip install pythoncrc. You might think crc or pycrc but that didnt help.
 import time
 import matplotlib.pyplot as plt
 import os
@@ -15,7 +16,7 @@ class waveform_generation:
     def __init__(self):
         self.path_to_folder = os.path.dirname(os.path.abspath(__file__))
 
-    # Make sure to only send integers to the devpip install PyCRCice. Otherwise it won't work.
+    # Make sure to only send integers to the device. Otherwise it won't work.
     def create_a_waveform_file(self, voltages, fname='waveform.txt'):
         fname = os.path.join(self.path_to_folder,fname)
         line = ''
@@ -48,18 +49,40 @@ class waveform_generation:
         plt.show()
 
 
-    def create_gauss(self, width,amp=255):
+    def create_gauss(self, width,amp=255, offset_index=256):
         if amp > 255:
             raise Exception('amp needs to be 255 or less.')
         voltages = np.zeros((512,))
 
-        offset_index = 256
         gauss = lambda i, : amp*np.exp(-(i-offset_index)**2.0 / width**2.0)
 
         for index in range(512):
             voltages[index] = gauss(index)
         voltages = np.around(voltages)
         return voltages
+    
+    def create_gaussian_train(self, width, amp=255, posi0=0, spacing=10, n=1):
+        """Creates a train of gaussian pulses.
+        
+        Parameters:
+            width: width of the gaussian pulse in bits
+            amp: amplitude of the pulse, max 255
+            posi0: position of the first pulse in bits
+            spacing: distance between the pulses in bits
+            n: number of pulses in the train
+        """
+        if amp > 255:
+            raise Exception('amp needs to be 255 or less.')
+        voltages = np.zeros((512,))
+        sigma = width / (2 * np.sqrt(2 * np.log(2)))
+        
+        for i in range(n):
+            center = posi0 + i * spacing
+            x = np.arange(512)
+            pulse = amp * np.exp(-(x - center)**2 / (2 * sigma**2))
+            voltages += pulse
+        
+        return np.around(voltages)
 
     def create_pulses(self, num_pulses, width, spacing, amp=255, pulse_shape='square', initial_delay=0):
     
@@ -217,7 +240,7 @@ class PPG512(Base):
         return
 
 
-    def _query(self, cmd, eol='\r', delay=0.1):
+    def _query(self, cmd, eol='\r', delay=0.75):
         """Sends a command to the decive and returns the response.
         
         System responses are:
@@ -283,8 +306,27 @@ class PPG512(Base):
         ans = self._query('SOUR:VOLT:VCCRF?')
         return ans
 
+    def write_waveform(self, voltages=None, fname=None):
+        """Writes a waveform to the device.
+        
+        Parameters:
+            voltages: array of voltages to write, if None, it will read from file fname
+            fname: name of the file to read the waveform from, default is 'waveform.txt'
+        """
+        if voltages is not None:
+            ans = self.write_waveform_from_array(voltages)
+        elif fname:
+            ans = self.write_waveform_from_file(fname=fname)
+        return ans
 
-    def write_waveform(self, fname='waveform.txt'):
+    def write_waveform_from_array(self, voltages):
+        self.wg.create_a_waveform_file(voltages, fname='temp.txt')
+        time.sleep(0.5)
+        ans = self.write_waveform_from_file(fname='temp.txt')
+        return ans
+
+
+    def write_waveform_from_file(self, fname='waveform.txt'):
         value = []
         fname = os.path.join(self.path_to_folder,fname)
         with open(fname) as fp:
