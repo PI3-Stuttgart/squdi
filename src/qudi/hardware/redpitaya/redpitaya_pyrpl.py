@@ -42,27 +42,18 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         super().__init__(**kwargs)
 
     def on_activate(self):
-        """Initialize and connect to Red Pitaya device."""
-        try:
-            self._pyrpl = Pyrpl(config=self._config_file, reloadserver=False, gui=False)
-            self._rp = self._pyrpl.rp
-            self._scope = self._rp.scope
-            self._asg0 = self._rp.asg0
-            self._asg1 = self._rp.asg1
-            self._pid0 = self._rp.pid0
-            self._pid1 = self._rp.pid1
-            self._pid2 = self._rp.pid2
-
-            self._iq0 = self._rp.iq0 
-            self._iq1 = self._rp.iq1
-            self._iq2 = self._rp.iq2
-            print("y")
-
-             
-            
-        except Exception as e:
-            self.log.error(f'Failed to connect to Red Pitaya: {str(e)}')
-            return None  # Qudi expects non-zero for failure
+        """Initialize parameters without connecting to device to ensure thread-affinity with GUI thread."""
+        self._pyrpl = None
+        self._rp = None
+        self._scope = None
+        self._asg0 = None
+        self._asg1 = None
+        self._pid0 = None
+        self._pid1 = None
+        self._pid2 = None
+        self._iq0 = None 
+        self._iq1 = None
+        self._iq2 = None
 
     def on_deactivate(self):
         self._pyrpl = None 
@@ -73,12 +64,12 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         self._pid0 = None
         self._pid1 = None
         self._pid2 = None
-
         self._iq0 = None 
         self._iq1 = None
         self._iq2 = None
 
     def setup_asg(self, channel , freq = 0 , amp = 0, start_p= 0 , wf= 'sin'  , trig_source = 'immediately'):
+        self.get_pyrpl()
         if channel == 0:
             self._asg0.setup(frequency=freq, amplitude=amp, offset=0, start_phase=start_p, waveform=wf, trigger_source=trig_source)
         elif channel == 1:
@@ -93,6 +84,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             channel (int): ASG channel (0 or 1)
             outputchannel (str): Output channel ('off', 'out1', 'out2')
         """
+        self.get_pyrpl()
         if channel == 0:
             self._asg0.output_direct = outputchannel
         elif channel == 1:
@@ -117,6 +109,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             decimation (int): Decimation factor (1-2^17)
             average (bool): Whether to enable averaging
         """
+        self.get_pyrpl()
         if input1 is not None:
             self._scope.input1 = input1
         if input2 is not None:
@@ -135,6 +128,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         Args:
             seconds (float): Duration of data buffer in seconds
         """
+        self.get_pyrpl()
         # Ensure rolling mode buffer is large enough
         target_duration = max(0.1, float(seconds))
         self._scope.duration = target_duration
@@ -148,6 +142,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
 
     def get_last_seconds(self, seconds):
         """Get the last N seconds of scope data in rolling mode."""
+        self.get_pyrpl()
         try:
             # Grab rolling curve (times in seconds, datas shape: (2, N))
             times, datas = self._scope._get_rolling_curve()
@@ -176,6 +171,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         Returns:
             float: Current voltage in volts
         """
+        self.get_pyrpl()
         if channel == 1:
             return self._scope.voltage_in1
         elif channel == 2:
@@ -189,6 +185,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         Returns:
             dict: Dictionary containing scope status information
         """
+        self.get_pyrpl()
         return {
             'trigger_source': self._scope.trigger_source,
             'trigger_level': self._scope.threshold,
@@ -221,6 +218,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             input_filter (list): List of 4 filter coefficients [f1, f2, f3, f4]
             invert_signal (bool): Whether to invert the input signal
         """
+        self.get_pyrpl()
         # Get the PID module
         if pid_channel == 0:
             pid = self._pid0
@@ -263,6 +261,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         Returns:
             dict: Dictionary containing PID status information
         """
+        self.get_pyrpl()
         # Get the PID module
         if pid_channel == 0:
             pid = self._pid0
@@ -294,6 +293,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             pid_channel (int): PID controller number (0, 1, or 2)
             value (float): Value to set the integrator to (default: 0.0)
         """
+        self.get_pyrpl()
         if pid_channel == 0:
             self._pid0.ival = value
         elif pid_channel == 1:
@@ -320,6 +320,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             acbandwidth (float): AC coupling cutoff frequency in Hz (0 for DC coupling)
             amplitude (float): Amplitude of the internal oscillator (0.0 to 1.0)
         """
+        self.get_pyrpl()
         # Get the IQ module
         if iq_channel == 0:
             iq = self._iq0
@@ -357,6 +358,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         Returns:
             tuple: (I_data, Q_data) arrays of demodulated data
         """
+        self.get_pyrpl()
         # Get the IQ module
         if iq_channel == 0:
             iq = self._iq0
@@ -389,6 +391,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         Returns:
             dict: Dictionary containing IQ module status information
         """
+        self.get_pyrpl()
         # Get the IQ module
         if iq_channel == 0:
             iq = self._iq0
@@ -431,6 +434,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         Returns:
             tuple: (frequencies, magnitude, phase) arrays
         """
+        self.get_pyrpl()
         na = self._pyrpl.networkanalyzer
         na.setup(
             start=start_freq,
@@ -454,5 +458,24 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         return na.frequencies, na.magnitude, na.phase
 
     def get_pyrpl(self):
-        """Get the underlying Pyrpl instance."""
-        return getattr(self, '_pyrpl', None)
+        """Get the underlying Pyrpl instance (lazily initialized)."""
+        if getattr(self, '_pyrpl', None) is None:
+            try:
+                self.log.info("Connecting to Red Pitaya via PyRPL...")
+                self._pyrpl = Pyrpl(config=self._config_file, reloadserver=False, gui=False)
+                self._rp = self._pyrpl.rp
+                self._scope = self._rp.scope
+                self._asg0 = self._rp.asg0
+                self._asg1 = self._rp.asg1
+                self._pid0 = self._rp.pid0
+                self._pid1 = self._rp.pid1
+                self._pid2 = self._rp.pid2
+
+                self._iq0 = self._rp.iq0 
+                self._iq1 = self._rp.iq1
+                self._iq2 = self._rp.iq2
+                print("y")
+            except Exception as e:
+                self.log.error(f'Failed to connect to Red Pitaya: {str(e)}')
+                self._pyrpl = None
+        return self._pyrpl
