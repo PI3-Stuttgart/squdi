@@ -86,3 +86,8 @@ class RedPitayaInterface:
     def get_iq_status(self, iq_channel):
         """Get IQ demodulator status."""
         pass
+
+    @abstractmethod
+    def get_pyrpl(self):
+        """Get the underlying Pyrpl instance."""
+        pass

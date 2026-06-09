@@ -86,3 +86,10 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
         except Exception as e:
             self.log.error(f'Error getting histogram: {e}')
             return None, None, None
+
+    def get_pyrpl(self):
+        """Get the underlying Pyrpl instance."""
+        if self._redpitaya_hardware_instance is not None:
+            return self._redpitaya_hardware_instance.get_pyrpl()
+        return None
+

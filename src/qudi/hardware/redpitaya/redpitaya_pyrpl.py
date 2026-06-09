@@ -44,7 +44,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
     def on_activate(self):
         """Initialize and connect to Red Pitaya device."""
         try:
-            self._pyrpl = Pyrpl(config=self._config_file ,reloadserver = False)
+            self._pyrpl = Pyrpl(config=self._config_file, reloadserver=False, gui=False)
             self._rp = self._pyrpl.rp
             self._scope = self._rp.scope
             self._asg0 = self._rp.asg0
@@ -452,3 +452,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             
         # Return the data
         return na.frequencies, na.magnitude, na.phase
+
+    def get_pyrpl(self):
+        """Get the underlying Pyrpl instance."""
+        return getattr(self, '_pyrpl', None)

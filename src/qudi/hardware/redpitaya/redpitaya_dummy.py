@@ -72,3 +72,7 @@ class RedPitayaDummy(RedPitayaInterface):
 
     def reset_device(self):
         self.on_activate()  # Reset to initial state
+
+    def get_pyrpl(self):
+        """Get the underlying Pyrpl instance."""
+        return None
