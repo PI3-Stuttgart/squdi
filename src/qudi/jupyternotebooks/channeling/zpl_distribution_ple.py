@@ -27,7 +27,7 @@ ws_wavemeter.start_acquisition()
 # Parameters
 start_freq = 0  # GHz to Hz
 end_freq = 18500  # GHz to Hz
-step = 100  # GHz to Hz
+step = 50  # GHz to Hz
 num_steps = int((end_freq - start_freq) / step) + 1  # +1 for inclusive range
 resolution = (150, 150)  # x, y points
 

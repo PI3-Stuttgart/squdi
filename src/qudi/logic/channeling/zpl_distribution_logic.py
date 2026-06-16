@@ -118,6 +118,50 @@ class ZPLDistributionLogic(LogicBase):
             self.log.error(f"Error starting measurement thread: {e}")
             self._is_running = False
 
+    @QtCore.Slot(float, float, float, str, float)
+    def append_measurement(self, start, stop, step, method='Simple', threshold=5000.0, 
+                           mode='Linear', center=50.0, width=20.0, fine=1.0, coarse=5.0,
+                           laser='Main'):
+        """
+        Starts a measurement on a specific range and appends results to existing ones 
+        instead of clearing.
+        """
+        if self._is_running:
+            self.log.warning("Measurement already running.")
+            return
+
+        # Use provided parameters for this segment
+        self._current_method = method
+        self._current_threshold = threshold
+        self._active_laser = laser
+        
+        self._start_voltage = start
+        self._stop_voltage = stop
+        self._step_voltage = step
+        self._current_mode = mode
+        self._current_center = center
+        self._current_width = width
+        self._current_fine = fine
+        self._current_coarse = coarse
+
+        # Generate the specific schedule for this append run
+        voltages = self.get_voltage_schedule(start, stop, step, mode, center, width, fine, coarse)
+
+        self._is_running = True
+        self._stop_requested = False
+        self._is_paused = False
+        
+        # NOTE: We do NOT clear self._histogram_data or self._scan_results here!
+        
+        try:
+            import threading
+            self._thread = threading.Thread(target=self._run_measurement_loop, kwargs={'voltages': voltages})
+            self._thread.start()
+        except Exception as e:
+            self.log.error(f"Error starting append measurement thread: {e}")
+            self._is_running = False
+
+
     @QtCore.Slot()
     def pause_measurement(self):
         self._is_paused = True
@@ -358,34 +402,39 @@ class ZPLDistributionLogic(LogicBase):
         else:
             return self._laser
 
-    def _run_measurement_loop(self):
+    def _run_measurement_loop(self, voltages=None):
         try:
-             # Generate Voltage Schedule
-            if hasattr(self, '_current_mode'):
-                voltages = self.get_voltage_schedule(
-                    self._start_voltage, 
-                    self._stop_voltage, 
-                    self._step_voltage,
-                    self._current_mode,
-                    self._current_center,
-                    self._current_width,
-                    self._current_fine,
-                    self._current_coarse
-                )
-                if self._current_mode == 'Focused':
-                    self.log.info(f"Focused Schedule: {len(voltages)} points around {self._current_center} V")
-            else:
-                 # Fallback for linear if mode not set (legacy call?)
-                 voltages = self.get_voltage_schedule(self._start_voltage, self._stop_voltage, self._step_voltage)
+             # Generate Voltage Schedule if not provided
+            if voltages is None:
+                if hasattr(self, '_current_mode'):
+                    voltages = self.get_voltage_schedule(
+                        self._start_voltage, 
+                        self._stop_voltage, 
+                        self._step_voltage,
+                        self._current_mode,
+                        self._current_center,
+                        self._current_width,
+                        self._current_fine,
+                        self._current_coarse
+                    )
+                    if self._current_mode == 'Focused':
+                        self.log.info(f"Focused Schedule: {len(voltages)} points around {self._current_center} V")
+                else:
+                     # Fallback for linear if mode not set (legacy call?)
+                     voltages = self.get_voltage_schedule(self._start_voltage, self._stop_voltage, self._step_voltage)
                  
             if len(voltages) == 0:
                  self.log.warning("No voltages to scan.")
+                 self._is_running = False
+                 self.sigMeasurementFinished.emit()
                  return
 
             # Check Laser Connection
             laser = self.get_active_laser()
             if not laser.is_connected:
                 self.log.error(f"Selected laser ({self._active_laser}) is not connected.")
+                self._is_running = False
+                self.sigMeasurementFinished.emit()
                 return
 
             total_steps = len(voltages)
@@ -412,35 +461,42 @@ class ZPLDistributionLogic(LogicBase):
                 frequency_ghz = np.nan
                 if self._wavemeter.is_connected:
                     try:
-                        # Attempt to read
-                        # Note: Interface might vary, assuming get_frequency or get_current_wavelength
-                        # Notebook used: ws_wavemeter.get_current_wavelength()
-                        # standard interface usually has get_wavelength() or similar.
-                        # Using 'WavemeterInterface' from qudi usually has 'get_wavelength' returning meters or similar, or THz?
-                        # Let's try to call what was in the notebook if it matches a known connector
-                        # Notebook: ws_wavemeter.get_current_wavelength()
-                        # Let's assume the connector provides this or similar.
-                        # Safest is to try-except attribute access if standard interface is unknown
                         wm = self._wavemeter()
                         val = np.nan
-                        if hasattr(wm, 'get_current_wavelength'):
-                             val = wm.get_current_wavelength()
-                        elif hasattr(wm, 'get_wavelength'):
-                             val = wm.get_wavelength()
                         
-                        # Notebook logic: (val - w0) * 1e3
-                        # implying val is in THz if w0 is THz and result is GHz?
-                        # Or val is nm and w0 is nm? 
-                        # w0 = 484.130. 484 nm is blue. 484 THz is red (619nm). ZPL is 637nm (470THz).
-                        # Likely Frequency in THz.
-                        if not np.isnan(val):
-                            frequency_ghz = (val - self._zero_frequency) * 1000.0
+                        max_retries = 10
+                        for attempt in range(max_retries):
+                            try:
+                                if hasattr(wm, 'get_current_wavelength'):
+                                    val = float(wm.get_current_wavelength())
+                                elif hasattr(wm, 'get_wavelength'):
+                                    val = float(wm.get_wavelength())
+                                    
+                                if val > 0:
+                                    break
+                            except Exception:
+                                pass
+                                
+                            if attempt < max_retries - 1:
+                                time.sleep(0.1)
+                        
+                        if val > 0:
+                            # Heuristic for units: ZPL is ~470 THz (637 nm)
+                            if val > 550:
+                                 freq_thz = 299792.458 / val
+                            else:
+                                 freq_thz = val
+                            
+                            frequency_ghz = (freq_thz - self._zero_frequency) * 1000.0
                             self.log.info(f"Measured Frequency: {frequency_ghz:.4f} GHz (Raw: {val})")
+                        else:
+                            self.log.warning(f"No valid wavemeter reading at {v:.4f} V (Raw: {val})")
                     except Exception as e:
                         self.log.warning(f"Could not read wavemeter: {e}")
                 
                 # 2. Run Spatial Scan
                 self.log.info("Starting spatial scan...")
+
                 scan_axes = tuple(self._scan_channels)
                 self._scan_logic().toggle_scan(True, scan_axes)
                 
@@ -496,11 +552,24 @@ class ZPLDistributionLogic(LogicBase):
                                       f"[err={conf_stats['error']}, mean_conf={conf_stats['mean_confidence']:.2f}]")
                         
                         # Store Data
-                        self._histogram_data['voltage'].append(v)
-                        self._histogram_data['counts'].append(spot_count)
-                        self._histogram_data['frequency'].append(frequency_ghz)
-                        self._histogram_data['error'].append(conf_stats['error'])
-                        self._histogram_data['mean_confidence'].append(conf_stats['mean_confidence'])
+                        # Check if voltage is already in histogram to replace (for partial re-scans)
+                        found_idx = -1
+                        for idx, hv in enumerate(self._histogram_data['voltage']):
+                            if abs(hv - v) < 1e-4: # Tolerance for float comparison
+                                found_idx = idx
+                                break
+                        
+                        if found_idx >= 0:
+                            self._histogram_data['counts'][found_idx] = spot_count
+                            self._histogram_data['frequency'][found_idx] = frequency_ghz
+                            self._histogram_data['error'][found_idx] = conf_stats['error']
+                            self._histogram_data['mean_confidence'][found_idx] = conf_stats['mean_confidence']
+                        else:
+                            self._histogram_data['voltage'].append(v)
+                            self._histogram_data['counts'].append(spot_count)
+                            self._histogram_data['frequency'].append(frequency_ghz)
+                            self._histogram_data['error'].append(conf_stats['error'])
+                            self._histogram_data['mean_confidence'].append(conf_stats['mean_confidence'])
 
                         self._scan_results[v] = {
                             'image': image_data,
@@ -513,6 +582,7 @@ class ZPLDistributionLogic(LogicBase):
                             'frequency': frequency_ghz,
                             'all_channels': scan_data.data if hasattr(scan_data, 'data') else {}
                         }
+
 
                         # Emit updates — deep-copy to avoid cross-thread mutation
                         self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
@@ -1047,8 +1117,8 @@ class ZPLDistributionLogic(LogicBase):
         t.start()
 
     def _save_all_results_worker(self, save_dir):
-        """Background worker: saves histogram CSV/SVG, per-scan SVG, spots CSV,
-        raw NPZ files (all channels + metadata), and a summary JSON.
+        """Background worker: saves histogram CSV/SVG, per-scan DAT, spots CSV,
+        raw NPZ, and summary JSON in a separate thread.
         Emits sigSavingFinished(success, message) when done.
         """
         import os
@@ -1163,7 +1233,7 @@ class ZPLDistributionLogic(LogicBase):
                 errors.append(err)
                 self.log.error(f"{err}\n{traceback.format_exc()}")
 
-            # ── 3. Per-scan: SVG + raw NPZ ─────────────────────────────────────
+            # ── 3. Per-scan: DAT + raw NPZ ─────────────────────────────────────
             all_spots = []
             for v, res in scan_results.items():
                 freq = res.get('frequency', float('nan'))
@@ -1182,25 +1252,29 @@ class ZPLDistributionLogic(LogicBase):
                 except Exception:
                     v_safe = str(v).replace(':', '_').replace('/', '_').replace('\\', '_')
 
-                # SVG figure
+                # DAT file with raw scan data
                 try:
-                    fig = Figure()
-                    FigureCanvasAgg(fig)
-                    ax = fig.add_subplot(111)
-                    freq_str = f"{freq:.3f} GHz" if not np.isnan(freq) else "? GHz"
-                    res_str2 = ', '.join(f"{ax_}: {r}" for ax_, r in scan_resolution.items()) if scan_resolution else ''
-                    title = f"Scan at {v_safe} V  ({freq_str})"
-                    if res_str2:
-                        title += f"\nResolution: {res_str2}"
-                    ax.set_title(title)
-                    ax.imshow(res['image'], origin='lower', cmap='viridis')
-                    spots = res['spots']
-                    if spots:
-                        ax.scatter([s['x'] for s in spots], [s['y'] for s in spots],
-                                   c='r', marker='x', s=50)
-                    fig.savefig(os.path.join(save_dir, f"scan_{v_safe}V.svg"))
+                    wavelength_nm = float('nan')
+                    if not np.isnan(freq):
+                        freq_thz = (freq / 1000.0) + self._zero_frequency
+                        if freq_thz > 0:
+                            wavelength_nm = 299792.458 / freq_thz
+
+                    dat_path = os.path.join(save_dir, f"scan_{v_safe}V.dat")
+                    with open(dat_path, 'w') as f:
+                        f.write(f"# Laser Voltage (V): {v}\n")
+                        if not np.isnan(wavelength_nm):
+                            f.write(f"# Measured Wavelength (nm): {wavelength_nm:.5f}\n")
+                        else:
+                            f.write("# Measured Wavelength (nm): NaN\n")
+                        if not np.isnan(freq):
+                            f.write(f"# Measured Frequency relative to {self._zero_frequency} THz (GHz): {freq:.4f}\n")
+                        else:
+                            f.write(f"# Measured Frequency relative to {self._zero_frequency} THz (GHz): NaN\n")
+                        f.write("# Scan Raw Data (2D array)\n")
+                        np.savetxt(f, res['image'], fmt='%g', delimiter='\t')
                 except Exception as e:
-                    err = f"SVG scan {v_safe}V: {e}"
+                    err = f"DAT scan {v_safe}V: {e}"
                     errors.append(err)
                     self.log.error(err)
 

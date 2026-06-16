@@ -210,17 +210,16 @@ class WavemeterLoggerLogic(LogicBase):
         
         self._time_elapsed = time.time() - self._acquisition_start_time
         
-        
         display_wavelengths = valid_buffer[-self.wavelength_buffer:]
        
         count_data = None
         if self.start_toggled:
-            # Only process new points we haven't seen yet
-            new_idx = len(full_buffer)
-            if new_idx > self._last_processed_idx:
-                new_points = full_buffer[self._last_processed_idx:]
-                self.update_histogram(new_points)
-                self._last_processed_idx = new_idx
+            if len(full_buffer) > 0:
+                # Process only points we haven't seen by timeframe, as buffer shifts at cap
+                new_points = full_buffer[full_buffer.time > self._last_processed_time]
+                if len(new_points) > 0:
+                    self.update_histogram(new_points)
+                    self._last_processed_time = new_points.time[-1]
                 
             # Pack count data for plotting
             count_data = np.zeros(self.plot_x.shape[0], dtype=COUNT_DTYPE)
@@ -236,7 +235,7 @@ class WavemeterLoggerLogic(LogicBase):
 
     def empty_buffer(self):
         self.wavelengths = None
-        self._last_processed_idx = len(self.wavelengths) if self.wavelengths is not None else 0
+        self._last_processed_time = -1.0
         self._wavemeter.empty_buffer()
         self._acquisition_start_time = time.time()
         
@@ -306,7 +305,7 @@ class WavemeterLoggerLogic(LogicBase):
                 self.recalculate_histogram()
                 self._queryTimer.start(int(self._logic_update_timing))
                 self.empty_buffer() # flush buffer to avoid processing old data
-                self._last_processed_idx = 0
+                self._last_processed_time = -1.0
                 # self.sig_query_wavemeter.emit()
             else:
                 self._queryTimer.stop()

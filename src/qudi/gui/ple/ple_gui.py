@@ -75,6 +75,9 @@ class PLEScanGui(GuiBase):
     _controller_logic = Connector(
         name="controller", interface="ControllerInterfuseLogic", optional=True
     )
+    _ibeam_repump_logic = Connector(
+        name="ibeam_repump", interface="IBeamRepumpLogic", optional=True
+    )
 
     # status vars
     _window_state = StatusVar(name="window_state", default=None)
@@ -229,6 +232,12 @@ class PLEScanGui(GuiBase):
             self._controller_logic.sigGuiParamsUpdated.emit(
                 self._controller_logic.parameters
             )
+
+        # iBeam Smart repump widget
+        self._ibeam_repump_logic = self._ibeam_repump_logic()
+        if self._ibeam_repump_logic is not None:
+            self._mw.add_dock_widget("IBeamRepump")
+            self._init_ibeam_repump()
 
         # PLE tracking
         self._mw.actionTrackPLE.triggered.connect(
@@ -490,6 +499,46 @@ class PLEScanGui(GuiBase):
             self._microwave_logic.cw_parameters
         )
 
+    def _init_ibeam_repump(self):
+        """Wire IBeamRepumpWidget ↔ IBeamRepumpLogic signals."""
+        widget = self._mw.IBeamRepump_widget
+
+        # GUI → Logic
+        widget.sigCwToggled.connect(
+            self._ibeam_repump_logic.set_cw, QtCore.Qt.QueuedConnection
+        )
+        widget.sigPowerChanged.connect(
+            self._ibeam_repump_logic.set_power, QtCore.Qt.QueuedConnection
+        )
+        widget.sigLineRepumpToggled.connect(
+            self._ibeam_repump_logic.set_line_repump_enabled, QtCore.Qt.QueuedConnection
+        )
+        widget.sigConditionalRepumpToggled.connect(
+            self._ibeam_repump_logic.set_conditional_repump, QtCore.Qt.QueuedConnection
+        )
+        widget.sigLineRepumpDurationChanged.connect(
+            self._ibeam_repump_logic.set_line_repump_duration, QtCore.Qt.QueuedConnection
+        )
+
+        # Logic → GUI (state refresh)
+        self._ibeam_repump_logic.sigStateUpdated.connect(
+            widget.update_state, QtCore.Qt.QueuedConnection
+        )
+
+        # Hook line repump into the scan repeat cycle
+        self._scanning_logic.sigRepeatScan.connect(
+            self._ibeam_repump_logic.do_line_repump, QtCore.Qt.QueuedConnection
+        )
+
+        # Initialise widget with current hardware state
+        self._ibeam_repump_logic.sigStateUpdated.emit(
+            self._ibeam_repump_logic._cw_enabled,
+            self._ibeam_repump_logic._power_uW,
+        )
+        widget.duration_spinbox.setValue(
+            self._ibeam_repump_logic._line_repump_duration
+        )
+
     def _init_static_widgets(self):
         self.optimizer_dockwidget = OptimizerDockWidget(
             axes=self._scanning_logic.scanner_axes,
@@ -641,8 +690,27 @@ class PLEScanGui(GuiBase):
         self._mw.elapsed_lines_DisplayWidget.display(self._scanning_logic._repeated)
         self._mw.constDoubleSpinBox.setValue(self._mw.startDoubleSpinBox.value())
         self._mw.constDoubleSpinBox.editingFinished.emit()
+        
+        is_checked = self._mw.actionToggle_scan.isChecked()
+        repump_logic = self._ibeam_repump_logic if hasattr(self, '_ibeam_repump_logic') else None
+        
+        if repump_logic is not None and getattr(repump_logic, '_line_repump_enabled', False):
+            # Route through the custom DLC pro active polling scan loop
+            if is_checked:
+                lines = self._mw.number_of_repeats_SpinBox.value()
+                fit_config = self._fit_dockwidget.fit_widget.selection_combobox.currentText()
+                repump_logic.run_custom_scan(lines, fit_config, [self.scan_axis], self.module_uuid)
+                return
+            else:
+                repump_logic.stop_custom_scan()
+                self._scanning_logic.sigToggleScan.emit(
+                    False, [self.scan_axis], self.module_uuid
+                )
+                return
+
+        # Default hardware-timed scan mode
         self._scanning_logic.sigToggleScan.emit(
-            self._mw.actionToggle_scan.isChecked(), [self.scan_axis], self.module_uuid
+            is_checked, [self.scan_axis], self.module_uuid
         )
 
     def show(self):
@@ -980,8 +1048,11 @@ class PLEScanGui(GuiBase):
                         data_new, dtype=bool
                     )  # Initialize a full True mask
                     mask[-1, :] = last_row != 0
-                    averaged_data[channel] = np.sum(mask * data_new, axis=0) / np.sum(
-                        mask, axis=0
+                    denom = np.sum(mask, axis=0)
+                    averaged_data[channel] = np.where(
+                        denom > 0,
+                        np.sum(mask * data_new, axis=0) / np.where(denom > 0, denom, 1),
+                        0.0,
                     )
                 else:
                     averaged_data[channel] = data.mean(axis=0)

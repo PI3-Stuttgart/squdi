@@ -8,6 +8,7 @@ from qudi.util.widgets.fitting import FitWidget
 import importlib
 from qudi.interface.scanning_probe_interface import ScanData, ScannerAxis, ScannerChannel
 from qudi.gui.ple.ple_repump_widget import PleMicrowaveWidget, PlePulsedWidget
+from qudi.gui.ple.ibeam_repump_widget import IBeamRepumpWidget
 from qudi.gui.ple.controller_widget import ControllerWidget
 from typing import Tuple, Union, Sequence
 from typing import Optional, List
@@ -55,6 +56,8 @@ class PLEScanMainWindow(QtWidgets.QMainWindow):
             setattr(self, f"{name}_widget", PleMicrowaveWidget())
         elif name == "Pulsed":
             setattr(self, f"{name}_widget", PlePulsedWidget(name))
+        elif name == "IBeamRepump":
+            setattr(self, f"{name}_widget", IBeamRepumpWidget())
         elif name == "Controller":
             setattr(self, f"{name}_widget", ControllerWidget(name))
         setattr(self, f"{name}_dockWidget", QtWidgets.QDockWidget())

@@ -123,9 +123,14 @@ class ZPLDistributionGui(GuiBase):
         self.step_spin.setRange(0.001, 100)
         self.step_spin.setValue(5)
         
-        self.start_btn = QtWidgets.QPushButton("Start Measurement")
+        self.start_btn = QtWidgets.QPushButton("Start fresh")
+        self.start_btn.setToolTip("Clear all data and start a new measurement")
         self.start_btn.clicked.connect(self.start_measurement)
         
+        self.append_btn = QtWidgets.QPushButton("Append Range")
+        self.append_btn.setToolTip("Scan current range and add/overwrite results in existing data")
+        self.append_btn.clicked.connect(self.append_measurement)
+
         self.pause_btn = QtWidgets.QPushButton("Pause")
         self.pause_btn.setCheckable(True)
         self.pause_btn.clicked.connect(self.toggle_pause)
@@ -139,6 +144,7 @@ class ZPLDistributionGui(GuiBase):
         control_layout.addWidget(self.stop_spin)
         control_layout.addWidget(self.step_spin)
         control_layout.addWidget(self.start_btn)
+        control_layout.addWidget(self.append_btn)
         control_layout.addWidget(self.pause_btn)
         control_layout.addWidget(self.stop_btn)
         
@@ -551,15 +557,48 @@ class ZPLDistributionGui(GuiBase):
         # Pass detection parameters directly to start_measurement
         self._logic().start_measurement(start, stop, step, method, threshold,
                                       mode, center, width, fine, coarse, laser)
-        self.start_btn.setEnabled(False)
-        self.check_coverage_btn.setEnabled(False)
-        self.bg_measure_btn.setEnabled(False)
-        self.pause_btn.setEnabled(True)
-        self.pause_btn.setChecked(False)
-        self.pause_btn.setText("Pause")
-        self.stop_btn.setEnabled(True)
-        self.status_label.setText("Status: Running...")
-        self.progress_bar.setValue(0)
+        self._set_running_state(True)
+
+    def append_measurement(self):
+        start = self.start_spin.value()
+        stop = self.stop_spin.value()
+        step = self.step_spin.value()
+        method = self.method_combo.currentText()
+        threshold = self.threshold_spin.value()
+        
+        # Focused Params
+        mode = self.mode_combo.currentText()
+        center = self.focus_center_spin.value()
+        width = self.focus_width_spin.value()
+        fine = self.fine_step_spin.value()
+        coarse = self.coarse_step_spin.value()
+        
+        # Laser
+        laser = self.laser_combo.currentText()
+        
+        # Status / Logic call
+        self.status_label.setText("Status: Appending Range...")
+        self._logic().append_measurement(start, stop, step, method, threshold,
+                                        mode, center, width, fine, coarse, laser)
+        self._set_running_state(True)
+
+    def _set_running_state(self, is_running):
+        """Enable/Disable buttons based on running state."""
+        self.start_btn.setEnabled(not is_running)
+        self.append_btn.setEnabled(not is_running)
+        self.check_coverage_btn.setEnabled(not is_running)
+        self.bg_measure_btn.setEnabled(not is_running)
+        self.pause_btn.setEnabled(is_running)
+        if is_running:
+            self.pause_btn.setChecked(False)
+            self.pause_btn.setText("Pause")
+        self.stop_btn.setEnabled(is_running)
+        if is_running:
+            self.status_label.setText("Status: Running...")
+            self.progress_bar.setValue(0)
+        else:
+            self.status_label.setText("Status: Finished")
+            self.progress_bar.setValue(100)
 
     def run_reanalysis(self):
         if self._current_view_voltage is not None:
@@ -634,13 +673,7 @@ class ZPLDistributionGui(GuiBase):
             self.status_label.setText("Status: Running...")
 
     def on_finished(self):
-        self.start_btn.setEnabled(True)
-        self.check_coverage_btn.setEnabled(True)
-        self.bg_measure_btn.setEnabled(True)
-        self.pause_btn.setEnabled(False)
-        self.stop_btn.setEnabled(False)
-        self.status_label.setText("Status: Finished")
-        self.progress_bar.setValue(100)
+        self._set_running_state(False)
 
     def run_fit(self):
         res = self._logic().fit_gaussian()

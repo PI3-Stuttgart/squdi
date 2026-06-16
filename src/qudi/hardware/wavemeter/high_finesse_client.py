@@ -8,15 +8,49 @@ import numpy as np
 import pickle
 import time
 
+import struct
+
+def recv_exact(sock, n):
+    """ Helper function to recv exactly n bytes or return None if EOF is hit """
+    data = bytearray()
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
+            return None
+        data.extend(packet)
+    return bytes(data)
+
+def recv_framed_msg(sock):
+    """ Receives a framed message: returns (flag, payload_bytes) """
+    raw_msglen = recv_exact(sock, 4)
+    if not raw_msglen:
+        return None, None
+    msglen = struct.unpack("!I", raw_msglen)[0]
+    data = recv_exact(sock, msglen)
+    if not data:
+        return None, None
+    return data[:1].decode('utf-8'), data[1:]
+
+def send_framed_msg(sock, flag, payload):
+    """ Sends a framed message: 4-byte length + 1-byte flag + pickled payload """
+    payload_bytes = pickle.dumps(payload)
+    flag_byte = flag.encode('utf-8')
+    msg = flag_byte + payload_bytes
+    length_prefix = struct.pack("!I", len(msg))
+    sock.sendall(length_prefix + msg)
+
 def connect(func):
     def wrapper(self, *arg, **kw):
         try:
             # Establish connection to TCP server and exchange data
             self.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Add a timeout so Qudi doesn't hang forever if server is down
+            self.tcp_client.settimeout(2.0)
             self.tcp_client.connect((self.host_ip, self.server_port))
             res = func(self, *arg, **kw)
-        except:
-            return 
+        except Exception as e:
+            self.log.error(f"Wavemeter connection error: {e}")
+            return None
         finally:
             self.tcp_client.close()
         return res
@@ -54,19 +88,26 @@ class HighFinesseWavemeterClient(WavemeterInterface):
     @QtCore.Slot(str, str)
     def send_request(self, request, action=None):
         action = None if action == '' else action
-        self.tcp_client.sendall(request.encode())
-        received = self.tcp_client.recv(10024)
-        response = pickle.loads(received[1:])
-        flag = received[:1].decode()
+        send_framed_msg(self.tcp_client, 'q', request)
+        
+        flag, response_bytes = recv_framed_msg(self.tcp_client)
+        if not flag:
+            return None
+            
+        response = pickle.loads(response_bytes)
+        
         if flag == 'c':
             #get wavelength
             self.wlm_time = np.vstack((self.wlm_time, response))
             return response[0]
         elif flag == 'k':
             if action != None:
-                self.tcp_client.sendall(action.encode())
+                send_framed_msg(self.tcp_client, 'a', action)
+                # Wait for acknowledgment
+                ack_flag, ack_bytes = recv_framed_msg(self.tcp_client)
+                return pickle.loads(ack_bytes) if ack_flag else None
             else:
-                print("Set action! ")
+                self.log.error("Set action! ")
         elif flag == 'u':
             return response
     

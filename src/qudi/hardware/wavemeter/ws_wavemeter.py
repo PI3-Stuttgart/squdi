@@ -48,19 +48,33 @@ class HardwarePull(QtCore.QObject):
         self._parentclass = parentclass
 
 
+    @QtCore.Slot(bool)
     def handle_timer(self, state_change):
         """ Threaded method that can be called by a signal from outside to start the timer.
 
-        @param bool state: (True) starts timer, (False) stops it.
+        @param bool state_change: (True) starts timer, (False) stops it.
         """
 
         if state_change:
-            self.timer = QtCore.QTimer()
-            self.timer.timeout.connect(self._measure_thread)
-            self.timer.start(self._parentclass._measurement_timing)
+            if getattr(self, 'timer', None) is None:
+                self.timer = QtCore.QTimer(self)
+                self.timer.timeout.connect(self._measure_thread)
+            
+            # Start timer with conversion to ms if it is in seconds
+            timing = self._parentclass._measurement_timing
+            timing_ms = int(timing * 1000) if timing < 10 else int(timing)
+            self.timer.start(timing_ms)
         else:
-            if hasattr(self, 'timer'):
+            if getattr(self, 'timer', None) is not None:
                 self.timer.stop()
+
+    @QtCore.Slot()
+    def cleanup(self):
+        """ Stops and deletes the timer safely in the correct thread. """
+        if getattr(self, 'timer', None) is not None:
+            self.timer.stop()
+            self.timer.deleteLater()
+            self.timer = None
 
     def _measure_thread(self):
         """ The threaded method querying the data from the wavemeter.
@@ -138,6 +152,9 @@ class HighFinesseWavemeter(WavemeterInterface):
             self.stop_acquisition()
             
         if hasattr(self, 'hardware_thread'):
+            # Safely stop and delete timer in the hardware thread
+            QtCore.QMetaObject.invokeMethod(self._hardware_pull, 'cleanup', QtCore.Qt.BlockingQueuedConnection)
+            
             self.hardware_thread.quit()
             self.hardware_thread.wait()
             try:

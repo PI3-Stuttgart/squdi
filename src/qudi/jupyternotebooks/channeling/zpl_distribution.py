@@ -5,7 +5,7 @@ import numpy as np
 import json
 import os
 from toptica.lasersdk.dlcpro.v2_0_3 import DLCpro,LaserHead,  NetworkConnection, DeviceNotFoundError
-scanning_probe_logic_ = scanning_probe_logic #galvo_scanning_probe_logic
+scanning_probe_logic_ = galvo_scanning_probe_logic
 ple_gui_ = ple_gui #_qinu
 scanner_gui_ = galvo_scanner_gui
 dl_pro_ = dl_pro #_qinu
@@ -37,7 +37,7 @@ dl_pro_
 # Parameters
 offset_min_v = 20  # GHz to Hz
 offset_max_v = 120  # GHz to Hz
-steps = 30
+steps = 70
 # num_steps = int((offset_max_v - offset_min_v) / step) + 1  # +1 for inclusive range
 
 w0 = 484.130 #THz
@@ -45,7 +45,7 @@ w0 = 484.130 #THz
 offsets = np.linspace(offset_min_v, offset_max_v, steps)
 #%%
 scan_names = {}
-experiment_name = "scan_40_40_250_100kev-number5_deepest_trench_etched-total"
+experiment_name = "scan_250_100kev_deepest_310nm-numer5"
 # Loop through frequencies
 for i, v in enumerate(offsets):
     # Set laser frequency

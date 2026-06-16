@@ -41,6 +41,7 @@ class HardwarePull(QtCore.QObject):
         # remember the reference to the parent class to access functions ad settings
         self._parentclass = parentclass
 
+    @QtCore.Slot(bool)
     def handle_timer(self, state_change):
         """ Threaded method that can be called by a signal from outside to start
             the timer.
@@ -49,12 +50,25 @@ class HardwarePull(QtCore.QObject):
         """
 
         if state_change:
-            self.timer = QtCore.QTimer()
-            self.timer.timeout.connect(self._measure_thread)
-            self.timer.start(self._parentclass._measurement_timing)
+            if getattr(self, 'timer', None) is None:
+                self.timer = QtCore.QTimer(self)
+                self.timer.timeout.connect(self._measure_thread)
+            
+            # Start timer with conversion to ms if it is in seconds
+            timing = self._parentclass._measurement_timing
+            timing_ms = int(timing * 1000) if timing < 10 else int(timing)
+            self.timer.start(timing_ms)
         else:
-            if hasattr(self, 'timer'):
+            if getattr(self, 'timer', None) is not None:
                 self.timer.stop()
+
+    @QtCore.Slot()
+    def cleanup(self):
+        """ Stops and deletes the timer safely in the correct thread. """
+        if getattr(self, 'timer', None) is not None:
+            self.timer.stop()
+            self.timer.deleteLater()
+            self.timer = None
 
     def _measure_thread(self):
         """ The threaded method querying the data from the wavemeter. """
@@ -100,25 +114,38 @@ class WavemeterDummy(WavemeterInterface):
         self.log.warning("This module has not been tested on the new qudi core."
                          "Use with caution and contribute bug fixed back, please.")
         # create an indepentent thread for the hardware communication
-        # self.hardware_thread = QtCore.QThread()
+        self.hardware_thread = QtCore.QThread()
 
-        # # create an object for the hardware communication and let it live on the new thread
-        # self._hardware_pull = HardwarePull(self)
-        # self._hardware_pull.moveToThread(self.hardware_thread)
+        # create an object for the hardware communication and let it live on the new thread
+        self._hardware_pull = HardwarePull(self)
+        self._hardware_pull.moveToThread(self.hardware_thread)
 
-        # # connect the signals in and out of the threaded object
-        # self.sig_handle_timer.connect(self._hardware_pull.handle_timer)
+        # connect the signals in and out of the threaded object
+        self.sig_handle_timer.connect(self._hardware_pull.handle_timer)
 
         # start the event loop for the hardware
-        # self.hardware_thread.start()
+        self.hardware_thread.start()
 
     def on_deactivate(self):
         """ Deactivate module.
         """
+        if self.module_state() != 'idle' and self.module_state() != 'deactivated':
+            self.stop_acquisition()
+            
         self.module_state.unlock()
-        # self.stop_acqusition()
-        # self.hardware_thread.quit()
-        # self.sig_handle_timer.disconnect()
+        
+        if hasattr(self, 'hardware_thread'):
+            # Safely stop and delete timer in the hardware thread
+            QtCore.QMetaObject.invokeMethod(self._hardware_pull, 'cleanup', QtCore.Qt.BlockingQueuedConnection)
+            
+            self.hardware_thread.quit()
+            self.hardware_thread.wait()
+            try:
+                self.sig_handle_timer.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            del self.hardware_thread
+            del self._hardware_pull
 
     #############################################
     # Methods of the main class

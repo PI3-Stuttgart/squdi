@@ -16,7 +16,7 @@ class iBeamSmart(Base):
     """
     port = ConfigOption(name='port', missing='error')
     _power = StatusVar('power', 0)
-    channel = 2
+    channel = 1
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """ Initalize the verdieLaser object.
