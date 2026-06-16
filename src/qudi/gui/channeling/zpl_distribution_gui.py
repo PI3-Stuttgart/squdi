@@ -76,6 +76,7 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigUpdatePlot.connect(self.update_plot)
         self._logic().sigMeasurementFinished.connect(self.on_finished)
         self._logic().sigScanCompleted.connect(self.on_scan_completed)
+        self._logic().sigMeasurementWarning.connect(self.on_measurement_warning)
         self._logic().sigWavelengthCheckFinished.connect(self.on_coverage_check_finished)
         self._logic().sigBackgroundCaptured.connect(self.on_background_captured)
         self._logic().sigSavingFinished.connect(self.on_saving_finished)
@@ -85,6 +86,7 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigUpdatePlot.disconnect(self.update_plot)
         self._logic().sigMeasurementFinished.disconnect(self.on_finished)
         self._logic().sigScanCompleted.disconnect(self.on_scan_completed)
+        self._logic().sigMeasurementWarning.disconnect(self.on_measurement_warning)
         self._logic().sigWavelengthCheckFinished.disconnect(self.on_coverage_check_finished)
         self._logic().sigBackgroundCaptured.disconnect(self.on_background_captured)
         self._logic().sigSavingFinished.disconnect(self.on_saving_finished)
@@ -821,6 +823,16 @@ class ZPLDistributionGui(GuiBase):
              if res:
                  self.display_scan(self._current_view_voltage, res['image'], res['spots'])
 
+    @QtCore.Slot(str)
+    def on_measurement_warning(self, msg):
+        self.status_label.setText("Status: Paused (Wavemeter Error)")
+        self.pause_btn.setChecked(True)
+        self.pause_btn.setText("Resume")
+        
+        # Pop up a warning message to the user
+        QtWidgets.QMessageBox.warning(self._mw, "Wavemeter Warning", msg)
+
+    @QtCore.Slot(float, object, list)
     def on_scan_completed(self, voltage, image, spots):
         self.status_label.setText(f"Status: Scan at {voltage:.2f} V completed. Found {len(spots)} spots.")
         

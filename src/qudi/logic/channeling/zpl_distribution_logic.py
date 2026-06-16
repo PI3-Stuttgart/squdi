@@ -58,6 +58,7 @@ class ZPLDistributionLogic(LogicBase):
     sigUpdatePlot = QtCore.Signal(object)
     sigMeasurementFinished = QtCore.Signal()
     sigScanCompleted = QtCore.Signal(float, object, list) # voltage, image, spots
+    sigMeasurementWarning = QtCore.Signal(str) # warning message when wavemeter reading fails
     sigWavelengthCheckFinished = QtCore.Signal(object) # (start_freq, stop_freq) or None if failed
     sigBackgroundCaptured = QtCore.Signal(object)  # background image ndarray or None
     sigSavingFinished = QtCore.Signal(bool, str)  # success, message
@@ -460,39 +461,58 @@ class ZPLDistributionLogic(LogicBase):
                 # 1b. Measure Wavemeter (if connected)
                 frequency_ghz = np.nan
                 if self._wavemeter.is_connected:
-                    try:
-                        wm = self._wavemeter()
-                        val = np.nan
-                        
-                        max_retries = 10
-                        for attempt in range(max_retries):
-                            try:
-                                if hasattr(wm, 'get_current_wavelength'):
-                                    val = float(wm.get_current_wavelength())
-                                elif hasattr(wm, 'get_wavelength'):
-                                    val = float(wm.get_wavelength())
-                                    
-                                if val > 0:
-                                    break
-                            except Exception:
-                                pass
-                                
-                            if attempt < max_retries - 1:
-                                time.sleep(0.1)
-                        
-                        if val > 0:
-                            # Heuristic for units: ZPL is ~470 THz (637 nm)
-                            if val > 550:
-                                 freq_thz = 299792.458 / val
-                            else:
-                                 freq_thz = val
+                    while True:
+                        if self._stop_requested:
+                            break
                             
-                            frequency_ghz = (freq_thz - self._zero_frequency) * 1000.0
-                            self.log.info(f"Measured Frequency: {frequency_ghz:.4f} GHz (Raw: {val})")
-                        else:
-                            self.log.warning(f"No valid wavemeter reading at {v:.4f} V (Raw: {val})")
-                    except Exception as e:
-                        self.log.warning(f"Could not read wavemeter: {e}")
+                        try:
+                            wm = self._wavemeter()
+                            val = np.nan
+                            
+                            max_retries = 10
+                            for attempt in range(max_retries):
+                                try:
+                                    if hasattr(wm, 'get_current_wavelength'):
+                                        val = float(wm.get_current_wavelength())
+                                    elif hasattr(wm, 'get_wavelength'):
+                                        val = float(wm.get_wavelength())
+                                        
+                                    if val > 0:
+                                        break
+                                except Exception:
+                                    pass
+                                    
+                                if attempt < max_retries - 1:
+                                    time.sleep(0.1)
+                            
+                            if val > 0:
+                                # Heuristic for units: ZPL is ~470 THz (637 nm)
+                                if val > 550:
+                                     freq_thz = 299792.458 / val
+                                else:
+                                     freq_thz = val
+                                
+                                frequency_ghz = (freq_thz - self._zero_frequency) * 1000.0
+                                self.log.info(f"Measured Frequency: {frequency_ghz:.4f} GHz (Raw: {val})")
+                                break # Exit the retry loop on success
+                            else:
+                                msg = f"No valid wavemeter reading at {v:.4f} V (Raw: {val}). Measurement paused."
+                                self.log.warning(msg)
+                                if hasattr(self, 'sigMeasurementWarning'):
+                                    self.sigMeasurementWarning.emit(msg)
+                                self.pause_measurement()
+                        except Exception as e:
+                            msg = f"Could not read wavemeter: {e}. Measurement paused."
+                            self.log.warning(msg)
+                            if hasattr(self, 'sigMeasurementWarning'):
+                                self.sigMeasurementWarning.emit(msg)
+                            self.pause_measurement()
+                            
+                        # Wait in pause state until resumed or stopped
+                        while self._is_paused:
+                            if self._stop_requested:
+                                break
+                            time.sleep(0.5)
                 
                 # 2. Run Spatial Scan
                 self.log.info("Starting spatial scan...")
