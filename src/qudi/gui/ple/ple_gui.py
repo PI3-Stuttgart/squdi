@@ -234,10 +234,11 @@ class PLEScanGui(GuiBase):
             )
 
         # iBeam Smart repump widget
-        self._ibeam_repump_logic = self._ibeam_repump_logic()
-        if self._ibeam_repump_logic is not None:
-            self._mw.add_dock_widget("IBeamRepump")
-            self._init_ibeam_repump()
+        # self._ibeam_repump_logic = self._ibeam_repump_logic()
+        # if self._ibeam_repump_logic is not None:
+        #     self._mw.add_dock_widget("IBeamRepump")
+        #     self._init_ibeam_repump()
+        self._ibeam_repump_logic = None
 
         # PLE tracking
         self._mw.actionTrackPLE.triggered.connect(

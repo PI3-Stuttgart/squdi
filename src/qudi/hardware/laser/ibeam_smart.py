@@ -31,24 +31,24 @@ class iBeamSmart(Base):
     def on_activate(self):
         """ Activate module.
         """
-        self.port = serial.Serial(port = self.port, 
-                                    baudrate = 115200, 
-                                    bytesize = serial.EIGHTBITS, 
-                                    stopbits = serial.STOPBITS_ONE, 
-                                    timeout=5, 
-                                    parity=serial.PARITY_NONE)
-
-        
-        # try opening the port
         self.portOK = False
         try:
+            port_name = self.port
+            self.port = serial.Serial(port = None, 
+                                        baudrate = 115200, 
+                                        bytesize = serial.EIGHTBITS, 
+                                        stopbits = serial.STOPBITS_ONE, 
+                                        timeout=5, 
+                                        parity=serial.PARITY_NONE)
+            # Store the port name to be used for open()
+            self.port.port = port_name
             self.port.open()
             self.portOK = True
-        except:
-            print("The iBeam smart port did not open")
+        except Exception as e:
+            self.log.error(f"The iBeam smart port did not open: {e}")
             print("Please check the connection")
-            self.port.close()
-            #traceback.print_exc()  # print the exception
+            if hasattr(self, 'port') and self.port.is_open:
+                self.port.close()
         
         # put laser in a consistent mode
         if self.portOK:
