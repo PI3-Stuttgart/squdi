@@ -52,19 +52,23 @@ def ret_ret_mcas(pdc):
         with qua.program() as myprog:
             with infinite_loop_():
                 ou.init_program()
+                ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
+                ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
+                ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
+                ou.pause(10_000)
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(mcas)
+                        sna.crc(mcas, set_laser_power=False)
 
                         ### Init in e1 or e2 ###
-                        sna.electron_init(mcas, Init_state)
+                        sna.electron_init(mcas, Init_state, set_laser_power=False)
 
                         ### first readout e1 or e2 ###
-                        sna.ssr(mcas, "e1" if Init_state == "e2" else "e2")
+                        sna.ssr(mcas, "e1" if Init_state == "e2" else "e2", set_laser_power=False)
                         # ou.pause("wait_between_SSR")
                         ### second readout e1 or e2 ###
-                        sna.ssr(mcas, SSR_state)
-                        sna.csr(mcas)
+                        sna.ssr(mcas, SSR_state, set_laser_power=False)
+                        sna.csr(mcas, set_laser_power=False)
 
         mcas.program = myprog
         return mcas
@@ -73,7 +77,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
@@ -97,8 +101,9 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = True
-    nuclear.ple_refocus_interval = 10
+    nuclear.do_ple_refocus_A1 = False
+    nuclear.ple_refocus_interval = 5 * 60
+    nuclear.lock_laser_to_wavemeter = True
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
@@ -108,14 +113,10 @@ def settings(pdc={}):
     B_amp = np.arange(200, 300, 5)  # mT
     nuclear.parameters = OrderedDict(
         (
-            # ("B_phi", [0]),
-            # ("B_theta", [0]),
-            # ("B_amp", B_amp),
-            ("sweeps", range(10)),
+            ("sweeps", range(50)),
             ("click_channel", [2]),
             ("Init_state", ["e1", "e2"]),
             ("SSR_state", ["e1", "e2"]),
-            # ("wait_between_SSR", [100]),  # ns
         )
     )
     nuclear.number_of_simultaneous_measurements = 1

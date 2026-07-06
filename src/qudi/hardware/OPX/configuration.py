@@ -101,7 +101,7 @@ AOM_power_delay_520 = 0 * u.ns
 AOM_power_delay_575 = 0 * u.ns
 AOM_power_delay_620 = 0 * u.ns
 # MW/RF
-mw_delay = 0 * u.ns
+mw_delay = 1_015 * u.ns
 rf_delay = 0 * u.ns
 
 counter_delay = 809 * u.ns
@@ -176,8 +176,8 @@ config = {
             "digitalInputs": {
                 "switch": {
                     "port": ("con1", 1),
-                    "delay": 113 * u.ns,
-                    "buffer": 25 * u.ns,
+                    "delay": (134 * u.ns) + mw_delay,
+                    "buffer": 27 * u.ns,
                 },
             },
             "operations": {

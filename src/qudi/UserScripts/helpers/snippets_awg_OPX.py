@@ -23,6 +23,13 @@ class QubitState(str, Enum):
     e2 = "e2"
 
 
+class Gate(str, Enum):
+    """Named pulse labels."""
+
+    pi = "pi"
+    pi_half = "pi_half"
+
+
 class UpdateableDataclass:
     """Small mixin that updates dataclass fields only for non-``None`` inputs."""
 
@@ -36,8 +43,15 @@ class UpdateableDataclass:
 __pause_lp__: int = 10_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 15  # nW
-GENERAL_POWER_B2 = 15  # nW
+GENERAL_POWER_A1 = 5.5  # nW # det
+GENERAL_POWER_B2 = 4  # nW
+
+
+@dataclass
+class ELECTRON_PARAMS(UpdateableDataclass):
+    """Default parameters for charge-state readout (CSR) helper calls."""
+
+    electron_rabi_period: int = 4_060  # ns
 
 
 @dataclass
@@ -46,10 +60,10 @@ class CRC_PARAMS(UpdateableDataclass):
 
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW
-    laser_power_repump: float | str = int(20e3)  # nW
-    probe_len: int | str = 100_000  # ns # TODO: max 1ms otherwise parallel issues with counting
+    laser_power_repump: float | str = int(5e3)  # nW
+    probe_len: int | str = 1e6  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
-    threshold: int | str = 4  # cts
+    threshold: int | str = 6  # cts
     threshold_repump: int | str = 1  # cts
     wait_before_repump: int | str = int(50e3)  # ns
     wait_after_repump: int | str = int(50e3)  # ns
@@ -71,9 +85,19 @@ class SSR_PARAMS(UpdateableDataclass):
     """Default parameters for single-shot readout (SSR) helper calls."""
 
     state: QubitState | str = QubitState.e1
-    duration: int | str = 50_000  # ns
-    laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW # 620
-    laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW # 620_det
+    duration: int | str = 100_000  # 50_000  # ns
+    laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW # 620_det
+    laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW # 620
+
+
+@dataclass
+class ELECTRON_INIT_PARAMS(UpdateableDataclass):
+    """Default parameters for resonant electron-state initialization."""
+
+    state: QubitState = QubitState.e1
+    duration: int = int(500e3)  # ns (300 us)
+    laser_power_A1: float = GENERAL_POWER_A1  # 7  # nW
+    laser_power_B2: float = GENERAL_POWER_B2  # 7  # nW
 
 
 @dataclass
@@ -91,16 +115,6 @@ class OPTICAL_PI_PULSE_PARAMS(UpdateableDataclass):
 
     couting_duration: int = 30  # ns
     laser_power: float = 50  # nW
-
-
-@dataclass
-class ELECTRON_INIT_PARAMS(UpdateableDataclass):
-    """Default parameters for resonant electron-state initialization."""
-
-    state: QubitState = QubitState.e1
-    duration: int = 300_000  # ns (100 us)
-    laser_power_A1: float = GENERAL_POWER_A1  # 7  # nW
-    laser_power_B2: float = GENERAL_POWER_B2  # 7  # nW
 
 
 def crc(
@@ -393,10 +407,28 @@ def optical_pi_pulse(
         )
     align()
     ou.gate_trigger()
-    ou.laser_pulse("Laser_620_pi", duration_ns=16)
+    # ou.laser_pulse("Laser_620_pi", duration_ns=16)
+    ou.laser_pulse("Laser_620_pi", duration_ns=50)
     ou.pause(params.couting_duration, align_before=False)
     ou.memory_trigger()
     align()
+
+
+### QUBIT manupulation
+
+
+def electron_gate(mcas: MultiChSeq, gate: str | Gate, electron_rabi_period: Optional[int] = None):
+    params = ELECTRON_PARAMS()
+    params.update(electron_rabi_period=electron_rabi_period)
+    ou: NuclearOpsOPXUtils = mcas.ou
+
+    match gate:
+        case Gate.pi:
+            pulse_duration = params.electron_rabi_period / 2
+        case Gate.pi_half:
+            pulse_duration = params.electron_rabi_period / 4
+
+    ou.MW_pulse("NV", pulse_duration)
 
 
 def scan_laser_to_target(

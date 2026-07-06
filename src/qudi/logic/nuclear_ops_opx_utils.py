@@ -76,7 +76,7 @@ class NuclearOpsOPXUtils(LogicBase):
 
     laser_elements: list[str] = ["Laser_520", "Laser_620", "Laser_620_pi", "Laser_620_freq"]
     quantity_types: list[str] = ["power", "freq"]
-    SLOW_CHANGING_PARAMETERS: list[str] = ["B_amp", "B_theta", "B_phi"]
+    SLOW_CHANGING_PARAMETERS: list[str] = ["B_amp", "B_theta", "B_phi", "MW_amp"]
     fast_sweeps_qua: OrderedDict[str, FastSweepQUA] = OrderedDict()
     current_iterator_df: pd.DataFrame
     current_laser_power_qua: dict = {}
@@ -269,6 +269,9 @@ class NuclearOpsOPXUtils(LogicBase):
         """
         return duration_ns * u.ns
 
+    def MW_pulse(self, element: str, duration_ns, amplitude: float = 1, reset_phase=False):
+        play("cw" * amp(amplitude), element, duration=self.duration_ns_to_qua(duration_ns))
+
     def play_chunked(self, pulse: object, laser_name: str, duration_ns: float) -> None:
         """Play a single-laser pulse, splitting long durations into chunks.
 
@@ -456,24 +459,38 @@ class NuclearOpsOPXUtils(LogicBase):
             duration=self.duration_ns_to_qua(self.TT_TRIGGER_LENGTH_NS),
         )
 
-    def pause(self, duration_ns: int | QuaVariable[int] | str, align_before: bool = True) -> None:
+    def pause(
+        self,
+        duration_ns: int | QuaVariable[int] | str,
+        align_before: bool = True,
+        elements: str | list[str] | None = None,
+    ) -> None:
         """
         Insert a delay by playing no pulses for the specified duration.
         align() before is default, so the wait time starts after the pulse before ends.
         Without an align the waiting time starts with the last align in the code (For example the beginning of the last pulse)"""
 
         _duration_ns, _duration_ns_qua = self._get_value_from_key(duration_ns)
-        if align_before:
-            align()
-        wait(
-            self.duration_ns_to_qua(int(_duration_ns))
-            if _duration_ns is not None
-            else _duration_ns_qua
-        )
+
+        if elements is None:
+            if align_before:
+                align()
+            wait(
+                self.duration_ns_to_qua(int(_duration_ns))
+                if _duration_ns is not None
+                else _duration_ns_qua
+            )
+        else:
+            wait(
+                self.duration_ns_to_qua(int(_duration_ns))
+                if _duration_ns is not None
+                else _duration_ns_qua,
+                elements=elements,
+            )
 
     def init_program(self) -> None:
-        self.i_1 = declare(fixed)
-        self.i_2 = declare(fixed)
+        self.i_1 = declare(int)  # TODO: could itbe int, or dynamic?
+        self.i_2 = declare(int)
         self.j = declare(int)
         self.times = declare(int, size=1000)
         self.crc_attempts = declare(int)

@@ -9,6 +9,7 @@ from qm.qua import (
     for_,
     for_each_,
     if_,
+    measure,
     play,
     program,
     save,
@@ -100,10 +101,15 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
             align()
             set_dc_offset("Laser_620_freq", "single", min_ls_volt)
             with for_(i, 0, i < 10_000, i + 1):
-                play("pulse" * amp(volt_520 * 2), "Laser_520", duration=1 * u.s / 10_000)
+                play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10_000)
 
             # wait(1 * u.s)
+
+            # set_dc_offset("Laser_620_freq", "single", crc_laser_voltage)
+            # wait(1 * u.s)
             # crc(volt_620, volt_520, counts, counts_st)
+            # set_dc_offset("Laser_620_freq", "single", min_ls_volt)
+            # wait(300 * u.ms)
 
             # with for_each_(vLSBS, back_scan_ls_volt_array):
             #    set_dc_offset("Laser_620_freq", "single", vLSBS)
@@ -157,7 +163,7 @@ def crc(
     counts,
     counts_st,
     crc_pulse_len=500 * u.us,
-    crc_threshold=8,
+    crc_threshold=40,
     crc_threshold_repump=3,
     crc_repump_len=1 * u.ms,
     max_attempts=1000,

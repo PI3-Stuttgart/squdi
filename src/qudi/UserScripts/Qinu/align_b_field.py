@@ -149,8 +149,8 @@ def settings(pdc={}):
     B_theta = np.arange(0, 360, 10)
     nuclear.parameters = OrderedDict(
         (
-            ("B_phi", [0]),
-            ("B_theta", B_theta),
+            ("B_phi", [255, 260, 265, 270, 275, 280, 285]),
+            ("B_theta", [110, 115, 120, 125, 130, 135, 140]),
             ("B_amp", [150]),
             ("sweeps", range(6)),
             ("Laser_620_power", [15]),  # nW

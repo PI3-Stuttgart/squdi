@@ -113,7 +113,8 @@ class NuclearOPs(DataGeneration):
 
         self.do_crc: bool = False
 
-        self.do_confocal_refocus = False
+        self.do_confocal_refocus_red: bool = False
+        self.do_confocal_refocus_green: bool = False
         self.measure_A1_power: bool = False
         self.measure_A2_power: bool = False
 
@@ -128,7 +129,7 @@ class NuclearOPs(DataGeneration):
 
         self.manual_pause = False
         self.hashed = False
-        self.start_pause_time = 2.75
+        self.start_pause_time = 1.75
         self.end_pause_time = 6.25
 
         # FIXME: Go through all that and set it correctly from QUDI
@@ -431,14 +432,20 @@ class NuclearOPs(DataGeneration):
                             self.current_iterator_df["click_channel"].unique()[0]
                         )
 
+                    if "B_amp" in self.current_iterator_df.keys():
+                        self.ramp_magnet()
+
+                    if self.do_confocal_refocus_green:
+                        self.refocus_confocal_green(abort)
+
                     if self.do_ple_refocus_A1:
                         self.refocus_ple_A1(abort)
 
+                    if self.do_confocal_refocus_red:
+                        self.refocus_confocal_red(abort)
+
                     if "pulse_shape_ppg" in self.current_iterator_df.keys():
                         self.update_waveform_ppg(abort)
-
-                    if "B_amp" in self.current_iterator_df.keys():
-                        self.ramp_magnet()
 
                     self.queue.log.info("Cun: Starting measurement sequence")
                     self.setup_rf(self.current_iterator_df, hashed=self.hashed)
@@ -702,6 +709,207 @@ class NuclearOPs(DataGeneration):
             time.sleep(0.1)
         time.sleep(3)
 
+    def refocus_confocal_green(self, abort):
+        now = time.time()
+        delta_t = now - self.last_red_confocal_refocus
+
+        if delta_t < self.confocal_refocus_interval:
+            remaining = max(0, self.confocal_refocus_interval - delta_t)
+            self.queue.log.info(f"Not time for confocal refocus yet. Time left: {remaining:.1f}s")
+            return False
+
+        self.queue.log.info("--------- doing confocal refocus ---------")
+
+        success = self._run_confocal_sequence_green(abort)
+
+        if success:
+            self.last_red_confocal_refocus = time.time()
+            self.performedRefocus = True
+
+        return success
+
+    def refocus_confocal_red(self, abort) -> bool:
+        now = time.time()
+        delta_t = now - self.last_red_confocal_refocus
+
+        if delta_t < self.confocal_refocus_interval:
+            remaining = max(0, self.confocal_refocus_interval - delta_t)
+            self.queue.log.info(f"Not time for confocal refocus yet. Time left: {remaining:.1f}s")
+            return False
+
+        self.queue.log.info("--------- doing confocal refocus ---------")
+
+        success = self._run_confocal_sequence_red(abort)
+
+        if success:
+            self.last_red_confocal_refocus = time.time()
+            self.performedRefocus = True
+
+        return success
+
+    def _run_confocal_sequence_red(self, abort) -> bool:
+        """Execute the SnV PLE refocus sequence."""
+        REPUMP_TIME_S = 2
+        OPTIMIZER_POLL_S = 0.1
+        AFTER_OPTIMIZER_WAIT_S = 0.5
+        LOCK_SETTLE_TIME_S = 2.0
+        RESONANT_POWER_NW = 10
+
+        q = self.queue
+
+        def wait_or_abort(seconds, step=0.1):
+            """Sleep in small increments and return early if ``abort`` is set."""
+            end_time = time.time() + seconds
+            while time.time() < end_time:
+                if abort.is_set():
+                    q.log.info("Confocal refocus aborted.")
+                    return False
+                time.sleep(min(step, end_time - time.time()))
+            return True
+
+        if abort.is_set():
+            return False
+        q.awg.run_cw_mode()
+        # q.awg.stop_awgs()
+
+        if not snippets_awg.PLE_REFOCUS_PARAMS.use_gui_powers:
+            q.ao.set_setpoint("Laser_620", RESONANT_POWER_NW * 1e-9)  # nW -> W
+            q.ao.set_setpoint(
+                "Laser_620_pi", snippets_awg.PLE_REFOCUS_PARAMS.laser_power_B2 * 1e-9
+            )  # nW -> W
+            q.ao.set_setpoint(
+                "Laser_520", snippets_awg.PLE_REFOCUS_PARAMS.laser_power_repump * 1e-9
+            )  # nW -> W
+        time.sleep(0.1)
+
+        # Green repump
+
+        q.do.set_state("Laser_520", "on")
+        if not wait_or_abort(REPUMP_TIME_S):
+            q.do.set_state("Laser_520", "off")
+            return False
+        q.do.set_state("Laser_520", "off")
+
+        if abort.is_set():
+            return False
+
+        # Start optimization
+        try:
+            q.optimizer.toggle_optimize(True)
+            time.sleep(OPTIMIZER_POLL_S)
+            q.do.set_state("Laser_620", "on")
+            while q.optimizer.optimizer_running:
+                if abort.is_set():
+                    q.log.info("Abort during confocal optimization.")
+                    q.optimizer.toggle_optimize(False)
+                    return False
+                time.sleep(OPTIMIZER_POLL_S)
+        finally:
+            q.do.set_state("Laser_620", "off")
+
+        q.do.set_state("Laser_520", "on")
+        if not wait_or_abort(REPUMP_TIME_S):
+            q.do.set_state("Laser_520", "off")
+            return False
+        q.do.set_state("Laser_520", "off")
+
+        if abort.is_set():
+            return False
+
+        # Start optimization
+        try:
+            q.optimizer.toggle_optimize(True)
+            time.sleep(OPTIMIZER_POLL_S)
+            q.do.set_state("Laser_620", "on")
+            while q.optimizer.optimizer_running:
+                if abort.is_set():
+                    q.log.info("Abort during confocal optimization.")
+                    q.optimizer.toggle_optimize(False)
+                    return False
+                time.sleep(OPTIMIZER_POLL_S)
+        finally:
+            q.do.set_state("Laser_620", "off")
+
+        """
+        q.ple_optimize_logic.toggle_optimize(True)
+        while q.ple_optimize_logic.optimizer_running:
+            if abort.is_set():
+                q.log.info("Abort during PLE optimization.")
+                return False
+            time.sleep(OPTIMIZER_POLL_S)
+        """
+
+        q.ao.set_setpoint("Laser_620", 20 * 1e-9)  # nW -> W
+
+        if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
+            return False
+
+        if not wait_or_abort(LOCK_SETTLE_TIME_S):
+            return False
+
+        return True
+
+    def _run_confocal_sequence_green(self, abort) -> bool:
+        """Execute the SnV PLE refocus sequence."""
+        REPUMP_TIME_S = 2
+        OPTIMIZER_POLL_S = 0.1
+        AFTER_OPTIMIZER_WAIT_S = 0.5
+        LOCK_SETTLE_TIME_S = 2.0
+        RESONANT_POWER_NW = 10
+
+        q = self.queue
+
+        def wait_or_abort(seconds, step=0.1):
+            """Sleep in small increments and return early if ``abort`` is set."""
+            end_time = time.time() + seconds
+            while time.time() < end_time:
+                if abort.is_set():
+                    q.log.info("Confocal refocus aborted.")
+                    return False
+                time.sleep(min(step, end_time - time.time()))
+            return True
+
+        if abort.is_set():
+            return False
+        q.awg.run_cw_mode()
+        # q.awg.stop_awgs()
+
+        # Green start
+        q.do.set_state("Laser_520", "on")
+
+        if abort.is_set():
+            return False
+
+        # Start optimization
+        try:
+            q.optimizer.toggle_optimize(True)
+            time.sleep(OPTIMIZER_POLL_S)
+            while q.optimizer.optimizer_running:
+                if abort.is_set():
+                    q.log.info("Abort during confocal optimization.")
+                    q.optimizer.toggle_optimize(False)
+                    return False
+                time.sleep(OPTIMIZER_POLL_S)
+        finally:
+            q.do.set_state("Laser_520", "off")
+
+        """
+        q.ple_optimize_logic.toggle_optimize(True)
+        while q.ple_optimize_logic.optimizer_running:
+            if abort.is_set():
+                q.log.info("Abort during PLE optimization.")
+                return False
+            time.sleep(OPTIMIZER_POLL_S)
+        """
+
+        if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
+            return False
+
+        if not wait_or_abort(LOCK_SETTLE_TIME_S):
+            return False
+
+        return True
+
     def refocus_ple_A1(self, abort) -> bool:
         """Run SnV PLE refocus only when the refocus interval has elapsed."""
         now = time.time()
@@ -781,7 +989,8 @@ class NuclearOPs(DataGeneration):
         if not wait_or_abort(AFTER_OPTIMIZER_WAIT_S):
             return False
 
-        self.start_laser_lock()
+        if self.lock_laser_to_wavemeter:
+            self.start_laser_lock()
 
         if not wait_or_abort(LOCK_SETTLE_TIME_S):
             return False
