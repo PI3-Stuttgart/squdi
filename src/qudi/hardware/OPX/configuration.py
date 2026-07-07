@@ -53,7 +53,7 @@ relaxation_time = 300 * u.ns
 wait_for_initialization = 5 * relaxation_time
 
 # MW parameters
-mw_amp_NV = 0.2  # in units of volts
+mw_amp_NV = 0.5  # in units of volts
 mw_len_NV = 1000 * u.ns
 
 x180_amp_NV = 0.4  # in units of volts
@@ -63,8 +63,8 @@ x90_amp_NV = x180_amp_NV / 2  # in units of volts
 x90_len_NV = x180_len_NV  # in units of ns
 
 # RF parameters
-rf_frequency = 10 * u.MHz
-rf_amp = 0.1
+rf_frequency: float = 10 * u.MHz
+rf_amp = 0.5
 rf_length = 1000
 
 # AOM 620 det parameters

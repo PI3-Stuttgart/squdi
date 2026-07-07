@@ -79,6 +79,7 @@ def ret_ret_mcas(pdc):
                         ou.pause("cooldown_time")
 
         mcas.program = myprog
+        # mcas.qm.set_mixer_correction("mixer_NV", intermediate_frequency=)
 
         return mcas
 
@@ -136,9 +137,9 @@ def settings(pdc={}):
             # ("B_amp", [140]),
             ("sweeps", range(10)),
             ("click_channel", [2]),
-            ("MW_pulse_len", [2_000]),
+            ("MW_pulse_len", [1_000]),
             # ("MW_amp", [1.0]),
-            ("cooldown_time", [50_000]),
+            ("cooldown_time", [1_000_000]),
             ("MW_f", MW_freq_array),
         )
     )

@@ -30,7 +30,7 @@ import os
 from collections import OrderedDict
 
 from qm import qua
-from qm.qua import align, for_, infinite_loop_, set_dc_offset, wait
+from qm.qua import align, declare, fixed, for_, infinite_loop_, set_dc_offset, wait
 from qualang_tools.loops import from_array
 from qualang_tools.units import unit
 
@@ -56,12 +56,13 @@ def ret_ret_mcas(pdc):
         use_crc = current_iterator_df["use_crc"].unique()[0]
         use_detuned_laser = current_iterator_df["use_detuned_laser"].unique()[0]
 
-        qua_array_1 = ou.get_fast_sweep_qua_array(0)
-        qua_array_2 = ou.get_fast_sweep_qua_array(1)
+        qua_array_1 = ou.get_fast_sweep_qua_array(0)  # .astype(int)
+        qua_array_2 = ou.get_fast_sweep_qua_array(1)  # .astype(int)
         with qua.program() as myprog:
             with infinite_loop_():
                 ou.init_program()
-
+                ou.i_1 = declare(fixed)
+                ou.i_2 = declare(fixed)
                 if use_crc:
                     set_dc_offset(
                         "Laser_620_freq", "single", self.queue.ao.get_setpoint("Laser_620_freq")
@@ -144,17 +145,17 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 1
 
-    laser_freq_vec_MHz = np.linspace(-3.4, -1, 300) * 1e3  # GHz -> MHz
+    laser_freq_vec_MHz = np.linspace(2, 4, num=300) * 1e3  # GHz -> MHz
     B_amp = np.arange(200, 300, 5)  # mT
-    B_theta = np.arange(0, 360, 10)
+    B_theta = np.arange(0, 360, step=5)
     nuclear.parameters = OrderedDict(
         (
             ("B_phi", [0]),
             ("B_theta", B_theta),
             ("B_amp", [150]),
-            ("sweeps", range(6)),
-            ("Laser_620_power", [15]),  # nW
-            ("Laser_520_power_repump", [20e3]),  # nW (50uW)
+            ("sweeps", range(2)),
+            ("Laser_620_power", [10]),  # nW
+            ("Laser_520_power_repump", [5e3]),  # nW (50uW)
             ("Laser_620_freq_MHz", laser_freq_vec_MHz),
             ("click_channel", [2]),
             ("readout_len_pixel", [int(5e6)]),  # ns (1ms)

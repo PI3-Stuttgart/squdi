@@ -51,37 +51,22 @@ def ret_ret_mcas(pdc):
         with qua.program() as myprog:
             with infinite_loop_():
                 ou.init_program()
-                ou.set_laser_power("Laser_620_det", 7)
-                ou.set_laser_power("Laser_620", 10)
-                ou.set_laser_power("Laser_520", 5e3)
-                ou.pause(10_000)
                 with for_(*from_array(ou.i_1, qua_array_1)):
                     with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(
-                            mcas,
-                            set_laser_power=True,
-                            crc_threshold=13,
-                            laser_power_A1=7,
-                            laser_power_B2=10,  # nW
-                            laser_power_repump=5e3,  # nW
-                            probe_len=1e6,
-                        )
+                        sna.crc(mcas)
 
                         sna.electron_init(
                             mcas,
                             "e1" if init_state == "e2" else "e2",
                             duration="first_init_duration",
-                            set_laser_power=False,
                         )
-                        sna.ssr(mcas, state=init_state, set_laser_power=False)
-                        sna.electron_init(
-                            mcas, init_state, duration="second_init_duration", set_laser_power=False
-                        )
+                        sna.ssr(mcas, state=init_state)
+                        sna.electron_init(mcas, init_state, duration="second_init_duration")
 
-                        sna.ssr(mcas, SSR_state, set_laser_power=False, duration=1e6)
+                        sna.ssr(mcas, SSR_state)
 
                         # Charge state readout
-                        sna.csr(mcas, set_laser_power=False, duration=1e6)
+                        sna.csr(mcas)
 
         mcas.program = myprog
         return mcas

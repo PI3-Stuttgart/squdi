@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, Optional
 
 # from attr import dataclass
-from qm.qua import align, assign, if_, measure, save, time_tagging, while_
+from qm.qua import align, assign, if_, measure, save, time_tagging, update_frequency, while_
 
 import qudi.hardware.Keysight_AWG_M8190.pym8190a as MCAS
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
@@ -40,11 +40,11 @@ class UpdateableDataclass:
         return self
 
 
-__pause_lp__: int = 10_000  # 10us #pause after laser power update
+__pause_lp__: int = 1_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 5.5  # nW # det
-GENERAL_POWER_B2 = 4  # nW
+GENERAL_POWER_A1 = 5.05  # nW # det
+GENERAL_POWER_B2 = 5.05  # nW
 
 
 @dataclass
@@ -52,6 +52,7 @@ class ELECTRON_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
     electron_rabi_period: int = 4_060  # ns
+    IQ_freq: int = int(201.5 * 1e6)
 
 
 @dataclass
@@ -96,8 +97,8 @@ class ELECTRON_INIT_PARAMS(UpdateableDataclass):
 
     state: QubitState = QubitState.e1
     duration: int = int(500e3)  # ns (300 us)
-    laser_power_A1: float = GENERAL_POWER_A1  # 7  # nW
-    laser_power_B2: float = GENERAL_POWER_B2  # 7  # nW
+    laser_power_A1: float = 10  # 7  # nW # det
+    laser_power_B2: float = 7  # 7  # nW
 
 
 @dataclass
@@ -429,6 +430,12 @@ def electron_gate(mcas: MultiChSeq, gate: str | Gate, electron_rabi_period: Opti
             pulse_duration = params.electron_rabi_period / 4
 
     ou.MW_pulse("NV", pulse_duration)
+
+
+def set_IQ_freq(mcas, IQ_freq: int | None = None):
+    params = ELECTRON_PARAMS()
+    params.update(IQ_freq=IQ_freq)
+    update_frequency("NV", params.IQ_freq)
 
 
 def scan_laser_to_target(

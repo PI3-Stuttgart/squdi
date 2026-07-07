@@ -477,8 +477,8 @@ class NuclearOpsOPXUtils(LogicBase):
                 align()
             wait(
                 self.duration_ns_to_qua(int(_duration_ns))
-                if _duration_ns is not None
-                else _duration_ns_qua
+                if self.duration_ns_to_qua(_duration_ns) is not None
+                else _duration_ns_qua / 4
             )
         else:
             wait(
@@ -489,7 +489,7 @@ class NuclearOpsOPXUtils(LogicBase):
             )
 
     def init_program(self) -> None:
-        self.i_1 = declare(int)  # TODO: could itbe int, or dynamic?
+        self.i_1 = declare(int)
         self.i_2 = declare(int)
         self.j = declare(int)
         self.times = declare(int, size=1000)

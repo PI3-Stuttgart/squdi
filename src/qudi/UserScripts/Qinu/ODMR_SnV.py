@@ -137,8 +137,8 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = True
-    nuclear.lock_laser_to_wavemeter = True
+    nuclear.do_ple_refocus_A1 = False
+    nuclear.lock_laser_to_wavemeter = False
     nuclear.ple_refocus_interval = 2 * 60
 
     # Confocal refocus
@@ -149,15 +149,15 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    f_vec_array = np.arange(start=160 * u.MHz, stop=240 * u.MHz, step=0.5 * u.MHz)
-    MW_power_array = np.array([1.0, 0.7, 0.5, 0.2, 0.1])
-    nr_repeating_intergration: int = 10
+    # f_vec_array = np.arange(start=160 * u.MHz, stop=240 * u.MHz, step=0.5 * u.MHz)
+    # MW_power_array = np.array([1.0, 0.7, 0.5, 0.2, 0.1])
+    nr_repeating_intergration: int = 10000
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
-            ("B_phi", [90]),
-            ("B_theta", [120]),
-            ("B_amp", [132, 135]),
+            # ("B_phi", [90]),
+            # ("B_theta", [120]),
+            # ("B_amp", [132, 135]),
             ("sweeps", range(5)),
             ("click_channel", [2]),
             ("first_init_duration", [5e6]),
@@ -169,11 +169,11 @@ def settings(pdc={}):
             # ("pulse_width_ppg", [10]),
             # ("pulse_delay_ppg", [0]),  # ns
             # ("Laser_620_pi_power", pi_pulse_laser_power),
-            ("MW_f", f_vec_array),
+            ("MW_f", [-100 * u.MHz]),
             # ("wait_between_SSR", [100]),  # ns
         )
     )
-    nuclear.number_of_simultaneous_measurements = len(f_vec_array)
+    nuclear.number_of_simultaneous_measurements = 1  # len(f_vec_array)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,
