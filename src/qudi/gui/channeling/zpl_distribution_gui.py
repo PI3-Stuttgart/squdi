@@ -80,6 +80,7 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigWavelengthCheckFinished.connect(self.on_coverage_check_finished)
         self._logic().sigBackgroundCaptured.connect(self.on_background_captured)
         self._logic().sigSavingFinished.connect(self.on_saving_finished)
+        self._logic().sigAutoSaveRequested.connect(self.save_all_results)
         self.show()
         
     def on_deactivate(self):
@@ -90,6 +91,7 @@ class ZPLDistributionGui(GuiBase):
         self._logic().sigWavelengthCheckFinished.disconnect(self.on_coverage_check_finished)
         self._logic().sigBackgroundCaptured.disconnect(self.on_background_captured)
         self._logic().sigSavingFinished.disconnect(self.on_saving_finished)
+        self._logic().sigAutoSaveRequested.disconnect(self.save_all_results)
         if self._mw:
             self._mw.close()
 
@@ -676,6 +678,7 @@ class ZPLDistributionGui(GuiBase):
 
     def on_finished(self):
         self._set_running_state(False)
+        self.save_all_results()
 
     def run_fit(self):
         res = self._logic().fit_gaussian()

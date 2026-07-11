@@ -62,6 +62,7 @@ class ZPLDistributionLogic(LogicBase):
     sigWavelengthCheckFinished = QtCore.Signal(object) # (start_freq, stop_freq) or None if failed
     sigBackgroundCaptured = QtCore.Signal(object)  # background image ndarray or None
     sigSavingFinished = QtCore.Signal(bool, str)  # success, message
+    sigAutoSaveRequested = QtCore.Signal()  # trigger auto save
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -440,6 +441,8 @@ class ZPLDistributionLogic(LogicBase):
 
             total_steps = len(voltages)
             
+            last_save_time = time.time()
+            
             for i, v in enumerate(voltages):
                 # Handle Pause
                 while self._is_paused:
@@ -607,6 +610,11 @@ class ZPLDistributionLogic(LogicBase):
                         # Emit updates — deep-copy to avoid cross-thread mutation
                         self.sigUpdatePlot.emit(copy.deepcopy(self._histogram_data))
                         self.sigScanCompleted.emit(v, display_image, spots_list)
+                        
+                        if time.time() - last_save_time >= 7200:
+                            self.log.info("Triggering auto-save (2 hours elapsed)...")
+                            self.sigAutoSaveRequested.emit()
+                            last_save_time = time.time()
                         
                     except Exception as e:
                          import traceback

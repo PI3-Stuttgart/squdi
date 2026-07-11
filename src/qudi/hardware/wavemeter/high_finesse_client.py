@@ -39,24 +39,6 @@ def send_framed_msg(sock, flag, payload):
     length_prefix = struct.pack("!I", len(msg))
     sock.sendall(length_prefix + msg)
 
-def connect(func):
-    def wrapper(self, *arg, **kw):
-        try:
-            # Establish connection to TCP server and exchange data
-            self.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # Add a timeout so Qudi doesn't hang forever if server is down
-            self.tcp_client.settimeout(2.0)
-            self.tcp_client.connect((self.host_ip, self.server_port))
-            res = func(self, *arg, **kw)
-        except Exception as e:
-            self.log.error(f"Wavemeter connection error: {e}")
-            return None
-        finally:
-            self.tcp_client.close()
-        return res
-    return wrapper
-
-    
 class HighFinesseWavemeterClient(WavemeterInterface):
     wavelengths = np.array([])
     queryInterval = 20
@@ -71,27 +53,53 @@ class HighFinesseWavemeterClient(WavemeterInterface):
 
     def on_activate(self):
         self.host_ip, self.server_port = '129.69.46.209', 1243
-        # self.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #self.sig_send_request.connect(self.send_request, QtCore.Qt.QueuedConnection)
-        # self.queryTimer = QtCore.QTimer()
-        # self.queryTimer.setInterval(self.queryInterval)
-        # self.queryTimer.setSingleShot(True)
-        # self.queryTimer.timeout.connect(self.loop_body)#, QtCore.Qt.QueuedConnection)     
-        # self.queryTimer.start(self.queryInterval)
+        self.tcp_client = None
+        self._connect_to_server()
+
+    def _connect_to_server(self):
+        if self.tcp_client is not None:
+            try:
+                self.tcp_client.close()
+            except Exception:
+                pass
+        try:
+            self.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.tcp_client.settimeout(2.0)
+            self.tcp_client.connect((self.host_ip, self.server_port))
+        except Exception as e:
+            self.log.error(f"Wavemeter connection failed: {e}")
+            self.tcp_client = None
 
     @QtCore.Slot()
     def loop_body(self):
         self.queryTimer.start(self.queryInterval)
         self.wavelengths = np.append(self.wavelengths, self.__get_wavelength())[-self.buffer_length:]
 
-    @connect
     @QtCore.Slot(str, str)
     def send_request(self, request, action=None):
         action = None if action == '' else action
-        send_framed_msg(self.tcp_client, 'q', request)
+        if self.tcp_client is None:
+            self._connect_to_server()
+            if self.tcp_client is None:
+                return None
         
-        flag, response_bytes = recv_framed_msg(self.tcp_client)
+        try:
+            send_framed_msg(self.tcp_client, 'q', request)
+            flag, response_bytes = recv_framed_msg(self.tcp_client)
+        except Exception as e:
+            self.log.error(f"Wavemeter connection error: {e}, reconnecting...")
+            self._connect_to_server()
+            if self.tcp_client is None:
+                return None
+            try:
+                send_framed_msg(self.tcp_client, 'q', request)
+                flag, response_bytes = recv_framed_msg(self.tcp_client)
+            except Exception as e:
+                self.log.error(f"Wavemeter reconnection failed: {e}")
+                return None
+        
         if not flag:
+            self.tcp_client = None
             return None
             
         response = pickle.loads(response_bytes)
@@ -112,7 +120,8 @@ class HighFinesseWavemeterClient(WavemeterInterface):
             return response
     
     def on_deactivate(self):
-        self.tcp_client.close()
+        if self.tcp_client is not None:
+            self.tcp_client.close()
 
     def start_acquisition(self):
         return self.send_request("start_measurements")
