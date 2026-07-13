@@ -93,7 +93,7 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
                 with for_(i, 0, i < i_avg, i + 1):
                     play("active", "Laser_620", duration=laser_pulse_len * u.ns)
                     # play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
-                    # play("active", "Laser_620_det", duration=laser_pulse_len * u.ns)
+                    play("active", "Laser_620_det", duration=laser_pulse_len * u.ns)
                 align()
                 play("trigit", "Memory_Trigger", duration=tt_trigger_len * u.ns)
 

@@ -30,8 +30,7 @@ import os
 from collections import OrderedDict
 
 from qm import qua
-from qm.qua import align, declare, fixed, for_, infinite_loop_, set_dc_offset, wait
-from qualang_tools.loops import from_array
+from qm.qua import align, for_each_, infinite_loop_, set_dc_offset, wait
 from qualang_tools.units import unit
 
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
@@ -61,8 +60,6 @@ def ret_ret_mcas(pdc):
         with qua.program() as myprog:
             with infinite_loop_():
                 ou.init_program()
-                ou.i_1 = declare(fixed)
-                ou.i_2 = declare(fixed)
                 if use_crc:
                     set_dc_offset(
                         "Laser_620_freq", "single", self.queue.ao.get_setpoint("Laser_620_freq")
@@ -79,8 +76,8 @@ def ret_ret_mcas(pdc):
                 set_dc_offset("Laser_620_freq", "single", qua_array_1[0])
 
                 ### PLE loop ###
-                with for_(*from_array(ou.i_1, qua_array_1)):
-                    with for_(*from_array(ou.i_2, qua_array_2)):
+                with for_each_(ou.i_1, qua_array_1):
+                    with for_each_(ou.i_2, qua_array_2):
                         ou.set_laser_frequency("Laser_620_freq", "Laser_620_freq_MHz")
                         ou.gate_trigger()
                         ou.pause(100_000)
@@ -138,14 +135,14 @@ def settings(pdc={}):
     # Confocal refocus
     nuclear.do_confocal_refocus_red = False
     nuclear.do_confocal_refocus_green = True
-    nuclear.confocal_refocus_interval = 1 * 60
+    nuclear.confocal_refocus_interval = 1 * 30
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
     nr_repeating_intergration: int = 1
 
-    laser_freq_vec_MHz = np.linspace(2, 4, num=300) * 1e3  # GHz -> MHz
+    laser_freq_vec_MHz = np.linspace(1.5, 3.5, num=300) * 1e3  # GHz -> MHz
     B_amp = np.arange(200, 300, 5)  # mT
     B_theta = np.arange(0, 360, step=5)
     nuclear.parameters = OrderedDict(
@@ -154,15 +151,15 @@ def settings(pdc={}):
             ("B_theta", B_theta),
             ("B_amp", [150]),
             ("sweeps", range(2)),
-            ("Laser_620_power", [10]),  # nW
+            ("Laser_620_power", [6]),  # nW
             ("Laser_520_power_repump", [5e3]),  # nW (50uW)
             ("Laser_620_freq_MHz", laser_freq_vec_MHz),
             ("click_channel", [2]),
             ("readout_len_pixel", [int(5e6)]),  # ns (1ms)
-            ("repump_len", [int(1e6)]),  # ns (1s)
+            ("repump_len", [int(1000e6)]),  # ns (1s)
             # ("pulse_shape_ppg", ["continuous_sin"]),  # string
             # ("pulse_width_ppg", [20]),  # ns
-            ("Laser_620_det_power", [80]),  # nW
+            ("Laser_620_det_power", [10]),  # nW
             ("use_crc", [False]),
             ("use_detuned_laser", [False]),
         )

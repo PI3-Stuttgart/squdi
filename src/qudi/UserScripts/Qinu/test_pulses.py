@@ -69,8 +69,8 @@ def ret_ret_mcas(pdc):
                         ou.gate_trigger()
                         # qua.align()
                         # qua.wait(1_015 // 4, "NV")
-                        with for_(i, 0, i < 1000, i + 1):
-                            qua.play("cw" * qua.amp(1), "NV", duration=10_000 // 4)
+                        # with for_(i, 0, i < 1000, i + 1):
+                        qua.play("cw" * qua.amp(1), "NV", duration=1_000 // 4)
                         # qua.align()
                         # qua.play("active", "Laser_620_det", MW_pulse_len / 4)
                         # qua.wait(1_000)
@@ -78,12 +78,12 @@ def ret_ret_mcas(pdc):
                         # qua.align()
                         # ou.laser_pulse("Laser_620_det", 50
                         ou.memory_trigger()
-                        # ou.pause(50_000_000)
+                        ou.pause(20_000)
                         ###
                         # sna.ssr(mcas, state="e1", set_laser_power=False)
 
         mcas.program = myprog
-        mcas.qm.set_digital_delay("NV", "switch", (113 + 21 + 1_015) * u.ns)  # 815
+        mcas.qm.set_digital_delay("NV", "switch", (113 + 21 + 1_015 - 200) * u.ns)  # 815
         mcas.qm.set_digital_buffer("NV", "switch", (27) * u.ns)  # 815
         return mcas
 

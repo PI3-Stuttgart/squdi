@@ -5,8 +5,7 @@ import os
 from collections import OrderedDict
 
 from qm import qua
-from qm.qua import for_, infinite_loop_
-from qualang_tools.loops import from_array
+from qm.qua import for_each_, infinite_loop_
 from qualang_tools.units import unit
 
 import qudi.hardware.OPX.OPX_utils as OPX_utils
@@ -51,8 +50,8 @@ def ret_ret_mcas(pdc):
         with qua.program() as myprog:
             with infinite_loop_():
                 ou.init_program()
-                with for_(*from_array(ou.i_1, qua_array_1)):
-                    with for_(*from_array(ou.i_2, qua_array_2)):
+                with for_each_(ou.i_1, qua_array_1):
+                    with for_each_(ou.i_2, qua_array_2):
                         sna.crc(mcas)
 
                         sna.electron_init(

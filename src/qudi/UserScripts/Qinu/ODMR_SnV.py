@@ -64,46 +64,29 @@ def ret_ret_mcas(pdc):
                             "NV",
                             mw_freq_qua,
                         )
-                        sna.crc(
-                            mcas,
-                            set_laser_power=False,
-                        )
-
-                        sna.electron_init(
-                            mcas,
-                            "e2",
-                            set_laser_power=False,
-                        )
-                        sna.ssr(mcas, state="e1", set_laser_power=False, duration=1e6)
+                        sna.crc(mcas)
+                        sna.electron_init(mcas, "e2")
+                        sna.ssr(mcas, state="e1")
 
                         qua.align()
-                        ou.set_laser_power("Laser_620_det", "ODMR_readout_power")
+                        ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
                         ou.pause(10_000)
                         qua.align()
                         ou.gate_trigger()
                         # Play the mw pulse...
-                        qua.play(
-                            "cw" * qua.amp(mw_amp), "NV", duration=2e6 / 4
-                        )  # duration is here in clock cycel
-                        ou.laser_pulse("Laser_620_det", 2e6)
+                        # qua.play(
+                        #     "cw" * qua.amp(mw_amp), "NV", duration=500e3 / 4
+                        # )  # duration is here in clock cycel
+                        ou.MW_pulse("NV", 500e3, mw_amp)
+                        ou.laser_pulse("Laser_620_det", 500e3)
                         qua.align()
                         ou.memory_trigger()
-
-                        # sna.ssr(mcas, state="e1", set_laser_power=False, duration=1e6)
-
-                        # # Charge state readout
-                        ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
-                        ou.pause(10_000)
-                        sna.csr(
-                            mcas,
-                            set_laser_power=True,
-                            # duration=1e6
-                        )
+                        sna.csr(mcas)
                         ou.pause(50e6)
 
         mcas.program = myprog
-        mcas.qm.set_digital_delay("NV", "switch", (113 + 21 + 1_015) * u.ns)
-        mcas.qm.set_digital_buffer("NV", "switch", (27) * u.ns)
+        # mcas.qm.set_digital_delay("NV", "switch", (113 + 21 + 1_015) * u.ns)
+        # mcas.qm.set_digital_buffer("NV", "switch", (27) * u.ns)
         return mcas
 
     return ret_mcas
@@ -149,7 +132,7 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    # f_vec_array = np.arange(start=160 * u.MHz, stop=240 * u.MHz, step=0.5 * u.MHz)
+    f_vec_array = np.arange(start=100 * u.MHz, stop=200 * u.MHz, step=0.2 * u.MHz)
     # MW_power_array = np.array([1.0, 0.7, 0.5, 0.2, 0.1])
     nr_repeating_intergration: int = 10000
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
@@ -162,18 +145,18 @@ def settings(pdc={}):
             ("click_channel", [2]),
             ("first_init_duration", [5e6]),
             ("ODMR_readout_power", [6]),
-            ("MW_amp", [1.0]),
+            ("MW_amp", [0.5]),
             # ("Init_state", ["e1", "e2"]),
             # ("SSR_state", ["e1", "e2"]),
             # ("pulse_shape_ppg", ["square"]),
             # ("pulse_width_ppg", [10]),
             # ("pulse_delay_ppg", [0]),  # ns
             # ("Laser_620_pi_power", pi_pulse_laser_power),
-            ("MW_f", [-100 * u.MHz]),
+            ("MW_f", f_vec_array),
             # ("wait_between_SSR", [100]),  # ns
         )
     )
-    nuclear.number_of_simultaneous_measurements = 1  # len(f_vec_array)
+    nuclear.number_of_simultaneous_measurements = len(f_vec_array)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,

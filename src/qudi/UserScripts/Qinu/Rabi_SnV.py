@@ -5,7 +5,7 @@ import os
 from collections import OrderedDict
 
 from qm import qua
-from qm.qua import declare, for_each_, infinite_loop_
+from qm.qua import for_each_, infinite_loop_
 from qualang_tools.units import unit
 
 import qudi.hardware.OPX.OPX_utils as OPX_utils
@@ -46,11 +46,10 @@ def ret_ret_mcas(pdc):
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
 
         MW_amp = current_iterator_df["MW_amp"].unique()[0]
+        ssr_state = current_iterator_df["ssr_state"].unique()[0]
 
         with qua.program() as myprog:
             ou.init_program()
-            ou.i_1 = declare(int)
-            ou.i_2 = declare(int)
             ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
             ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
             ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
@@ -71,8 +70,8 @@ def ret_ret_mcas(pdc):
                         qua.align()
                         qua.play("cw" * qua.amp(MW_amp / 100), "NV", duration=MW_pulse_len_qua / 4)
                         qua.align()
-                        qua.wait(10_000 // 4)
-                        sna.ssr(mcas, state="e1")
+                        qua.wait(200 // 4)
+                        sna.ssr(mcas, state=ssr_state)
                         sna.csr(mcas)
                         ou.pause("cooldown_time")
 
@@ -122,9 +121,9 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_pulse_duration_array = np.arange(start=20, stop=2_000, step=50)
-    nr_repeating_intergration: int = 1
-    integrations_per_point = 500
+    MW_pulse_duration_array = np.arange(start=20, stop=5_000, step=50)
+    nr_repeating_intergration: int = 100
+    # integrations_per_point = 500
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
@@ -134,14 +133,13 @@ def settings(pdc={}):
             ("MW_amp", [100]),
             ("sweeps", range(10)),
             ("click_channel", [2]),
+            ("ssr_state", ["e1"]),
             ("MW_pulse_len", MW_pulse_duration_array),
-            ("integrations_per_point", np.arange(0, integrations_per_point, 1)),
-            ("cooldown_time", [10_000_000]),  # 10 ms
+            # ("integrations_per_point", np.arange(0, integrations_per_point, 1)),
+            ("cooldown_time", [100_000]),  # 100 us
         )
     )
-    nuclear.number_of_simultaneous_measurements = (
-        len(MW_pulse_duration_array) * integrations_per_point
-    )
+    nuclear.number_of_simultaneous_measurements = len(MW_pulse_duration_array)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,

@@ -37,7 +37,8 @@ class FastSweepQUA:
     key: str
     quantity_kind: None | str
     raw_array: np.ndarray
-    qua_array: np.ndarray
+    qua_array: list[int | float]
+    qua_type: object
 
 
 class NuclearOpsOPXUtils(LogicBase):
@@ -61,6 +62,8 @@ class NuclearOpsOPXUtils(LogicBase):
     TT_TRIGGER_LENGTH_NS: int = 20  # ns
     LONG_PULSE_THRESHOLD_NS: int = 1_000_000  # ns (1ms)
     LONG_PULSE_CHUNK_NS: int = 5_000  # ns
+    QUA_FIXED_MIN: float = -8.0
+    QUA_FIXED_MAX: float = 8.0
 
     power_calibration_logic: AOMPowerCalibrationLogic = Connector(
         interface="AOMPowerCalibrationLogic"
@@ -81,8 +84,8 @@ class NuclearOpsOPXUtils(LogicBase):
     current_iterator_df: pd.DataFrame
     current_laser_power_qua: dict = {}
 
-    i_1: QuaVariable[fixed] | None = None
-    i_2: QuaVariable[fixed] | None = None
+    i_1: QuaVariable[int] | QuaVariable[fixed] | None = None
+    i_2: QuaVariable[int] | QuaVariable[fixed] | None = None
     j: QuaVariable[int] | None = None
     times: QuaArrayVariable[int] | None = None
     crc_attempts: QuaVariable[int] | None = None
@@ -116,13 +119,17 @@ class NuclearOpsOPXUtils(LogicBase):
                 element = self._find_element_from_current_iterator(key)
                 quantity_kind = self._find_quantity_kind_from_current_iterator(key)
                 raw_array = np.asarray(current_iterator_df[key].unique())
+                qua_array, qua_type = self._prepare_fast_sweep_qua_array(
+                    self._get_qua_array(element, quantity_kind, raw_array)
+                )
                 self.sweep_keys_OPX.append(key)
                 self.fast_sweeps_qua[key] = FastSweepQUA(
                     element=element,
                     key=key,
                     quantity_kind=quantity_kind,
                     raw_array=raw_array,
-                    qua_array=self._get_qua_array(element, quantity_kind, raw_array),
+                    qua_array=qua_array,
+                    qua_type=qua_type,
                 )
 
         if len(self.fast_sweeps_qua) > 2:
@@ -132,7 +139,7 @@ class NuclearOpsOPXUtils(LogicBase):
                 )
             )
 
-    def get_fast_sweep_qua_array(self, idx: int) -> np.ndarray:
+    def get_fast_sweep_qua_array(self, idx: int) -> list[int | float]:
         if idx not in (0, 1):
             raise IndexError(f"Fast sweep index must be 0 or 1, got {idx}")
 
@@ -141,7 +148,44 @@ class NuclearOpsOPXUtils(LogicBase):
         if idx < len(values):
             return values[idx].qua_array
         else:
-            return np.array([0])
+            return [0]
+
+    def get_fast_sweep_qua_type(self, idx: int) -> object:
+        if idx not in (0, 1):
+            raise IndexError(f"Fast sweep index must be 0 or 1, got {idx}")
+
+        values = tuple(self.fast_sweeps_qua.values())
+
+        if idx < len(values):
+            return values[idx].qua_type
+        else:
+            return int
+
+    def _prepare_fast_sweep_qua_array(
+        self, qua_array: np.ndarray
+    ) -> tuple[list[int | float], object]:
+        qua_array = np.asarray(qua_array)
+
+        if np.issubdtype(qua_array.dtype, np.integer):
+            return [int(value) for value in qua_array], int
+
+        if np.issubdtype(qua_array.dtype, np.floating):
+            if not np.all(np.isfinite(qua_array)):
+                raise ValueError("Fast sweep QUA arrays cannot contain NaN or infinite values")
+
+            if np.all((self.QUA_FIXED_MIN <= qua_array) & (qua_array < self.QUA_FIXED_MAX)):
+                return [float(value) for value in qua_array], fixed
+
+            return [int(value) for value in np.rint(qua_array)], int
+
+        try:
+            numeric_array = qua_array.astype(float)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"Fast sweep QUA array must contain numeric values, got dtype {qua_array.dtype}"
+            ) from exc
+
+        return self._prepare_fast_sweep_qua_array(numeric_array)
 
     @staticmethod
     def _find_longest_substring_match(key: str, candidates: list[str]) -> None | str:
@@ -270,7 +314,9 @@ class NuclearOpsOPXUtils(LogicBase):
         return duration_ns * u.ns
 
     def MW_pulse(self, element: str, duration_ns, amplitude: float = 1, reset_phase=False):
-        play("cw" * amp(amplitude), element, duration=self.duration_ns_to_qua(duration_ns))
+
+        if duration_ns > 16:
+            play("cw" * amp(amplitude), element, duration=self.duration_ns_to_qua(duration_ns))
 
     def play_chunked(self, pulse: object, laser_name: str, duration_ns: float) -> None:
         """Play a single-laser pulse, splitting long durations into chunks.
@@ -477,7 +523,7 @@ class NuclearOpsOPXUtils(LogicBase):
                 align()
             wait(
                 self.duration_ns_to_qua(int(_duration_ns))
-                if self.duration_ns_to_qua(_duration_ns) is not None
+                if _duration_ns is not None
                 else _duration_ns_qua / 4
             )
         else:
@@ -489,8 +535,9 @@ class NuclearOpsOPXUtils(LogicBase):
             )
 
     def init_program(self) -> None:
-        self.i_1 = declare(int)
-        self.i_2 = declare(int)
+        self.i_1 = declare(self.get_fast_sweep_qua_type(0))
+        self.i_2 = declare(self.get_fast_sweep_qua_type(1))
+
         self.j = declare(int)
         self.times = declare(int, size=1000)
         self.crc_attempts = declare(int)

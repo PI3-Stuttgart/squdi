@@ -59,19 +59,19 @@ def ret_ret_mcas(pdc):
 
                 with for_each_(ou.i_1, qua_array_1):
                     with for_each_(ou.i_2, qua_array_2):
-                        # sna.crc(mcas)
-                        # sna.electron_init(
-                        #     mcas,
-                        #     init_state,
-                        # )
-                        # sna.ssr(mcas, state="e1" if init_state == "e2" else "e2")
-                        # qua.align()
+                        sna.crc(mcas)
+                        sna.electron_init(
+                            mcas,
+                            init_state,
+                        )
+                        sna.ssr(mcas, state="e1" if init_state == "e2" else "e2")
+                        qua.align()
                         if pi_bool == "mw_pi":
                             # qua.wait(500 // 4)
                             sna.electron_gate(mcas, "pi")
                         # ou.pause("readout_delay")
                         # qua.wait(ou.i_1 / 4)
-                        sna.ssr(mcas, SSR_state)
+                        sna.ssr(mcas, state=SSR_state)
                         # Charge state readout
                         sna.csr(mcas)
 
@@ -84,7 +84,7 @@ def ret_ret_mcas(pdc):
 def settings(pdc={}):
     ana_seq = [
         ["init", "<", 1, 1, 0, 1],
-        ["result", ">", 1, 1, 0, 1],
+        ["result", ">", 0, 1, 0, 1],
         ["init", ">", 10, 1, 0, 1],
     ]
     # what does each entry do?
