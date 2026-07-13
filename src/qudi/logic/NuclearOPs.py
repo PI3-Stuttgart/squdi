@@ -1002,7 +1002,7 @@ class NuclearOPs(DataGeneration):
         q = self.queue
 
         if wavelength_nm is None:
-            wavelength_nm = q.wavemeter.read_single_point()[0][0] * 1e9
+            wavelength_nm = q.wavemeter.get_current_wavelength(kind="nm")
 
         actual_voltage = q.dlc_pro_620.get_pc_voltage_act()
         q.dlc_pro_620.set_slew_rate(0.0008)

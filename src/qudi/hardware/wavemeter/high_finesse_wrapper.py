@@ -22,7 +22,7 @@
 # /
 
 import warnings
-from ctypes import c_bool, c_double, c_char_p, c_long, c_longlong, c_short, c_ulong, c_ushort, POINTER, windll
+from ctypes import c_bool, c_double, c_char_p, c_long, c_longlong, c_short, c_ulong, c_ushort, c_void_p, POINTER, windll
 
 MIN_VERSION = 6491
 
@@ -61,11 +61,11 @@ def setup_dll(dll):
     dll.ClearWLMEvents.restype = None
 
     # long ControlWLM(long Action, LONG_PTR App, long Ver)
-    dll.ControlWLM.argtypes = [c_long, POINTER(c_long), c_long]
+    dll.ControlWLM.argtypes = [c_long, c_void_p, c_long]
     dll.ControlWLM.restype = c_long
 
     # long ControlWLMEx(long Action, LONG_PTR App, long Ver, long Delay, long Res)
-    dll.ControlWLMEx.argtypes = [c_long, POINTER(c_long), c_long, c_long, c_long]
+    dll.ControlWLMEx.argtypes = [c_long, c_void_p, c_long, c_long, c_long]
     dll.ControlWLMEx.restype = c_long
 
     # __int64 SynchroniseWLM(long Mode, __int64 TS)

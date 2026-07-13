@@ -112,29 +112,55 @@ class HighFinesseWavemeter(DataInStreamInterface):
         self._stream_started_by_lock = False
 
     def on_activate(self) -> None:
-        # configure wavemeter channels
+        self.reapply_wavemeter_settings()
+
+    def set_dll_set_voltage(channel=1):
+        self._proxy().set_laser_piezo_voltage(channel)
+
+    def on_deactivate(self) -> None:
+        self.stop_stream()
+
+        # free memory
+        self._data_buffer = None
+        self._timestamp_buffer = None
+
+    def restart_wavemeter_software(
+        self, timeout: float = 100.0, start_silent: bool = False
+    ) -> None:
+        """Restart the HighFinesse WLM application and leave this module streaming."""
+        self._proxy().restart_wlm_application(timeout=timeout, start_silent=start_silent)
+        if self.module_state() == "idle":
+            time.sleep(5.0)
+            self.reapply_wavemeter_settings()
+            self.start_stream()
+
+    def reapply_wavemeter_settings(self) -> None:
+        """Rebuild activation-time state and reapply settings after a WLM restart."""
+        channel_names = {}
+        channel_units = {}
         for ch_name, info in self._wavemeter_ch_config.items():
             ch = info["switch_ch"]
             unit = info["unit"]
-            self._channel_names[ch] = ch_name
+            channel_names[ch] = ch_name
 
             if unit == "THz" or unit == "Hz":
-                self._channel_units[ch] = "Hz"
+                channel_units[ch] = "Hz"
             elif unit == "nm" or unit == "m":
-                self._channel_units[ch] = "m"
+                channel_units[ch] = "m"
             else:
                 self.log.warning(
                     f"Invalid unit: {unit}. Valid units are Hz and m. Using m as default."
                 )
-                self._channel_units[ch] = "m"
+                channel_units[ch] = "m"
 
             exp_time = info.get("exposure")
             if exp_time is not None:
-                self._proxy().set_exposure_time(ch, exp_time)
+                self._proxy().set_exposure_time(info["switch_ch"], exp_time)
 
+        self._channel_names = channel_names
+        self._channel_units = channel_units
         self._active_switch_channels = list(self._channel_names)
 
-        # set up constraints
         sample_rate = self.sample_rate
         self._constraints = DataInStreamConstraints(
             channel_units={
@@ -151,27 +177,8 @@ class HighFinesseWavemeter(DataInStreamInterface):
             sample_rate=ScalarConstraint(default=sample_rate, bounds=(0.01, 1e3)),
         )
         self._measurement_timing = 1 / sample_rate if sample_rate else None
-
-    def set_dll_set_voltage(channel=1):
-        self._proxy().set_laser_piezo_voltage(channel)
-
-    def on_deactivate(self) -> None:
-        self.stop_stream()
-
-        # free memory
-        self._data_buffer = None
-        self._timestamp_buffer = None
-
-    def restart_wavemeter_software(self, timeout: float = 30.0, start_silent: bool = True) -> None:
-        """Restart the HighFinesse WLM application and reconnect active streams."""
-        self._proxy().restart_wlm_application(timeout=timeout, start_silent=start_silent)
-
-    def reapply_wavemeter_settings(self) -> None:
-        """Reapply settings that may be reset by a WLM application restart."""
-        for info in self._wavemeter_ch_config.values():
-            exp_time = info.get("exposure")
-            if exp_time is not None:
-                self._proxy().set_exposure_time(info["switch_ch"], exp_time)
+        self._wm_start_time = None
+        self.empty_buffer()
 
     def start_lock(
         self,
@@ -228,7 +235,7 @@ class HighFinesseWavemeter(DataInStreamInterface):
                 if switch_channel in self._latest_channel_values or self.available_samples > 0:
                     break
             if time.time() >= deadline:
-                raise TimeoutError("Timed out while waiting for wavemeter data.")
+                return self._compat_read_direct_channel_value(switch_channel)
             time.sleep(0.01)
 
         with self._lock:
@@ -241,6 +248,28 @@ class HighFinesseWavemeter(DataInStreamInterface):
                 buffer_index = number_of_channels * (available_samples - 1)
                 value = float(self._data_buffer[buffer_index + channel_index])
                 timestamp = float(self._timestamp_buffer[available_samples - 1])
+        return value, timestamp, switch_channel
+
+    def _compat_read_direct_channel_value(self, switch_channel: int) -> Tuple[float, float, int]:
+        wavelength_m = self._proxy().get_wavelength_m(switch_channel)
+        if wavelength_m <= 0:
+            try:
+                error_name = GetFrequencyError(wavelength_m).name
+            except ValueError:
+                error_name = f"error code {wavelength_m}"
+            raise TimeoutError(
+                "Timed out while waiting for wavemeter callback data, and direct "
+                f"readout of channel {switch_channel} returned {error_name}."
+            )
+
+        if self._channel_units[switch_channel] == "Hz":
+            value = float(lambda2nu(wavelength_m))
+        else:
+            value = float(wavelength_m)
+
+        timestamp = time.time()
+        with self._lock:
+            self._latest_channel_values[switch_channel] = (value, timestamp)
         return value, timestamp, switch_channel
 
     def _compat_value_to_frequency_hz(self, value: float, switch_channel: int) -> float:
@@ -270,7 +299,7 @@ class HighFinesseWavemeter(DataInStreamInterface):
             return -1
         return 0
 
-    def get_current_wavelength(self, kind: str = "m") -> float:
+    def get_current_wavelength(self, kind: str = "nm") -> float:
         value, _, switch_channel = self._compat_get_latest_channel_value(0)
         frequency_hz = self._compat_value_to_frequency_hz(value, switch_channel)
         wavelength_m = self._compat_value_to_wavelength_m(value, switch_channel)
