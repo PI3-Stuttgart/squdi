@@ -81,6 +81,7 @@ class GatedCounter(GenericLogic):
         self.raw_clicks_processing = False
         self.raw_clicks_processing_function = None
         self.ZPL_counter = False
+        self.live_update_interval = 1.0
 
     def on_activate(self):
         """Initialisation performed during activation of the module."""
@@ -237,26 +238,52 @@ class GatedCounter(GenericLogic):
         tasks = self._counter_tasks()
         return bool(tasks) and all(task.ready() for task in tasks)
 
-    def read_trace(self):
-        print("GC:read_trace")
+    def _read_gated_counter_data(self):
         tasks_by_channel = getattr(self, "_gated_counter_tasks_by_click_channel", None)
-        if tasks_by_channel and len(tasks_by_channel) > 1:
-            self.gated_counter_data_by_apd = {
-                click_channel: task.getData()
-                for click_channel, task in tasks_by_channel.items()
+
+        if tasks_by_channel:
+            data_by_channel = {
+                click_channel: task.getData() for click_channel, task in tasks_by_channel.items()
             }
+            self.gated_counter_data_by_apd = data_by_channel
+        else:
+            data = self._fast_counter_device.gated_counter_countbetweenmarkers.getData()
+            self.gated_counter_data_by_apd = {self._get_default_click_channel(): data}
+
+        if len(self.gated_counter_data_by_apd) > 1:
             self.gated_counter_data = self._combine_gated_counter_data_by_step(
                 self.gated_counter_data_by_apd
             )
         else:
-            self.gated_counter_data = (
-                self._fast_counter_device.gated_counter_countbetweenmarkers.getData()
-            )  # If readout takes too long, ask Javid for optimized Readout sequence
-            if tasks_by_channel:
-                click_channel = next(iter(tasks_by_channel.keys()))
-            else:
-                click_channel = self._get_default_click_channel()
-            self.gated_counter_data_by_apd = {click_channel: self.gated_counter_data}
+            self.gated_counter_data = next(iter(self.gated_counter_data_by_apd.values()))
+
+    def _analyze_current_trace_for_plot(self):
+        self.set_progress()
+        if not self.analyze_trace_during_experiment or self.progress <= 0:
+            return False
+
+        self.trace_rep = Analysis.TraceRep(
+            trace=self.gated_counter_data[: self.progress],
+            analyze_sequence=self.trace.analyze_sequence,
+            number_of_simultaneous_measurements=self.trace.number_of_simultaneous_measurements,
+        )
+        self.trace.trace = np.array(
+            self.trace_rep.df.groupby(["run", "sm", "step", "memory"]).agg({"n": np.sum}).reset_index().n
+        )
+        if len(self.trace.trace) == 0:
+            return False
+        self.update_plot_data()
+        return True
+
+    def update_live_trace(self):
+        """Read current TimeTagger data and update the GUI while acquisition is running."""
+        self._read_gated_counter_data()
+        if self._analyze_current_trace_for_plot() and hasattr(self, "_gui"):
+            self.sigTraceUpdated.emit(self.effective_subtrace_list, self.hist_list)
+
+    def read_trace(self):
+        print("GC:read_trace")
+        self._read_gated_counter_data()
         if self.ZPL_counter:
             print("ZPL_counter in gated_counter_logic")
             if self.raw_clicks_processing:
@@ -311,17 +338,10 @@ class GatedCounter(GenericLogic):
                             # getattr(self._fast_counter_device, counter_name).sync()
                             setattr(self, trace_name, zpl_counter_data)
 
-        self.set_progress()
         # UNFUG
         if self.analyze_trace_during_experiment:
             print("analyze trace during measurement in gated_counter_logic")
-            self.trace_rep = Analysis.TraceRep(
-                trace=self.gated_counter_data[: self.progress],
-                analyze_sequence=self.trace.analyze_sequence,
-                number_of_simultaneous_measurements=self.trace.number_of_simultaneous_measurements,
-            )
-            self.trace.trace = np.array(self.trace_rep.df.groupby(["run", "sm", "step", "memory"]).agg({"n": np.sum}).reset_index().n)
-            self.update_plot_data()
+            self._analyze_current_trace_for_plot()
 
     def clear_timetaggers(self):
         for task in self._counter_tasks():
@@ -438,7 +458,7 @@ class GatedCounter(GenericLogic):
         self.two_zpl_apd = two_zpl_apd
         self.raw_clicks_processing = raw_clicks_processing
         self.raw_clicks_processing_channels = raw_clicks_processing_channels
-        number_of_subtraces = 1  # fixme, later put a len of analyze sequence
+        number_of_subtraces = len(self.trace.analyze_sequence)
 
         print("GC: count started")
         if hasattr(self, "_gui"):
@@ -453,6 +473,7 @@ class GatedCounter(GenericLogic):
             mcas.run()
             self.progress = 0
             i = 0
+            last_live_update_time = 0
             while True:
                 # print('stuck in Ready for data...')
                 if abort.is_set():
@@ -466,10 +487,10 @@ class GatedCounter(GenericLogic):
                     # why get counts here already? its done at the end of measurement when self.read_trace() is called
                     # seems like read_trace() is not doing much...
                     dat = self._fast_counter_device.gated_counter_countbetweenmarkers.getData()
-                    # self.read_trace()
-                    # self.update_plot()
-                    # self.set_progress()
                     print("-----------------------------------------------------\n", self.progress, len(dat))
+                if time.time() - last_live_update_time >= self.live_update_interval:
+                    self.update_live_trace()
+                    last_live_update_time = time.time()
                 i += 1
                 if ready:
                     # print(self._fast_counter_device.gated_counter_countbetweenmarkers.getData())
@@ -588,10 +609,17 @@ class GatedCounter(GenericLogic):
         print("GC: set_counter finished.")
 
     def set_progress(self):
-        if self._fast_counter_device.gated_counter_countbetweenmarkers.ready():
+        if self._all_counters_ready():
             self.progress = int(len(self.gated_counter_data))
         else:
-            self.progress = int(len(self.gated_counter_data) - np.argmax(self.gated_counter_data[::-1] != 0) - 1)
+            if len(self.gated_counter_data) == 0:
+                self.progress = 0
+                return
+            nonzero_indices = np.flatnonzero(self.gated_counter_data != 0)
+            if len(nonzero_indices) == 0:
+                self.progress = 0
+                return
+            self.progress = int(nonzero_indices[-1] + 1)
 
     def init_plot(self):
         if hasattr(self, "_gui"):

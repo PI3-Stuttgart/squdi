@@ -94,7 +94,7 @@ class BaseTrace:
                     raise Exception('Error: {}, {}'.format(idx, value))
                 if not step[1] in ['<', '>']:
                     raise Exception('Error: {}, {}'.format(idx, value))
-                if not (step[2] == 'auto' or isinstance(step[2], int)):
+                if not (step[2] == 'auto' or isinstance(step[2], (int, np.integer))):
                     raise Exception('Error: {}, {}'.format(idx, value))
                 if step[2] == 'auto' and step[5] != 1:
                     raise Exception('Error: {}, {}'.format(idx, value))
@@ -105,9 +105,13 @@ class BaseTrace:
 
                 if not isinstance(step[5], (int, np.integer)):
                     raise Exception('When given, the last (6th) entry in an analyze_sequence step must be of type int. It represents the alternating_repetitions also used in snippets_awg.SSR()')
+                if step[5] < 1:
+                    raise Exception('Error: {}, {}'.format(idx, value))
                 if len(step) == 7 and not (step[6] is None or isinstance(step[6], (str, int, np.integer))):
                     raise Exception('Error: APD/channel selector must be None, str, or int: {}, {}'.format(idx, value))
                 normalized_step = step[:6]
+                if isinstance(normalized_step[2], np.integer):
+                    normalized_step[2] = int(normalized_step[2])
                 normalized_step[3] = int(normalized_step[3])
                 normalized_step[5] = int(normalized_step[5])
                 normalized_sequence.append(normalized_step)
