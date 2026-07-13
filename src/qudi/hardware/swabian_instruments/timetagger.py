@@ -19,6 +19,7 @@ class TT(Base):
     _test_channels = ConfigOption("test_channels", False, missing="warn")
     _channels_params = ConfigOption("channels_params", False, missing="warn")
     _count_between_markers = ConfigOption("count_between_markers", False, missing="warn")
+    _apd_channels = ConfigOption("apd_channels", dict(), missing="info")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -154,13 +155,15 @@ class TT(Base):
 
         # TODO parse the channels from kwargs, otherwise if not present keep default.
         # something liek this.  cl_ch = getattr(kwargs['cl_ch'], self._click_channel)
-        self.gated_counter_countbetweenmarkers = CountBetweenMarkers(
-            self.tagger,
-            click_channel=self._count_between_markers["click_channel"],
-            begin_channel=self._count_between_markers["begin_channel"],
-            end_channel=self._count_between_markers["end_channel"],
-            n_values=n_values,
-        )
+        click_channel = kwargs.get("click_channel", self._count_between_markers["click_channel"])
+        begin_channel = kwargs.get("begin_channel", self._count_between_markers["begin_channel"])
+        end_channel = kwargs.get("end_channel", self._count_between_markers["end_channel"])
+        n_values = kwargs.get("n_values", n_values)
+        counter_kwargs = dict(click_channel=click_channel, begin_channel=begin_channel, n_values=n_values)
+        if end_channel is not None:
+            counter_kwargs["end_channel"] = end_channel
+        self.gated_counter_countbetweenmarkers = CountBetweenMarkers(self.tagger, **counter_kwargs)
+        return self.gated_counter_countbetweenmarkers
 
     def time_differences(self, **kwargs):  # , click_channel, start_channel, next_channel, binwidth,n_bins, n_histograms):
         return TimeDifferences(

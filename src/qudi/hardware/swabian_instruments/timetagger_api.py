@@ -25,6 +25,7 @@ class TT(Base):
     _count_between_markers = ConfigOption("count_between_markers", dict(), missing="warn")
     _counter = ConfigOption("counter", dict(), missing="warn")
     _combiner = ConfigOption("combiner", dict(), missing="warn")
+    _apd_channels = ConfigOption("apd_channels", dict(), missing="info")
     _channels_params = ConfigOption("channels_params", dict(), missing="info")
     _remote_tagger_ip = ConfigOption("remote_tagger_ip", None, missing="info")
     _remote_tagger_port = ConfigOption("remote_tagger_port", None, missing="info")

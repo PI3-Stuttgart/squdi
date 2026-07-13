@@ -144,11 +144,119 @@ class GatedCounter(GenericLogic):
         else:
             self.n_values = n_values
 
+    def _counter_tasks(self):
+        tasks_by_channel = getattr(self, "_gated_counter_tasks_by_click_channel", None)
+        if tasks_by_channel:
+            tasks = list(tasks_by_channel.values())
+        else:
+            task = getattr(self._fast_counter_device, "gated_counter_countbetweenmarkers", None)
+            tasks = [] if task is None else [task]
+
+        unique_tasks = []
+        seen = set()
+        for task in tasks:
+            if task is not None and id(task) not in seen:
+                unique_tasks.append(task)
+                seen.add(id(task))
+        return unique_tasks
+
+    def _get_default_click_channel(self):
+        return int(self._fast_counter_device._count_between_markers["click_channel"])
+
+    def _coerce_click_channel(self, value):
+        if isinstance(value, (int, np.integer)):
+            return int(value)
+        text = str(value).strip()
+        try:
+            return int(text)
+        except ValueError:
+            pass
+
+        key = text.lower().replace("-", "_")
+        for prefix in ("apd_", "apd", "tt_", "tt", "ttr_", "ttr"):
+            if key.startswith(prefix):
+                suffix = key[len(prefix):]
+                if suffix.isdigit():
+                    return int(suffix)
+        raise ValueError("Could not resolve APD/click-channel selector '{}'.".format(value))
+
+    def _resolve_click_channel(self, selector):
+        if selector is None or selector == "":
+            return self._get_default_click_channel()
+
+        apd_channels = getattr(self._fast_counter_device, "_apd_channels", None) or {}
+        apd_channels = {str(key).lower(): value for key, value in apd_channels.items()}
+        key = str(selector).strip().lower()
+        if key in apd_channels:
+            return self._coerce_click_channel(apd_channels[key])
+
+        return self._coerce_click_channel(selector)
+
+    def _analysis_click_channels(self):
+        selectors = getattr(self.trace, "analyze_sequence_apd_channels", None)
+        if selectors is None:
+            selectors = [None] * len(self.trace.analyze_sequence)
+        return [self._resolve_click_channel(selector) for selector in selectors]
+
+    def _create_count_between_markers(self, click_channel, n_values):
+        counter_settings = self._fast_counter_device._count_between_markers
+        return self._fast_counter_device.count_between_markers(
+            click_channel=click_channel,
+            begin_channel=counter_settings["begin_channel"],
+            end_channel=counter_settings.get("end_channel"),
+            n_values=n_values,
+        )
+
+    def _combine_gated_counter_data_by_step(self, data_by_click_channel):
+        step_lengths = [step[3] for step in self.trace.analyze_sequence]
+        nlp_per_point = sum(step_lengths)
+        n_sm = self.trace.number_of_simultaneous_measurements
+        period_run = nlp_per_point * n_sm
+        if period_run == 0:
+            return np.array([], dtype=np.int16)
+
+        min_len = min(len(data) for data in data_by_click_channel.values())
+        trace_length_cut = min_len - min_len % period_run
+        first_data = next(iter(data_by_click_channel.values()))
+        combined = np.zeros(trace_length_cut, dtype=first_data.dtype)
+        click_channels = getattr(self, "_gated_counter_click_channels", self._analysis_click_channels())
+
+        for run_start in range(0, trace_length_cut, period_run):
+            for sm in range(n_sm):
+                offset = run_start + sm * nlp_per_point
+                for step_idx, step_len in enumerate(step_lengths):
+                    next_offset = offset + step_len
+                    if next_offset > trace_length_cut:
+                        break
+                    click_channel = click_channels[step_idx]
+                    combined[offset:next_offset] = data_by_click_channel[click_channel][offset:next_offset]
+                    offset = next_offset
+        return combined
+
+    def _all_counters_ready(self):
+        tasks = self._counter_tasks()
+        return bool(tasks) and all(task.ready() for task in tasks)
+
     def read_trace(self):
         print("GC:read_trace")
-        self.gated_counter_data = (
-            self._fast_counter_device.gated_counter_countbetweenmarkers.getData()
-        )  # If readout takes too long, ask Javid for optimized Readout sequence
+        tasks_by_channel = getattr(self, "_gated_counter_tasks_by_click_channel", None)
+        if tasks_by_channel and len(tasks_by_channel) > 1:
+            self.gated_counter_data_by_apd = {
+                click_channel: task.getData()
+                for click_channel, task in tasks_by_channel.items()
+            }
+            self.gated_counter_data = self._combine_gated_counter_data_by_step(
+                self.gated_counter_data_by_apd
+            )
+        else:
+            self.gated_counter_data = (
+                self._fast_counter_device.gated_counter_countbetweenmarkers.getData()
+            )  # If readout takes too long, ask Javid for optimized Readout sequence
+            if tasks_by_channel:
+                click_channel = next(iter(tasks_by_channel.keys()))
+            else:
+                click_channel = self._get_default_click_channel()
+            self.gated_counter_data_by_apd = {click_channel: self.gated_counter_data}
         if self.ZPL_counter:
             print("ZPL_counter in gated_counter_logic")
             if self.raw_clicks_processing:
@@ -216,7 +324,8 @@ class GatedCounter(GenericLogic):
             self.update_plot_data()
 
     def clear_timetaggers(self):
-        self._fast_counter_device.gated_counter_countbetweenmarkers.clear()
+        for task in self._counter_tasks():
+            task.clear()
         if self.ZPL_counter:
             if self.raw_clicks_processing:
                 counter_name = "raw_zpl"
@@ -248,8 +357,8 @@ class GatedCounter(GenericLogic):
 
     def stop_timetaggers(self):
 
-        if hasattr(self._fast_counter_device, "gated_counter_countbetweenmarkers"):
-            self._fast_counter_device.gated_counter_countbetweenmarkers.stop()
+        for task in self._counter_tasks():
+            task.stop()
         if self.ZPL_counter:
             # print('Gated counter stop TT ZPL_counter')
 
@@ -276,7 +385,8 @@ class GatedCounter(GenericLogic):
                             getattr(self._fast_counter_device, counter_name).stop()
 
     def start_timetaggers(self):
-        self._fast_counter_device.gated_counter_countbetweenmarkers.start()
+        for task in self._counter_tasks():
+            task.start()
         if self.ZPL_counter:
             if self.raw_clicks_processing:
 
@@ -350,7 +460,7 @@ class GatedCounter(GenericLogic):
                 # print('Gated counter is falling asleep for ',self.readout_duration / 1e6)
                 # time.sleep(self.readout_duration / 1e6)
                 # break
-                ready = self._fast_counter_device.gated_counter_countbetweenmarkers.ready()
+                ready = self._all_counters_ready()
 
                 if i % 2 == 0:
                     # why get counts here already? its done at the end of measurement when self.read_trace() is called
@@ -388,6 +498,8 @@ class GatedCounter(GenericLogic):
 
         print("GC:set_counter")
         self.ZPL_counter = False
+        self._gated_counter_tasks_by_click_channel = {}
+        self._gated_counter_click_channels = []
 
         ## Needs to be adjusted tohas the qudi gated counter #TODO
         def f():
@@ -397,7 +509,23 @@ class GatedCounter(GenericLogic):
             n_vals = self.n_values - self.n_values % nlp_per_point if hasattr(self, "_n_values") else nlp_per_point * self.points
             print("GC:set_counter:nvals", n_vals)
             print("GC:")
-            self._fast_counter_device.count_between_markers_nops(n_values=n_vals)
+            click_channels = self._analysis_click_channels()
+            unique_click_channels = list(OrderedDict((channel, None) for channel in click_channels).keys())
+            default_click_channel = self._get_default_click_channel()
+
+            if len(unique_click_channels) == 1 and unique_click_channels[0] == default_click_channel:
+                self._fast_counter_device.count_between_markers_nops(n_values=n_vals)
+                task = self._fast_counter_device.gated_counter_countbetweenmarkers
+                self._gated_counter_tasks_by_click_channel = {default_click_channel: task}
+            else:
+                self._gated_counter_tasks_by_click_channel = {
+                    click_channel: self._create_count_between_markers(click_channel, n_vals)
+                    for click_channel in unique_click_channels
+                }
+                self._fast_counter_device.gated_counter_countbetweenmarkers = (
+                    self._gated_counter_tasks_by_click_channel[unique_click_channels[0]]
+                )
+            self._gated_counter_click_channels = click_channels
 
             # ZPL STUF
             # if False: # self.raw_clicks_processing:

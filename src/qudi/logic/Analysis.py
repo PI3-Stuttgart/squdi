@@ -55,15 +55,40 @@ class BaseTrace:
     def analyze_sequence(self):
         return self._analyze_sequence
 
+    @property
+    def analyze_sequence_apd_channels(self):
+        """Return optional APD/click-channel selectors for each analysis step.
+
+        ``analyze_sequence`` itself intentionally stays in the historic 6-column
+        form so all old analysis code can keep using positional fields.
+        """
+        if self.analyze_sequence is None:
+            return None
+        channels = getattr(self, "_analyze_sequence_apd_channels", None)
+        if channels is None or len(channels) != len(self.analyze_sequence):
+            return [None] * len(self.analyze_sequence)
+        return channels
+
+    @property
+    def analyze_sequence_with_apd_channels(self):
+        if self.analyze_sequence is None:
+            return None
+        return [
+            step + [channel]
+            for step, channel in zip(self.analyze_sequence, self.analyze_sequence_apd_channels)
+        ]
+
     @analyze_sequence.setter
     def analyze_sequence(self, value):
         if isinstance(value, list):
             if len(value) == 0:
                 raise Exception("'analyze_sequence' can not be of length zero.")
+            normalized_sequence = []
+            apd_channels = []
             for idx, step in enumerate(value):
-                if len(step) != 6:
-                    raise Exception('Error: {}, {}'.format(idx, value))
                 if not isinstance(step, list):
+                    raise Exception('Error: {}, {}'.format(idx, value))
+                if len(step) not in [6, 7]:
                     raise Exception('Error: {}, {}'.format(idx, value))
                 if not step[0] in ['init', 'result']:
                     raise Exception('Error: {}, {}'.format(idx, value))
@@ -73,16 +98,25 @@ class BaseTrace:
                     raise Exception('Error: {}, {}'.format(idx, value))
                 if step[2] == 'auto' and step[5] != 1:
                     raise Exception('Error: {}, {}'.format(idx, value))
-                if not isinstance(step[3], int) or step[3] < 0:
+                if not isinstance(step[3], (int, np.integer)) or step[3] < 0:
                     raise Exception('Error: {}, {}'.format(idx, value))
                 if not type(step[4]) in [int, float]:
                     raise Exception('Error: {}, {}'.format(idx, value))
 
-                if not isinstance(step[5], int) and step[5] >= 1:
+                if not isinstance(step[5], (int, np.integer)):
                     raise Exception('When given, the last (6th) entry in an analyze_sequence step must be of type int. It represents the alternating_repetitions also used in snippets_awg.SSR()')
-            self._analyze_sequence = value
+                if len(step) == 7 and not (step[6] is None or isinstance(step[6], (str, int, np.integer))):
+                    raise Exception('Error: APD/channel selector must be None, str, or int: {}, {}'.format(idx, value))
+                normalized_step = step[:6]
+                normalized_step[3] = int(normalized_step[3])
+                normalized_step[5] = int(normalized_step[5])
+                normalized_sequence.append(normalized_step)
+                apd_channels.append(step[6] if len(step) == 7 else None)
+            self._analyze_sequence = normalized_sequence
+            self._analyze_sequence_apd_channels = apd_channels
         elif value is None:
             self._analyze_sequence = value
+            self._analyze_sequence_apd_channels = None
         else:
             raise TypeError("Trace.analyze_sequence must be a list.")
 
