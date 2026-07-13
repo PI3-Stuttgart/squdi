@@ -26,19 +26,24 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 import time
-from typing import Union, Optional, List, Tuple, Sequence, Any, Dict
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from scipy.constants import c, lambda2nu
 from PySide2 import QtCore
-
 from qudi.core.configoption import ConfigOption
 from qudi.core.connector import Connector
-from qudi.util.mutex import Mutex
 from qudi.util.constraints import ScalarConstraint
-from qudi.interface.data_instream_interface import DataInStreamInterface, DataInStreamConstraints, StreamingMode, SampleTiming
-from qudi.hardware.wavemeter.high_finesse_proxy import HighFinesseProxy
+from qudi.util.mutex import Mutex
+from scipy.constants import c, lambda2nu
+
 from qudi.hardware.wavemeter.high_finesse_constants import GetFrequencyError
+from qudi.hardware.wavemeter.high_finesse_proxy import HighFinesseProxy
+from qudi.interface.data_instream_interface import (
+    DataInStreamConstraints,
+    DataInStreamInterface,
+    SampleTiming,
+    StreamingMode,
+)
 
 
 class HighFinesseWavemeter(DataInStreamInterface):
@@ -72,7 +77,9 @@ class HighFinesseWavemeter(DataInStreamInterface):
 
     # config options
     _wavemeter_ch_config: Dict[str, Dict[str, Any]] = ConfigOption(
-        name="channels", default={"default_channel": {"switch_ch": 1, "unit": "m", "exposure": None}}, missing="info"
+        name="channels",
+        default={"default_channel": {"switch_ch": 1, "unit": "m", "exposure": None}},
+        missing="info",
     )
 
     def __init__(self, *args, **kwargs):
@@ -84,7 +91,9 @@ class HighFinesseWavemeter(DataInStreamInterface):
         self._channel_names: Dict[int, str] = {}
         self._channel_units: Dict[int, str] = {}
         self._channel_buffer_size = 1024**2
-        self._active_switch_channels: Optional[List[int]] = None  # list of active switch channel numbers
+        self._active_switch_channels: Optional[List[int]] = (
+            None  # list of active switch channel numbers
+        )
         self._last_measurement_error: Dict[int, float] = {}
 
         # data buffer
@@ -93,11 +102,14 @@ class HighFinesseWavemeter(DataInStreamInterface):
         self._timestamp_buffer: Optional[np.ndarray] = None
         self._current_buffer_position = 0
         self._buffer_overflow = False
+        self._buffer_overflow_logged = False
+        self._latest_channel_values: Dict[int, Tuple[float, float]] = {}
 
         # stored hardware constraints
         self._constraints: Optional[DataInStreamConstraints] = None
         self._measurement_timing: Optional[float] = None
         self._lock_target_frequency_hz: Optional[float] = None
+        self._stream_started_by_lock = False
 
     def on_activate(self) -> None:
         # configure wavemeter channels
@@ -111,7 +123,9 @@ class HighFinesseWavemeter(DataInStreamInterface):
             elif unit == "nm" or unit == "m":
                 self._channel_units[ch] = "m"
             else:
-                self.log.warning(f"Invalid unit: {unit}. Valid units are Hz and m. Using m as default.")
+                self.log.warning(
+                    f"Invalid unit: {unit}. Valid units are Hz and m. Using m as default."
+                )
                 self._channel_units[ch] = "m"
 
             exp_time = info.get("exposure")
@@ -123,12 +137,17 @@ class HighFinesseWavemeter(DataInStreamInterface):
         # set up constraints
         sample_rate = self.sample_rate
         self._constraints = DataInStreamConstraints(
-            channel_units={self._channel_names[ch]: self._channel_units[ch] for ch in self._active_switch_channels},
+            channel_units={
+                self._channel_names[ch]: self._channel_units[ch]
+                for ch in self._active_switch_channels
+            },
             sample_timing=SampleTiming.TIMESTAMP,
             # TODO: implement fixed streaming mode
             streaming_modes=[StreamingMode.CONTINUOUS],
             data_type=np.float64,
-            channel_buffer_size=ScalarConstraint(default=1024**2, bounds=(128, 1024**3), increment=1, enforce_int=True),  # 8 MB  # max = 8 GB
+            channel_buffer_size=ScalarConstraint(
+                default=1024**2, bounds=(128, 1024**3), increment=1, enforce_int=True
+            ),  # 8 MB  # max = 8 GB
             sample_rate=ScalarConstraint(default=sample_rate, bounds=(0.01, 1e3)),
         )
         self._measurement_timing = 1 / sample_rate if sample_rate else None
@@ -143,27 +162,45 @@ class HighFinesseWavemeter(DataInStreamInterface):
         self._data_buffer = None
         self._timestamp_buffer = None
 
-    def start_lock(self, wavelength: Union[float, None] = None, use_current_wavelength: bool = False, channel: int = 1) -> None:
+    def restart_wavemeter_software(self, timeout: float = 30.0, start_silent: bool = True) -> None:
+        """Restart the HighFinesse WLM application and reconnect active streams."""
+        self._proxy().restart_wlm_application(timeout=timeout, start_silent=start_silent)
+
+    def reapply_wavemeter_settings(self) -> None:
+        """Reapply settings that may be reset by a WLM application restart."""
+        for info in self._wavemeter_ch_config.values():
+            exp_time = info.get("exposure")
+            if exp_time is not None:
+                self._proxy().set_exposure_time(info["switch_ch"], exp_time)
+
+    def start_lock(
+        self,
+        wavelength: Union[float, None] = None,
+        use_current_wavelength: bool = False,
+        channel: int = 1,
+    ) -> None:
 
         if self.module_state() == "idle":
             self.start_stream()
+            self._stream_started_by_lock = True
             time.sleep(0.01)
 
         if use_current_wavelength:
-            wavelength = current_wavelength = self.read_single_point()[0][0] * 1e9  # TODO: not generic
+            wavelength = self.get_current_wavelength(kind="nm")
         else:
             if wavelength == None:
-                raise ValueError("Target wavelength needs to be defined or use_current_wavelength=True")
+                raise ValueError(
+                    "Target wavelength needs to be defined or use_current_wavelength=True"
+                )
 
         self._proxy().set_reference_wavelength(wavelength)
         self._proxy().toggle_locking(True)
 
     def stop_lock(self, channel: int = 1) -> None:
-        if self.module_state() == "idle":
-            self.start_stream()
-            time.sleep(0.01)
-
         self._proxy().toggle_locking(False)
+        if self._stream_started_by_lock and self.module_state() == "locked":
+            self.stop_stream()
+        self._stream_started_by_lock = False
 
     # Compatibility helpers for older wavemeter logic modules expecting the
     # legacy WavemeterInterface API.
@@ -180,16 +217,30 @@ class HighFinesseWavemeter(DataInStreamInterface):
             time.sleep(0.01)
 
     def _compat_get_latest_channel_value(self, channel_index: int = 0) -> Tuple[float, float, int]:
-        self._compat_wait_for_samples()
+        self._compat_ensure_running()
+        deadline = time.time() + 2.0
+        while True:
+            with self._lock:
+                number_of_channels = len(self.active_channels)
+                if channel_index >= number_of_channels:
+                    raise IndexError("Requested wavemeter channel index is not available.")
+                switch_channel = self._active_switch_channels[channel_index]
+                if switch_channel in self._latest_channel_values or self.available_samples > 0:
+                    break
+            if time.time() >= deadline:
+                raise TimeoutError("Timed out while waiting for wavemeter data.")
+            time.sleep(0.01)
+
         with self._lock:
             number_of_channels = len(self.active_channels)
-            if channel_index >= number_of_channels:
-                raise IndexError("Requested wavemeter channel index is not available.")
-            available_samples = self.available_samples
-            buffer_index = number_of_channels * (available_samples - 1)
-            value = float(self._data_buffer[buffer_index + channel_index])
-            timestamp = float(self._timestamp_buffer[available_samples - 1])
             switch_channel = self._active_switch_channels[channel_index]
+            try:
+                value, timestamp = self._latest_channel_values[switch_channel]
+            except KeyError:
+                available_samples = self.available_samples
+                buffer_index = number_of_channels * (available_samples - 1)
+                value = float(self._data_buffer[buffer_index + channel_index])
+                timestamp = float(self._timestamp_buffer[available_samples - 1])
         return value, timestamp, switch_channel
 
     def _compat_value_to_frequency_hz(self, value: float, switch_channel: int) -> float:
@@ -219,7 +270,7 @@ class HighFinesseWavemeter(DataInStreamInterface):
             return -1
         return 0
 
-    def get_current_wavelength(self, kind: str = "air") -> float:
+    def get_current_wavelength(self, kind: str = "m") -> float:
         value, _, switch_channel = self._compat_get_latest_channel_value(0)
         frequency_hz = self._compat_value_to_frequency_hz(value, switch_channel)
         wavelength_m = self._compat_value_to_wavelength_m(value, switch_channel)
@@ -231,8 +282,8 @@ class HighFinesseWavemeter(DataInStreamInterface):
             return float(frequency_hz / 1e12)
         if mode == "m":
             return float(wavelength_m)
-        # Legacy wavemeter callers expect wavelength-like values in nm.
-        return float(wavelength_m * 1e9)
+        if mode == "nm":
+            return float(wavelength_m * 1e9)
 
     def get_current_wavelength2(self, kind: str = "air") -> float:
         try:
@@ -284,6 +335,8 @@ class HighFinesseWavemeter(DataInStreamInterface):
                 self._timestamp_buffer.fill(0)
             self._current_buffer_position = 0
             self._buffer_overflow = False
+            self._buffer_overflow_logged = False
+            self._latest_channel_values = {}
 
     def get_wavelength_buffer(self) -> np.ndarray:
         try:
@@ -298,8 +351,11 @@ class HighFinesseWavemeter(DataInStreamInterface):
 
             number_of_channels = len(self.active_channels)
             switch_channel = self._active_switch_channels[0]
-            values = self._data_buffer[: available_samples * number_of_channels : number_of_channels].copy()
+            values = self._data_buffer[
+                : available_samples * number_of_channels : number_of_channels
+            ].copy()
             timestamps = self._timestamp_buffer[:available_samples].copy()
+            self._remove_samples_from_buffer(available_samples)
 
         if self._channel_units[switch_channel] == "Hz":
             wavelengths_thz = values / 1e12
@@ -342,7 +398,12 @@ class HighFinesseWavemeter(DataInStreamInterface):
             else:
                 self.log.warning("Unable to stop wavemeter input stream as nothing is running.")
 
-    def read_data_into_buffer(self, data_buffer: np.ndarray, samples_per_channel: int, timestamp_buffer: Optional[np.ndarray] = None) -> None:
+    def read_data_into_buffer(
+        self,
+        data_buffer: np.ndarray,
+        samples_per_channel: int,
+        timestamp_buffer: Optional[np.ndarray] = None,
+    ) -> None:
         """Read data from the stream buffer into a 1D numpy array given as parameter.
         Samples of all channels are stored interleaved in contiguous memory.
         In case of a multidimensional buffer array, this buffer will be flattened before written
@@ -377,7 +438,9 @@ class HighFinesseWavemeter(DataInStreamInterface):
             timestamp_buffer[:samples_per_channel] = self._timestamp_buffer[:samples_per_channel]
             self._remove_samples_from_buffer(samples_per_channel)
 
-    def read_available_data_into_buffer(self, data_buffer: np.ndarray, timestamp_buffer: Optional[np.ndarray] = None) -> int:
+    def read_available_data_into_buffer(
+        self, data_buffer: np.ndarray, timestamp_buffer: Optional[np.ndarray] = None
+    ) -> int:
         """Read data from the stream buffer into a 1D numpy array given as parameter.
         All samples for each channel are stored in consecutive blocks one after the other.
         The number of samples read per channel is returned and can be used to slice out valid data
@@ -406,7 +469,9 @@ class HighFinesseWavemeter(DataInStreamInterface):
 
         return samples_per_channel
 
-    def read_data(self, samples_per_channel: Optional[int] = None) -> Tuple[np.ndarray, Union[np.ndarray, None]]:
+    def read_data(
+        self, samples_per_channel: Optional[int] = None
+    ) -> Tuple[np.ndarray, Union[np.ndarray, None]]:
         """Read data from the stream buffer into a 1D numpy array and return it.
         All samples for each channel are stored in consecutive blocks one after the other.
         The returned data_buffer can be unraveled into channel samples with:
@@ -421,7 +486,9 @@ class HighFinesseWavemeter(DataInStreamInterface):
         If samples_per_channel is omitted all currently available samples are read from buffer.
         This method will not return until all requested samples have been read or a timeout occurs.
         """
-        samples_per_channel = samples_per_channel if samples_per_channel is not None else self.available_samples
+        samples_per_channel = (
+            samples_per_channel if samples_per_channel is not None else self.available_samples
+        )
         total_samples = len(self.active_channels) * samples_per_channel
 
         data_buffer = np.empty(total_samples, dtype=self.constraints.data_type)
@@ -446,9 +513,19 @@ class HighFinesseWavemeter(DataInStreamInterface):
 
         with self._lock:
             n = len(self.active_channels)
+            if all(ch in self._latest_channel_values for ch in self._active_switch_channels):
+                data = np.array(
+                    [self._latest_channel_values[ch][0] for ch in self._active_switch_channels],
+                    dtype=self.constraints.data_type,
+                )
+                timestamp = self._latest_channel_values[self._active_switch_channels[0]][1]
+                return data, timestamp
+
             available_samples = self.available_samples
             # get the most recent samples for each channel
-            data = self._data_buffer[n * (available_samples - 1) : n * available_samples]
+            if available_samples < 1:
+                raise RuntimeError("Unable to read data. No samples are available.")
+            data = self._data_buffer[n * (available_samples - 1) : n * available_samples].copy()
             timestamp = self._timestamp_buffer[available_samples - 1]
 
         return data, timestamp
@@ -499,7 +576,13 @@ class HighFinesseWavemeter(DataInStreamInterface):
         """
         return self._channel_buffer_size
 
-    def configure(self, active_channels: Sequence[str], streaming_mode: Union[StreamingMode, int], channel_buffer_size: int, sample_rate: float) -> None:
+    def configure(
+        self,
+        active_channels: Sequence[str],
+        streaming_mode: Union[StreamingMode, int],
+        channel_buffer_size: int,
+        sample_rate: float,
+    ) -> None:
         """Configure a data stream. See read-only properties for information on each parameter."""
         if self.module_state() == "locked":
             raise RuntimeError("Unable to configure data stream while it is already running")
@@ -510,7 +593,10 @@ class HighFinesseWavemeter(DataInStreamInterface):
                 if ch in self._wavemeter_ch_config:
                     self._active_switch_channels.append(self._wavemeter_ch_config[ch]["switch_ch"])
                 else:
-                    raise ValueError(f"Channel {ch} is not set up in the config file. Available channels " f"are {list(self._channel_names.keys())}.")
+                    raise ValueError(
+                        f"Channel {ch} is not set up in the config file. Available channels "
+                        f"are {list(self._channel_names.keys())}."
+                    )
 
         if streaming_mode is not None and streaming_mode.value != StreamingMode.CONTINUOUS.value:
             self.log.warning("Only continuous streaming is supported, ignoring this setting.")
@@ -521,23 +607,37 @@ class HighFinesseWavemeter(DataInStreamInterface):
 
     def process_new_wavelength(self, ch, wavelength, timestamp):
         with self._lock:
+            if (
+                self.module_state() != "locked"
+                or self._data_buffer is None
+                or self._timestamp_buffer is None
+                or self._active_switch_channels is None
+            ):
+                return
             try:
                 i = self._active_switch_channels.index(ch)
             except ValueError:
                 # channel is not active on this instreamer
                 return
 
-        if self._last_measurement_error[ch] != 0:
+        if self._last_measurement_error.get(ch, 0) != 0:
             if wavelength > 0:
                 # reset error flag
                 self._last_measurement_error[ch] = 0
 
         if wavelength <= 0:
             # negative values indicate an error
-            if self._last_measurement_error[ch] != wavelength:
+            if self._last_measurement_error.get(ch, 0) != wavelength:
                 # error is new
                 self._last_measurement_error[ch] = wavelength
-                self.log.warning(f"The last wavemeter measurement of channel {ch} was unsuccessful " f"due to {GetFrequencyError(wavelength).name}.")
+                try:
+                    error_name = GetFrequencyError(wavelength).name
+                except ValueError:
+                    error_name = f"error code {wavelength}"
+                self.log.warning(
+                    f"The last wavemeter measurement of channel {ch} was unsuccessful "
+                    f"due to {error_name}."
+                )
             wavelength = np.nan
 
         with self._lock:
@@ -545,9 +645,15 @@ class HighFinesseWavemeter(DataInStreamInterface):
             current_timestamp_buffer_position = self._current_buffer_position // number_of_channels
             if current_timestamp_buffer_position >= self.channel_buffer_size:
                 self._buffer_overflow = True
-                raise OverflowError(
-                    "Streaming buffer encountered an overflow while receiving a callback from the wavemeter. "
-                    "Please increase the buffer size or speed up data reading."
+                if not self._buffer_overflow_logged:
+                    self.log.warning(
+                        "Wavemeter streaming buffer is full. Dropping the oldest sample "
+                        "to keep the latest wavelength available."
+                    )
+                    self._buffer_overflow_logged = True
+                self._remove_samples_from_buffer(1)
+                current_timestamp_buffer_position = (
+                    self._current_buffer_position // number_of_channels
                 )
 
             # unit conversion
@@ -561,16 +667,18 @@ class HighFinesseWavemeter(DataInStreamInterface):
                 # set the timing offset to the start of the stream
                 self._wm_start_time = timestamp
 
+            relative_timestamp = timestamp - self._wm_start_time
+            self._latest_channel_values[ch] = (float(converted_value), float(relative_timestamp))
+
             if i != self._current_buffer_position % number_of_channels:
                 # discard the sample if a sample was missed before and the buffer position is off
                 return
 
-            timestamp -= self._wm_start_time
             # insert the new data into the buffers
             self._data_buffer[self._current_buffer_position] = converted_value
             if i == 0:
                 # only record the timestamp of the first active channel
-                self._timestamp_buffer[current_timestamp_buffer_position] = timestamp
+                self._timestamp_buffer[current_timestamp_buffer_position] = relative_timestamp
             self._current_buffer_position += 1
 
         self.sigNewWavelength.emit(converted_value)
@@ -578,10 +686,14 @@ class HighFinesseWavemeter(DataInStreamInterface):
     def _init_buffers(self) -> None:
         """Initialize buffers and the current buffer position marker."""
         n = len(self._active_switch_channels)
-        self._data_buffer = np.zeros(n * self._channel_buffer_size, dtype=self.constraints.data_type)
+        self._data_buffer = np.zeros(
+            n * self._channel_buffer_size, dtype=self.constraints.data_type
+        )
         self._timestamp_buffer = np.zeros(self._channel_buffer_size, dtype=np.float64)
         self._current_buffer_position = 0
         self._buffer_overflow = False
+        self._buffer_overflow_logged = False
+        self._latest_channel_values = {}
 
     def _remove_samples_from_buffer(self, samples_per_channel: int) -> None:
         """
@@ -589,23 +701,39 @@ class HighFinesseWavemeter(DataInStreamInterface):
         :param samples_per_channel: number of samples per channel to clear off the buffer
         :return: None
         """
+        if samples_per_channel <= 0 or self._data_buffer is None or self._timestamp_buffer is None:
+            return
+
+        samples_per_channel = min(samples_per_channel, self.available_samples)
         total_samples = len(self.active_channels) * samples_per_channel
         self._data_buffer = np.roll(self._data_buffer, -total_samples)
         self._timestamp_buffer = np.roll(self._timestamp_buffer, -samples_per_channel)
-        self._current_buffer_position -= total_samples
+        self._current_buffer_position = max(0, self._current_buffer_position - total_samples)
 
-    def _validate_buffers(self, data_buffer: np.ndarray, timestamp_buffer: np.ndarray) -> Tuple[int, Union[int, Any]]:
+    def _validate_buffers(
+        self, data_buffer: np.ndarray, timestamp_buffer: np.ndarray
+    ) -> Tuple[int, Union[int, Any]]:
         """Validate arguments for read_[available]_data_into_buffer methods."""
-        if not isinstance(data_buffer, np.ndarray) or data_buffer.dtype != self.constraints.data_type:
-            raise TypeError(f"data_buffer must be numpy.ndarray with dtype {self.constraints.data_type}.")
+        if (
+            not isinstance(data_buffer, np.ndarray)
+            or data_buffer.dtype != self.constraints.data_type
+        ):
+            raise TypeError(
+                f"data_buffer must be numpy.ndarray with dtype {self.constraints.data_type}."
+            )
 
         if not isinstance(timestamp_buffer, np.ndarray) or timestamp_buffer.dtype != np.float64:
-            raise TypeError(f"timestamp_buffer must be provided for the wavemeter and " f"it must be a numpy.ndarray with dtype np.float64.")
+            raise TypeError(
+                "timestamp_buffer must be provided for the wavemeter and "
+                "it must be a numpy.ndarray with dtype np.float64."
+            )
 
         number_of_channels = len(self.active_channels)
         samples_per_channel = data_buffer.size // number_of_channels
 
         if timestamp_buffer.size != samples_per_channel:
-            raise ValueError(f"timestamp_buffer must be exactly of length data_buffer // <channel_count>")
+            raise ValueError(
+                "timestamp_buffer must be exactly of length data_buffer // <channel_count>"
+            )
 
         return samples_per_channel

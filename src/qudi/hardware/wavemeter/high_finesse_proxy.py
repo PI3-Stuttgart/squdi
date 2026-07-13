@@ -178,6 +178,38 @@ class HighFinesseProxy(Base):
         else:
             self.log.warning("Instream module is not connected and can therefore not be disconnected.")
 
+    def restart_wlm_application(
+        self, timeout: float = 30.0, start_silent: bool = True
+    ) -> None:
+        """Restart the HighFinesse WLM application and reconnect active streams.
+
+        The vendor callback connection does not survive a WLM application restart.
+        This method therefore remembers connected instreamers, tears down the
+        callback, restarts the WLM process through the DLL, and reconnects the
+        same instreamer modules afterwards.
+        """
+        remembered_streamers = list(self._connected_instream_modules.items())
+
+        self.log.warning("Restarting HighFinesse WLM application.")
+        for streamer, _ in remembered_streamers:
+            streamer.stop_stream_watchdog()
+
+        with self._lock:
+            self._connected_instream_modules = {}
+            self._stop_callback_if_running()
+            self._stop_measurement_if_running()
+            self._exit_wlm_application(timeout=timeout)
+            self._start_wlm_application(timeout=timeout, start_silent=start_silent)
+            setup_dll(self._wavemeter_dll)
+            self._check_wlm_version()
+            self._check_for_switch()
+
+        for streamer, _ in remembered_streamers:
+            streamer.reapply_wavemeter_settings()
+            streamer.start_stream()
+
+        self.log.info("HighFinesse WLM application restart complete.")
+
     def sample_rate(self) -> float:
         """
         Estimate the current sample rate by the exposure times per channel and switching times.
@@ -243,6 +275,91 @@ class HighFinesseProxy(Base):
     def _check_for_second_instance(self) -> bool:
         """Check if there already is a proxy running."""
         return THREAD_NAME_WATCHDOG in self._thread_manager.thread_names
+
+    def _check_wlm_version(self) -> None:
+        v = [self._wavemeter_dll.GetWLMVersion(i) for i in range(4)]
+        if v[0] == high_finesse_constants.GetFrequencyError.ErrWlmMissing.value:
+            raise RuntimeError(
+                "The wavemeter application is not active. "
+                "Start the wavemeter application before activating the qudi module."
+            )
+
+        self.log.info(
+            f"Successfully loaded wavemeter DLL of WS{v[0]} {v[1]},"
+            f" software revision {v[2]}, compilation number {v[3]}."
+        )
+
+        software_rev = v[2]
+        if software_rev < MIN_VERSION:
+            self.log.warning(
+                f"The wavemeter DLL software revision {software_rev} is older than the lowest revision "
+                f"tested to be working with the wrapper ({MIN_VERSION}). "
+                f"Setting up the wavemeter DLL might fail."
+            )
+
+    def _check_for_switch(self) -> None:
+        self._wavemeter_dll.SetSwitcherMode(True)
+        is_active = self._wavemeter_dll.GetSwitcherMode(0)
+        self._wm_has_switch = bool(is_active)
+
+    def _stop_callback_if_running(self) -> None:
+        if self._callback_function is not None:
+            self._stop_callback()
+
+    def _stop_measurement_if_running(self) -> None:
+        try:
+            self._wavemeter_dll.Operation(high_finesse_constants.cCtrlStopAll)
+        except Exception:
+            self.log.exception("Failed to stop wavemeter measurement before WLM restart.")
+
+        try:
+            self._wavemeter_dll.SetDeviationMode(False)
+        except Exception:
+            self.log.exception("Failed to disable wavemeter deviation mode before WLM restart.")
+
+    def _exit_wlm_application(self, timeout: float) -> None:
+        app = c_long()
+        self._wavemeter_dll.ControlWLM(
+            high_finesse_constants.cCtrlWLMExit,
+            byref(app),
+            0,
+        )
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if (
+                    self._wavemeter_dll.GetWLMVersion(0)
+                    == high_finesse_constants.GetFrequencyError.ErrWlmMissing.value
+                ):
+                    return
+            except Exception:
+                return
+            time.sleep(0.2)
+
+        raise TimeoutError("Timed out while waiting for the HighFinesse WLM application to exit.")
+
+    def _start_wlm_application(self, timeout: float, start_silent: bool) -> None:
+        app = c_long()
+        action = high_finesse_constants.cCtrlWLMShow | high_finesse_constants.cCtrlWLMWait
+        if start_silent:
+            action |= high_finesse_constants.cCtrlWLMStartSilent
+
+        self._wavemeter_dll.ControlWLM(action, byref(app), 0)
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if (
+                    self._wavemeter_dll.GetWLMVersion(0)
+                    != high_finesse_constants.GetFrequencyError.ErrWlmMissing.value
+                ):
+                    return
+            except Exception:
+                pass
+            time.sleep(0.2)
+
+        raise TimeoutError("Timed out while waiting for the HighFinesse WLM application.")
 
     def _activate_channel(self, ch: int) -> None:
         """Activate a channel on the multi-channel switch."""
@@ -412,9 +529,13 @@ class HighFinesseProxy(Base):
             else:
                 wavelength = 1e-9 * dblval  # measurement is in nm
             timestamp = 1e-3 * intval  # wavemeter records timestamps in ms
-            for instreamer, channels in self._connected_instream_modules.items():
+            for instreamer, channels in list(self._connected_instream_modules.items()):
                 if ch in channels:
-                    instreamer.process_new_wavelength(ch, wavelength, timestamp)
+                    try:
+                        instreamer.process_new_wavelength(ch, wavelength, timestamp)
+                    except Exception:
+                        self.log.exception("Error while processing wavemeter callback.")
+                        self.error_in_callback = True
             return 0
 
         _CALLBACK = WINFUNCTYPE(c_int, c_long, c_long, c_long, c_double, c_long)
