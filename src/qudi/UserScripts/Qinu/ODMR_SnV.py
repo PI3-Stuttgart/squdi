@@ -5,7 +5,7 @@ import os
 from collections import OrderedDict
 
 from qm import qua
-from qm.qua import declare, for_each_, infinite_loop_
+from qm.qua import for_each_, infinite_loop_
 from qualang_tools.units import unit
 
 import qudi.hardware.OPX.OPX_utils as OPX_utils
@@ -49,17 +49,12 @@ def ret_ret_mcas(pdc):
         # SSR_state = current_iterator_df["SSR_state"].unique()[0]
         with qua.program() as myprog:
             ou.init_program()
-            ou.i_1 = declare(int)
-            ou.i_2 = declare(int)
             ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
-            ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
-            ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
-            ou.pause(10_000)
             with infinite_loop_():
                 with for_each_(ou.i_1, values=qua_array_1):
                     with for_each_(ou.i_2, qua_array_2):
                         _, mw_freq_qua = ou._get_value_from_key("MW_f")
-                        mw_amp, _ = ou._get_value_from_key("MW_amp")
+                        # mw_amp, _ = ou._get_value_from_key("MW_amp")
                         qua.update_frequency(
                             "NV",
                             mw_freq_qua,
@@ -67,17 +62,9 @@ def ret_ret_mcas(pdc):
                         sna.crc(mcas)
                         sna.electron_init(mcas, "e2")
                         sna.ssr(mcas, state="e1")
-
-                        qua.align()
-                        ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
-                        ou.pause(10_000)
                         qua.align()
                         ou.gate_trigger()
-                        # Play the mw pulse...
-                        # qua.play(
-                        #     "cw" * qua.amp(mw_amp), "NV", duration=500e3 / 4
-                        # )  # duration is here in clock cycel
-                        ou.MW_pulse("NV", 500e3, mw_amp)
+                        ou.MW_pulse("NV", 500e3, 1)
                         ou.laser_pulse("Laser_620_det", 500e3)
                         qua.align()
                         ou.memory_trigger()
@@ -93,8 +80,8 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 10, 1, 0, 1]]
+    # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -120,8 +107,8 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = False
-    nuclear.lock_laser_to_wavemeter = False
+    nuclear.do_ple_refocus_A1 = True
+    nuclear.lock_laser_to_wavemeter = True
     nuclear.ple_refocus_interval = 2 * 60
 
     # Confocal refocus
@@ -132,20 +119,20 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    f_vec_array = np.arange(start=100 * u.MHz, stop=200 * u.MHz, step=0.2 * u.MHz)
+    f_vec_array = np.arange(start=-300 * u.MHz, stop=300 * u.MHz, step=1 * u.MHz)
     # MW_power_array = np.array([1.0, 0.7, 0.5, 0.2, 0.1])
-    nr_repeating_intergration: int = 10000
+    nr_repeating_intergration: int = 5
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
             # ("B_phi", [90]),
             # ("B_theta", [120]),
             # ("B_amp", [132, 135]),
-            ("sweeps", range(5)),
+            ("sweeps", range(10)),
             ("click_channel", [2]),
-            ("first_init_duration", [5e6]),
-            ("ODMR_readout_power", [6]),
-            ("MW_amp", [0.5]),
+            # ("first_init_duration", [5e6]),
+            # ("ODMR_readout_power", [6]),
+            # ("MW_amp", [0.5]),
             # ("Init_state", ["e1", "e2"]),
             # ("SSR_state", ["e1", "e2"]),
             # ("pulse_shape_ppg", ["square"]),

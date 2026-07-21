@@ -83,7 +83,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 10, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 15, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -121,9 +121,9 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_freq_array = np.arange(start=185 * u.MHz, stop=195 * u.MHz, step=0.1 * u.MHz)
+    MW_freq_array = np.arange(start=180 * u.MHz, stop=300 * u.MHz, step=0.2 * u.MHz)
     # MW_pulse_duration_array = np.arange(start=500, stop=20_000, step=500)
-    nr_repeating_intergration: int = 10
+    nr_repeating_intergration: int = 50
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
@@ -132,9 +132,9 @@ def settings(pdc={}):
             # ("B_amp", [140]),
             ("sweeps", range(10)),
             ("click_channel", [2]),
-            ("MW_pulse_len", [1_000]),
+            ("MW_pulse_len", [500]),
             # ("MW_amp", [1.0]),
-            ("cooldown_time", [5_000_000]),
+            ("cooldown_time", [2_000_000]),
             ("MW_f", MW_freq_array),
         )
     )
