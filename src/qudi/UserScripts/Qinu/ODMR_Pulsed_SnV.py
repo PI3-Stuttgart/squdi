@@ -111,7 +111,7 @@ def settings(pdc={}):
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
     nuclear.lock_laser_to_wavemeter = True
-    nuclear.ple_refocus_interval = 2 * 60
+    nuclear.ple_refocus_interval = 1 * 60
 
     # Confocal refocus
     nuclear.do_confocal_refocus_red = False
@@ -121,9 +121,9 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_freq_array = np.arange(start=180 * u.MHz, stop=300 * u.MHz, step=0.2 * u.MHz)
+    MW_freq_array = np.arange(start=150 * u.MHz, stop=200 * u.MHz, step=0.1 * u.MHz)
     # MW_pulse_duration_array = np.arange(start=500, stop=20_000, step=500)
-    nr_repeating_intergration: int = 50
+    nr_repeating_intergration: int = 10
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
@@ -132,7 +132,7 @@ def settings(pdc={}):
             # ("B_amp", [140]),
             ("sweeps", range(10)),
             ("click_channel", [2]),
-            ("MW_pulse_len", [500]),
+            ("MW_pulse_len", [1220]),
             # ("MW_amp", [1.0]),
             ("cooldown_time", [2_000_000]),
             ("MW_f", MW_freq_array),

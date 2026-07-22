@@ -69,7 +69,8 @@ def ret_ret_mcas(pdc):
                         qua.align()
                         ou.memory_trigger()
                         sna.csr(mcas)
-                        ou.pause(50e6)
+                        ou.pause(80e6)
+                # ou.pause(int(10e12))
 
         mcas.program = myprog
         # mcas.qm.set_digital_delay("NV", "switch", (113 + 21 + 1_015) * u.ns)
@@ -114,14 +115,14 @@ def settings(pdc={}):
     # Confocal refocus
     nuclear.do_confocal_refocus_red = False
     nuclear.do_confocal_refocus_green = False
-    nuclear.confocal_refocus_interval = 10 * 60
+    nuclear.confocal_refocus_interval = 1 * 60
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
     f_vec_array = np.arange(start=-300 * u.MHz, stop=300 * u.MHz, step=1 * u.MHz)
     # MW_power_array = np.array([1.0, 0.7, 0.5, 0.2, 0.1])
-    nr_repeating_intergration: int = 5
+    nr_repeating_intergration: int = 1
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (

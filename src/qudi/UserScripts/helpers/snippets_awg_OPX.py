@@ -43,8 +43,8 @@ class UpdateableDataclass:
 __pause_lp__: int = 1_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 9.8  # nW # det
-GENERAL_POWER_B2 = 8.5  # nW
+GENERAL_POWER_A1 = 6  # nW # det
+GENERAL_POWER_B2 = 5  # nW
 
 
 @dataclass
@@ -52,7 +52,7 @@ class ELECTRON_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
     electron_rabi_period: int = 992  # ns
-    IQ_freq: int = int((184.14) * 1e6)  # int(188.78 * 1e6)
+    IQ_freq: int = int((169.99) * 1e6)  # int(188.78 * 1e6)
 
 
 @dataclass

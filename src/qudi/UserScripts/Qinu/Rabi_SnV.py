@@ -121,7 +121,7 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_pulse_duration_array = np.arange(start=20, stop=5_000, step=50)
+    MW_pulse_duration_array = np.arange(start=20, stop=6_000, step=100)
     nr_repeating_intergration: int = 100
     # integrations_per_point = 500
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
@@ -133,7 +133,7 @@ def settings(pdc={}):
             ("MW_amp", [100]),
             ("sweeps", range(10)),
             ("click_channel", [2]),
-            ("ssr_state", ["e1"]),
+            ("ssr_state", ["e1", "e2"]),
             ("MW_pulse_len", MW_pulse_duration_array),
             # ("integrations_per_point", np.arange(0, integrations_per_point, 1)),
             ("cooldown_time", [100_000]),  # 100 us
