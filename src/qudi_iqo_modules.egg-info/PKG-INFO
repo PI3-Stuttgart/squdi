@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: qudi-iqo-modules
 Version: 0.5.2.dev0
 Summary: IQO measurement modules collection for qudi
@@ -44,6 +44,17 @@ Requires-Dist: PySide2
 Requires-Dist: PyVisa>=1.12.0
 Requires-Dist: scipy>=1.9.1
 Requires-Dist: zaber_motion>=2.14.6
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: license-file
+Dynamic: project-url
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
 
 # qudi-iqo-modules
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
