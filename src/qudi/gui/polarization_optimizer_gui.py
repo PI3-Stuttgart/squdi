@@ -65,7 +65,7 @@ class PolarizationOptimizerWindow(QtWidgets.QMainWindow):
         self.minimize_button = QtWidgets.QPushButton('Minimize once')
         self.start_log_button = QtWidgets.QPushButton('Start log')
         self.run_all_button = QtWidgets.QPushButton('Minimize + lock + log')
-        self.stop_lock_button = QtWidgets.QPushButton('Stop locking')
+        self.stop_lock_button = QtWidgets.QPushButton('Stop optimization / lock')
         self.stop_log_button = QtWidgets.QPushButton('Stop log')
         controls.addWidget(self.minimize_button, 0, 0)
         controls.addWidget(self.start_log_button, 0, 1)
@@ -105,6 +105,8 @@ class PolarizationOptimizerGui(GuiBase):
         self._logic.sigLogStateChanged.connect(self._set_log_state, QtCore.Qt.QueuedConnection)
         self._logic.sigLockStateChanged.connect(self._set_lock_state, QtCore.Qt.QueuedConnection)
         self._logic.sigOperationStatusChanged.connect(self._set_activity, QtCore.Qt.QueuedConnection)
+        self._logic.sigError.connect(self._show_error, QtCore.Qt.QueuedConnection)
+        self._update_controls()
         self._restore_window_geometry(self._mw)
         self._mw.show()
 
@@ -165,15 +167,32 @@ class PolarizationOptimizerGui(GuiBase):
     def _set_log_state(self, active):
         self._logging = bool(active)
         self._update_state()
+        self._update_controls()
 
     @QtCore.Slot(bool)
     def _set_lock_state(self, active):
         self._locking = bool(active)
         self._update_state()
+        self._update_controls()
 
     @QtCore.Slot(str)
     def _set_activity(self, status):
         self._mw.activity_label.setText(f'Activity: {status}')
+        self._optimizing = status.lower() == 'optimizing'
+        self._update_controls()
+
+    @QtCore.Slot(str)
+    def _show_error(self, message):
+        self._mw.activity_label.setText(f'Activity: error — {message}')
+        QtWidgets.QMessageBox.critical(self._mw, 'Polarization optimizer error', message)
+
+    def _update_controls(self):
+        optimizing = getattr(self, '_optimizing', False)
+        self._mw.minimize_button.setEnabled(not optimizing and not self._locking)
+        self._mw.run_all_button.setEnabled(not optimizing and not self._locking and not self._logging)
+        self._mw.start_log_button.setEnabled(not self._logging)
+        self._mw.stop_log_button.setEnabled(self._logging)
+        self._mw.stop_lock_button.setEnabled(self._locking or optimizing)
 
     def _update_state(self):
         log_state = 'running' if self._logging else 'stopped'

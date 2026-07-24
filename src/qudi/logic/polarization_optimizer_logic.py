@@ -7,6 +7,7 @@ algorithm. Only the hardware interface has been adapted for Qudi.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from datetime import datetime
@@ -17,9 +18,7 @@ from qtpy.QtCore import Signal
 
 from qudi.core.module import LogicBase
 from qudi.core.connector import Connector
-from qudi.interface.process_control_interface import ProcessValueInterface
-
-print("Loaded:", __file__)
+from qudi.core.configoption import ConfigOption
 
 
 class FoundMinimum(Exception):
@@ -37,8 +36,19 @@ class PolarizationOptimizerLogic(LogicBase):
     This is a Qudi port of the standalone PolarizationOptimizer.
     """
 
-    mpc = mpc = Connector(interface="Base")
+    mpc = Connector(interface="Base")
     powermeter = Connector(interface="ProcessValueInterface")
+
+    _power_channel = ConfigOption("power_channel", default="Power")
+    _target_power_nw = ConfigOption("target_power_nw", default=2.5)
+    _lock_threshold_nw = ConfigOption("lock_threshold_nw", default=2.5)
+    _lock_interval_s = ConfigOption("lock_interval_s", default=1.0)
+    _lock_consecutive_bad = ConfigOption("consecutive_bad_reads", default=3)
+    _samples = ConfigOption("samples", default=5)
+    _coarse_start_angles = ConfigOption("coarse_start_angles", default=[90.0, 90.0, 90.0])
+    _coarse_step_deg = ConfigOption("coarse_step_deg", default=10.0)
+    _coarse_timeout_s = ConfigOption("coarse_timeout_s", default=180.0)
+    _optimization_timeout_s = ConfigOption("optimization_timeout_s", default=60.0)
 
     sigOptimizationStarted = Signal()
     sigOptimizationFinished = Signal(object, float)
@@ -55,15 +65,11 @@ class PolarizationOptimizerLogic(LogicBase):
     sigLogStateChanged = Signal(bool)
     sigLockStateChanged = Signal(bool)
     sigOperationStatusChanged = Signal(str)
+    sigError = Signal(str)
 
     def __init__(self, config=None, **kwargs):
         super().__init__(config=config, **kwargs)
 
-        self._lock_threshold_nw = 2.5
-        self._lock_interval_s = 1
-        self._lock_consecutive_bad = 3
-
-        # optimization target
         self.threshold = 2.5
 
         self.best_power = np.inf
@@ -74,6 +80,8 @@ class PolarizationOptimizerLogic(LogicBase):
         # Separate events
         self._stop_lock_event = threading.Event()
         self._stop_log_event = threading.Event()
+        self._stop_combined_event = threading.Event()
+        self._stop_optimization_event = threading.Event()
 
         self.io_lock = threading.RLock()
 
@@ -81,18 +89,28 @@ class PolarizationOptimizerLogic(LogicBase):
 
         self._lock_thread = None
         self._log_thread = None
-        self._lock_threshold_nw = 2.5
-        self._lock_interval_s = 1.0
+        self._optimization_thread = None
+        self._combined_thread = None
+        self._power_channel_was_active = False
 
     def on_activate(self):
         self._mpc = self.mpc()
         self._pm = self.powermeter()
+        self.threshold = float(self._target_power_nw)
+        self._power_channel_was_active = self._pm.get_activity_state(self._power_channel)
+        if not self._power_channel_was_active:
+            self._pm.set_activity_state(self._power_channel, True)
 
     def on_deactivate(self):
-        self.stop_locking()
-
-        if self._log_thread is not None:
-            self._log_thread.join(timeout=2)
+        self._stop_combined_event.set()
+        self._stop_optimization_event.set()
+        self.stop_lock()
+        self.stop_log()
+        for thread in (self._optimization_thread, self._combined_thread):
+            if thread is not None and thread is not threading.current_thread():
+                thread.join(timeout=5)
+        if not self._power_channel_was_active and self._pm.get_activity_state(self._power_channel):
+            self._pm.set_activity_state(self._power_channel, False)
 
     # ------------------------------------------------------------------
     # Hardware helpers
@@ -102,9 +120,14 @@ class PolarizationOptimizerLogic(LogicBase):
         """
         Read optical power in nW.
         """
-        return float(self._pm.get_power() * 1e9)
+        power = float(self._pm.get_process_value(self._power_channel) * 1e9)
+        if not np.isfinite(power):
+            raise ValueError(f"Power meter returned a non-finite value: {power!r}")
+        return power
 
     def _check_deadline(self):
+        if self._stop_optimization_event.is_set():
+            raise OptimizationTimeout
         if (
             self._deadline is not None
             and time.monotonic() >= self._deadline
@@ -114,7 +137,7 @@ class PolarizationOptimizerLogic(LogicBase):
     def measure(self):
         self._check_deadline()
 
-        if self._stop_lock_event.wait(0.02):
+        if self._stop_optimization_event.wait(0.02):
             raise OptimizationTimeout
 
         return self.read_power_nw()
@@ -129,7 +152,7 @@ class PolarizationOptimizerLogic(LogicBase):
 
             self._check_deadline()
 
-            if self._stop_lock_event.wait(delay):
+            if self._stop_optimization_event.wait(delay):
                 raise OptimizationTimeout
 
         power = float(np.mean(values))
@@ -217,11 +240,11 @@ class PolarizationOptimizerLogic(LogicBase):
             timeout=timeout,
         )
 
-        if self._stop_lock_event.wait(0.10 if fast else 0.30):
+        if self._stop_optimization_event.wait(0.10 if fast else 0.30):
             raise OptimizationTimeout
 
         power = self.measure_power(
-            samples=3 if fast else 5,
+            samples=3 if fast else int(self._samples),
             delay=0.005 if fast else 0.01,
         )
 
@@ -245,17 +268,18 @@ class PolarizationOptimizerLogic(LogicBase):
         start,
         fallback_coarse=True,
         coarse_start=None,
-        coarse_step=5,
+        coarse_step=None,
         max_restarts=3,
         fast=False,
-        timeout_seconds=30,
+        timeout_seconds=None,
     ):
         """
         Run a bounded local search and always return to the best known point.
         """
-        self.sigOperationStatusChanged.emit("Optimizing")
-
-
+        timeout_seconds = float(
+            self._optimization_timeout_s if timeout_seconds is None else timeout_seconds
+        )
+        coarse_step = float(self._coarse_step_deg if coarse_step is None else coarse_step)
         # Retained for compatibility with the original interface.
         del max_restarts
 
@@ -309,11 +333,14 @@ class PolarizationOptimizerLogic(LogicBase):
                 if self.best_angles is None and fallback_coarse:
 
                     try:
+                        # A local-search timeout must not make the recovery pass
+                        # time out immediately as well.
+                        self._deadline = time.monotonic() + float(self._coarse_timeout_s)
 
                         self.coarse_search(
                             coarse_start
                             if coarse_start is not None
-                            else start,
+                            else self._coarse_start_angles,
                             step=coarse_step,
                         )
 
@@ -406,7 +433,7 @@ class PolarizationOptimizerLogic(LogicBase):
                         current,
                         coarse_step=2,
                         fast=True,
-                        timeout_seconds=30,
+                        timeout_seconds=min(30.0, float(self._optimization_timeout_s)),
                     )
 
                 finally:
@@ -432,9 +459,11 @@ class PolarizationOptimizerLogic(LogicBase):
         powers = []
 
         if csv_path is None:
-            csv_path = (
-                f"power_log_{datetime.now():%Y%m%d_%H%M%S}.csv"
+            csv_path = os.path.join(
+                self.module_default_data_dir,
+                f"power_log_{datetime.now():%Y%m%d_%H%M%S}.csv",
             )
+        os.makedirs(os.path.dirname(os.path.abspath(csv_path)), exist_ok=True)
 
         with open(csv_path, "w", encoding="utf-8") as f:
             f.write(
@@ -490,8 +519,8 @@ class PolarizationOptimizerLogic(LogicBase):
                 self._stop_log_event.wait(interval)
 
         finally:
-
             self.sigLoggingStopped.emit()
+            self.sigLogStateChanged.emit(False)
 
         self.log.info(f"Saved log: {csv_path}")
 
@@ -507,36 +536,10 @@ class PolarizationOptimizerLogic(LogicBase):
         interval=1,
         consecutive_bad=3,
     ):
-        self._lock_threshold_nw = threshold
-        self._lock_interval_s = interval
-        self._lock_consecutive_bad = consecutive_bad
-
-        if self._lock_thread is not None and self._lock_thread.is_alive():
-            self.log.warning("Lock thread already running.")
-            return
-
-        self._stop_lock_event.clear()
-
-        self._lock_thread = threading.Thread(
-            target=self.lock,
-            kwargs={
-                "threshold": threshold,
-                "interval": interval,
-                "consecutive_bad": consecutive_bad,
-            },
-            daemon=True,
-        )
-
-        self._lock_thread.start()
+        return self.start_lock(threshold, interval, consecutive_bad)
 
     def stop_locking(self):
-
-        self._stop_lock_event.set()
-
-        if self._lock_thread is not None:
-            self._lock_thread.join(timeout=5)
-
-        self._lock_thread = None
+        self.stop_lock()
 
     def start_logging(
         self,
@@ -546,33 +549,23 @@ class PolarizationOptimizerLogic(LogicBase):
         csv_path=None,
     ):
 
-        if self._log_thread is not None and self._log_thread.is_alive():
-            self.log.warning("Logging already running.")
-            return
-
-        self._stop_log_event.clear()
-
-        self._log_thread = threading.Thread(
-            target=self.log_power,
-            kwargs={
-                "duration": duration,
-                "interval": interval,
-                "plot": plot,
-                "csv_path": csv_path,
-            },
-            daemon=True,
-        )
-
-        self._log_thread.start()
+        if plot or csv_path is not None:
+            if self._log_thread is not None and self._log_thread.is_alive():
+                self.log.warning("Logging already running.")
+                return False
+            self._stop_log_event.clear()
+            self.sigLogStateChanged.emit(True)
+            self._log_thread = threading.Thread(
+                target=self.log_power,
+                kwargs={"duration": duration, "interval": interval, "plot": plot, "csv_path": csv_path},
+                daemon=True,
+            )
+            self._log_thread.start()
+            return True
+        return self.start_log(duration, interval)
 
     def stop_logging(self):
-
-        self._stop_log_event.set()
-
-        if self._log_thread is not None:
-            self._log_thread.join(timeout=5)
-
-        self._log_thread = None
+        self.stop_log()
 
     # ------------------------------------------------------------------
     # Convenience API
@@ -620,7 +613,8 @@ class PolarizationOptimizerLogic(LogicBase):
     ):
 
         if self._log_thread is not None and self._log_thread.is_alive():
-            return
+            self.log.warning("Logging already running.")
+            return False
 
         self._stop_log_event.clear()
 
@@ -629,24 +623,23 @@ class PolarizationOptimizerLogic(LogicBase):
 
         self.sigLogStateChanged.emit(True)
 
-        self._log_thread = threading.Thread(
-            target=self.log_power,
-            kwargs={
-                "duration": duration,
-                "interval": interval,
-                "plot": False,
-                "csv_path": None,
-            },
-            daemon=True,
-        )
+        def worker():
+            try:
+                self.log_power(duration=duration, interval=interval)
+            except Exception as exc:
+                self.log.exception("Polarization logging failed")
+                self.sigError.emit(str(exc))
+
+        self._log_thread = threading.Thread(target=worker, daemon=True)
 
         self._log_thread.start()
+        return True
 
     def stop_log(self):
 
         self._stop_log_event.set()
 
-        if self._log_thread is not None:
+        if self._log_thread is not None and self._log_thread is not threading.current_thread():
             self._log_thread.join(timeout=5)
 
         self._log_thread = None
@@ -655,35 +648,47 @@ class PolarizationOptimizerLogic(LogicBase):
 
     def start_lock(
         self,
-        threshold=110,
-        interval=5,
-        consecutive_bad=3,
+        threshold=None,
+        interval=None,
+        consecutive_bad=None,
     ):
 
         if self._lock_thread is not None and self._lock_thread.is_alive():
-            return
+            self.log.warning("Lock already running.")
+            return False
+
+        threshold = float(self._lock_threshold_nw if threshold is None else threshold)
+        interval = float(self._lock_interval_s if interval is None else interval)
+        consecutive_bad = int(
+            self._lock_consecutive_bad if consecutive_bad is None else consecutive_bad
+        )
 
         self._stop_lock_event.clear()
+        self._stop_optimization_event.clear()
 
         self.sigLockStateChanged.emit(True)
 
-        self._lock_thread = threading.Thread(
-            target=self.lock,
-            kwargs={
-                "threshold": threshold,
-                "interval": interval,
-                "consecutive_bad": consecutive_bad,
-            },
-            daemon=True,
-        )
+        def worker():
+            try:
+                self.lock(threshold, interval, consecutive_bad)
+            except Exception as exc:
+                self.log.exception("Polarization lock failed")
+                self.sigError.emit(str(exc))
+            finally:
+                self.sigLockStateChanged.emit(False)
+
+        self._lock_thread = threading.Thread(target=worker, daemon=True)
 
         self._lock_thread.start()
+        return True
 
     def stop_lock(self):
 
+        self._stop_combined_event.set()
         self._stop_lock_event.set()
 
-        if self._lock_thread is not None:
+        self._stop_optimization_event.set()
+        if self._lock_thread is not None and self._lock_thread is not threading.current_thread():
             self._lock_thread.join(timeout=5)
 
         self._lock_thread = None
@@ -696,22 +701,31 @@ class PolarizationOptimizerLogic(LogicBase):
         Run one optimization in a background thread.
         """
 
+        if self._optimization_thread is not None and self._optimization_thread.is_alive():
+            self.log.warning("Optimization already running.")
+            return False
         if threshold is not None:
             self.threshold = float(threshold)
+        self._stop_optimization_event.clear()
 
         def worker():
             self.sigOperationStatusChanged.emit("Optimizing")
             try:
                 start = self._mpc.positions()
                 self.find_minimum(start)
+            except Exception as exc:
+                self.log.exception("Polarization optimization failed")
+                self.sigError.emit(str(exc))
             finally:
                 self.sigOperationStatusChanged.emit("Idle")
 
 
-        threading.Thread(
+        self._optimization_thread = threading.Thread(
             target=worker,
             daemon=True,
-        ).start()
+        )
+        self._optimization_thread.start()
+        return True
 
     def start_minimize_lock_log(
         self,
@@ -726,10 +740,13 @@ class PolarizationOptimizerLogic(LogicBase):
         Optimize once, then start locking and logging.
         """
 
-        self._lock_threshold_nw = float(threshold_nw)
-        self._lock_interval_s = float(interval_s)
-
         self.threshold = float(threshold_nw)
+
+        if self._combined_thread is not None and self._combined_thread.is_alive():
+            self.log.warning("Combined polarization run already active.")
+            return False
+        self._stop_combined_event.clear()
+        self._stop_optimization_event.clear()
 
         def worker():
 
@@ -739,11 +756,14 @@ class PolarizationOptimizerLogic(LogicBase):
                 start = self._mpc.positions()
                 self.find_minimum(start)
 
+                if self._stop_combined_event.is_set():
+                    return
+
                 self.sigOperationStatusChanged.emit("Locking")
 
                 self.start_lock(
-                    threshold=self._lock_threshold_nw,
-                    interval=self._lock_interval_s,
+                    threshold=float(threshold_nw),
+                    interval=float(interval_s),
                 )
 
                 self.sigOperationStatusChanged.emit("Logging")
@@ -759,14 +779,18 @@ class PolarizationOptimizerLogic(LogicBase):
                     continuous=continuous_log,
                 )
 
-                if not continuous_lock:
-                    time.sleep(lock_duration_s)
+                if not continuous_lock and not self._stop_combined_event.wait(lock_duration_s):
                     self.stop_lock()
 
+            except Exception as exc:
+                self.log.exception("Combined polarization run failed")
+                self.sigError.emit(str(exc))
             finally:
                 self.sigOperationStatusChanged.emit("Idle")
 
-        threading.Thread(
+        self._combined_thread = threading.Thread(
             target=worker,
             daemon=True,
-        ).start()
+        )
+        self._combined_thread.start()
+        return True
