@@ -1,7 +1,7 @@
 import importlib
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 # from attr import dataclass
 from qm.qua import align, assign, if_, measure, save, time_tagging, update_frequency, while_
@@ -43,16 +43,16 @@ class UpdateableDataclass:
 __pause_lp__: int = 1_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 6  # nW # det
-GENERAL_POWER_B2 = 5  # nW
+GENERAL_POWER_A1 = 9  # nW # det
+GENERAL_POWER_B2 = 9  # nW
 
 
 @dataclass
 class ELECTRON_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
-    electron_rabi_period: int = 992  # ns
-    IQ_freq: int = int((169.99) * 1e6)  # int(188.78 * 1e6)
+    electron_rabi_period: int = 550  # ns
+    IQ_freq: int = int((292) * 1e6)
 
 
 @dataclass
@@ -61,11 +61,11 @@ class CRC_PARAMS(UpdateableDataclass):
 
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW
-    laser_power_repump: float | str = 1_000  # nW
+    laser_power_repump: float | str = 50_000  # nW
     probe_len: int | str = int(1e6)  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
-    threshold: int | str = 15  # cts
-    threshold_repump: int | str = 2  # cts
+    threshold: int | str = 7  # cts
+    threshold_repump: int | str = 1  # cts
     wait_before_repump: int | str = int(50e3)  # ns
     wait_after_repump: int | str = int(50e3)  # ns
     max_attempts: int = 1000  # not used right now
@@ -96,7 +96,7 @@ class ELECTRON_INIT_PARAMS(UpdateableDataclass):
     """Default parameters for resonant electron-state initialization."""
 
     state: QubitState = QubitState.e1
-    duration: int = int(1000e3)  # ns (300 us)
+    duration: int = int(1_000e3)  # ns (1000 us)
     laser_power_A1: float = GENERAL_POWER_A1  # 7  # nW # det
     laser_power_B2: float = GENERAL_POWER_B2  # 7  # nW
 
@@ -120,18 +120,18 @@ class OPTICAL_PI_PULSE_PARAMS(UpdateableDataclass):
 
 def crc(
     mcas: MultiChSeq,
-    laser_power_A1: Optional[float | str] = None,
-    laser_power_B2: Optional[float | str] = None,  # nW
-    laser_power_repump: Optional[float | str] = None,  # nW
-    probe_len: Optional[int | str] = None,  # ns
-    repump_len: Optional[int | str] = None,  # ns
-    crc_threshold: Optional[int | str] = None,  # cts
-    crc_threshold_repump: Optional[int | str] = None,  # cts
-    wait_before_repump: Optional[int | str] = None,  # ns
-    wait_after_repump: Optional[int | str] = None,  # ns
-    max_attempts: Optional[int] = None,
-    counts_st: Optional[Any] = None,
-    SPCM_channel: Optional[str] = None,
+    laser_power_A1: float | str | None = None,
+    laser_power_B2: float | str | None = None,  # nW
+    laser_power_repump: float | str | None = None,  # nW
+    probe_len: int | str | None = None,  # ns
+    repump_len: int | str | None = None,  # ns
+    crc_threshold: int | str | None = None,  # cts
+    crc_threshold_repump: int | str | None = None,  # cts
+    wait_before_repump: int | str | None = None,  # ns
+    wait_after_repump: int | str | None = None,  # ns
+    max_attempts: int | None = None,
+    counts_st: Any | None = None,
+    SPCM_channel: str | None = None,
     set_laser_power: bool = True,
 ) -> None:
     """Run a count-rate check loop with optional 520 nm repumping.
@@ -226,9 +226,9 @@ def crc(
 
 def csr(
     mcas: MultiChSeq,
-    duration: Optional[int | str] = None,
-    laser_power_A1: Optional[float | str] = None,
-    laser_power_B2: Optional[float | str] = None,  # nW
+    duration: int | str | None = None,
+    laser_power_A1: float | str | None = None,
+    laser_power_B2: float | str | None = None,  # nW
     set_laser_power: bool = True,
 ) -> None:
     """Run a charge-state readout pulse sequence on both transitions.
@@ -273,9 +273,9 @@ def csr(
 
 def electron_init(
     mcas: MultiChSeq,
-    state: Optional[QubitState | str] = None,
-    duration: Optional[int | str] = None,
-    laser_power_pump: Optional[float | str] = None,
+    state: QubitState | str | None = None,
+    duration: int | str | None = None,
+    laser_power_pump: float | str | None = None,
     set_laser_power: bool = True,
 ) -> None:
     """Initialize the electron spin into ``e1`` or ``e2`` with a red pump pulse.
@@ -330,9 +330,9 @@ def electron_init(
 
 def ssr(
     mcas: MultiChSeq,
-    state: Optional[QubitState | str] = None,
-    duration: Optional[int | str] = None,
-    laser_power_probe: Optional[float | str] = None,
+    state: QubitState | str | None = None,
+    duration: int | str | None = None,
+    laser_power_probe: float | str | None = None,
     set_laser_power=True,
 ) -> None:
     """Run single-shot readout on the selected red transition.
@@ -392,7 +392,7 @@ def ssr(
 def optical_pi_pulse(
     mcas: MultiChSeq,
     couting_duration: int = 16,  # ns
-    laser_power: Optional[float | str] = 50,  # nW
+    laser_power: float | str | None = 50,  # nW
     set_laser_power=True,
 ) -> None:
     """Runs optical (pi) pulse acting on e1"""
@@ -418,7 +418,7 @@ def optical_pi_pulse(
 ### QUBIT manupulation
 
 
-def electron_gate(mcas: MultiChSeq, gate: str | Gate, electron_rabi_period: Optional[int] = None):
+def electron_gate(mcas: MultiChSeq, gate: str | Gate, electron_rabi_period: int | None = None):
     params = ELECTRON_PARAMS()
     params.update(electron_rabi_period=electron_rabi_period)
     ou: NuclearOpsOPXUtils = mcas.ou

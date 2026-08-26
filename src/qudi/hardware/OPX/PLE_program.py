@@ -93,6 +93,7 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
                 with for_(i, 0, i < i_avg, i + 1):
                     play("active", "Laser_620", duration=laser_pulse_len * u.ns)
                     # play("active", "Laser_620_pi", duration=laser_pulse_len * u.ns)
+                    #
                     play("active", "Laser_620_det", duration=laser_pulse_len * u.ns)
                 align()
                 play("trigit", "Memory_Trigger", duration=tt_trigger_len * u.ns)
@@ -100,10 +101,10 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
             ### Backscan ###
             align()
             set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-            # with for_(i, 0, i < 10_000, i + 1):
-            #     play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10_000)
+            with for_(i, 0, i < 10_000, i + 1):
+                play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10_000)
 
-            wait(3 * u.s)
+            # wait(2 * u.s)
 
             # set_dc_offset("Laser_620_freq", "single", crc_laser_voltage)
             # wait(1 * u.s)

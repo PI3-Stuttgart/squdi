@@ -55,7 +55,7 @@ def ret_ret_mcas(pdc):
                     with for_(*from_array(ou.i_2, qua_array_2)):
                         sna.crc(mcas)
                         sna.electron_init(mcas, init_state)
-                        # sna.ssr(mcas, "e2" if init_state == "e1" else "e1")
+                        sna.ssr(mcas, "e2" if init_state == "e1" else "e1")
                         ou.pause("readout_delay")
                         sna.ssr(mcas, SSR_state)
                         # Charge state readout
@@ -69,8 +69,8 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     ana_seq = [
-        # ["init", "<", 1, 1, 0, 1],
-        ["result", ">", 3, 1, 0, 1],
+        ["init", "<", 1, 1, 0, 1],
+        ["result", ">", 1, 1, 0, 1],
         ["init", ">", 15, 1, 0, 1],
     ]
     # what does each entry do?
@@ -98,28 +98,31 @@ def settings(pdc={}):
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
     nuclear.ple_refocus_interval = 30
+    nuclear.lock_laser_to_wavemeter = True
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 2000
+    nr_repeating_intergration: int = 500
 
     # readout_delay = np.linspace(0, 2_000, 10) * 1e3  # ns -> us
-    readout_delay = np.linspace(1_000, 40_000, 10) * 1e3  # ns -> us
+    readout_delay = np.arange(1_000, 200_000_000, 10_000_000)  # ns -> us
     nuclear.parameters = OrderedDict(
         (
             ("sweeps", range(20)),
             ("readout_delay", readout_delay),
             ("click_channel", [2]),  # nW
             ("init_state", ["e1", "e2"]),
-            ("SSR_state", ["e1", "e2"]),
+            ("SSR_state", ["e1"]),
         )
     )
     nuclear.number_of_simultaneous_measurements = 1
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,
-        n_values=nuclear.number_of_simultaneous_measurements * nr_repeating_intergration,
+        n_values=nuclear.number_of_simultaneous_measurements
+        * nr_repeating_intergration
+        * len(ana_seq),
     )
 
 

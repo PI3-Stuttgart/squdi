@@ -1,5 +1,3 @@
-# coding=utf-8
-
 import importlib
 import os
 from collections import OrderedDict
@@ -8,17 +6,17 @@ from qm import qua
 from qm.qua import for_each_, infinite_loop_
 from qualang_tools.units import unit
 
-import qudi.hardware.OPX.OPX_utils as OPX_utils
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
-import qudi.UserScripts.helpers.shared as shared
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
 from qudi.logic.qudip_enhanced import *
+from qudi.UserScripts.helpers import shared
 
 importlib.reload(sch)
 importlib.reload(shared)
@@ -47,25 +45,23 @@ def ret_ret_mcas(pdc):
         init_state = current_iterator_df["second_init_state"].unique()[0]
         SSR_state = current_iterator_df["SSR_state"].unique()[0]
 
-        with qua.program() as myprog:
-            with infinite_loop_():
-                ou.init_program()
-                with for_each_(ou.i_1, qua_array_1):
-                    with for_each_(ou.i_2, qua_array_2):
-                        sna.crc(mcas)
+        with qua.program() as myprog, infinite_loop_():
+            ou.init_program()
+            with for_each_(ou.i_1, qua_array_1), for_each_(ou.i_2, qua_array_2):
+                sna.crc(mcas)
 
-                        sna.electron_init(
-                            mcas,
-                            "e1" if init_state == "e2" else "e2",
-                            duration="first_init_duration",
-                        )
-                        sna.ssr(mcas, state=init_state)
-                        sna.electron_init(mcas, init_state, duration="second_init_duration")
+                sna.electron_init(
+                    mcas,
+                    "e1" if init_state == "e2" else "e2",
+                    duration="first_init_duration",
+                )
+                sna.ssr(mcas, state=init_state)
+                sna.electron_init(mcas, init_state, duration="second_init_duration")
 
-                        sna.ssr(mcas, SSR_state)
+                sna.ssr(mcas, SSR_state)
 
-                        # Charge state readout
-                        sna.csr(mcas)
+                # Charge state readout
+                sna.csr(mcas)
 
         mcas.program = myprog
         return mcas
@@ -106,10 +102,10 @@ def settings(pdc={}):
 
     nr_repeating_intergration: int = 3000
 
-    e2_init_duration = np.linspace(1, 200, 30) * 1e3  # ns
+    e2_init_duration = np.linspace(1, 400, 10) * 1e3  # ns
     nuclear.parameters = OrderedDict(
         (
-            ("sweeps", range(20)),
+            ("sweeps", range(2)),
             ("first_init_duration", [3e6]),
             ("second_init_duration", e2_init_duration),
             ("click_channel", [2]),
