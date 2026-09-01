@@ -1,5 +1,3 @@
-# coding=utf-8
-
 import importlib
 import os
 from collections import OrderedDict
@@ -9,17 +7,17 @@ from qm.qua import declare, for_, for_each_, infinite_loop_
 from qualang_tools.loops import from_array
 from qualang_tools.units import unit
 
-import qudi.hardware.OPX.OPX_utils as OPX_utils
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
-import qudi.UserScripts.helpers.shared as shared
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
 from qudi.logic.qudip_enhanced import *
+from qudi.UserScripts.helpers import shared
 
 importlib.reload(sch)
 importlib.reload(shared)
@@ -63,34 +61,33 @@ def ret_ret_mcas(pdc):
                 "NV",
                 MW_freq,
             )
-            with infinite_loop_():
-                with for_each_(ou.i_1, qua_array_1):
-                    with for_(*from_array(ou.i_2, qua_array_2)):
-                        ou.gate_trigger()
-                        # qua.align()
-                        # qua.wait(1_015 // 4, "NV")
-                        # with for_(i, 0, i < 1000, i + 1):
-                        qua.play("cw" * qua.amp(1), "NV", duration=1_000 // 4)
-                        # qua.align()
-                        # qua.play("active", "Laser_620_det", MW_pulse_len / 4)
-                        # qua.wait(1_000)
+            with infinite_loop_(), for_each_(ou.i_1, qua_array_1):
+                with for_(*from_array(ou.i_2, qua_array_2)):
+                    ou.gate_trigger()
+                    # qua.align()
+                    # qua.wait(1_015 // 4, "NV")
+                    # with for_(i, 0, i < 1000, i + 1):
+                    qua.play("cw" * qua.amp(1), "NV", duration=20 // 4)
+                    # qua.align()
+                    # qua.play("active", "Laser_620_det", MW_pulse_len / 4)
+                    # qua.wait(1_000)
 
-                        # qua.align()
-                        # ou.laser_pulse("Laser_620_det", 50
-                        ou.memory_trigger()
-                        ou.pause(20_000)
-                        ###
-                        # sna.ssr(mcas, state="e1", set_laser_power=False)
+                    # qua.align()
+                    # ou.laser_pulse("Laser_620_det", 50
+                    ou.memory_trigger()
+                    ou.pause(20_000)
+                    ###
+                    # sna.ssr(mcas, state="e1", set_laser_power=False)
 
         mcas.program = myprog
-        mcas.qm.set_digital_delay("NV", "switch", (113 + 21 + 1_015 - 200) * u.ns)  # 815
-        mcas.qm.set_digital_buffer("NV", "switch", (27) * u.ns)  # 815
         return mcas
 
     return ret_mcas
 
 
 def settings(pdc={}):
+    nuclear.queue.awg._qm.set_digital_delay("NV", "switch", (60) * u.ns + (1_015 - 200 + 15) * u.ns)
+    nuclear.queue.awg._qm.set_digital_buffer("NV", "switch", (80) * u.ns)
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
     ana_seq = [["result", ">", 1, 1, 0, 1]]

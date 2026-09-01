@@ -1,7 +1,3 @@
-from __future__ import absolute_import, division, print_function
-
-__metaclass__ = type
-
 import json
 import sys
 
@@ -14,7 +10,7 @@ else:
 import importlib
 import time
 
-import qudi.logic.misc as misc
+from qudi.logic import misc
 
 importlib.reload(misc)
 import collections
@@ -40,12 +36,12 @@ importlib.reload(snippets_awg)
 import base64
 import hashlib
 from collections import OrderedDict
-from typing import Any, Dict, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from qudi.util.mutex import Mutex
 
-import qudi.logic.qudip_enhanced.data_handling as data_handling
-from qudi.logic.qudip_enhanced import save_qutip_enhanced
+from qudi.logic.qudip_enhanced import data_handling, save_qutip_enhanced
 from qudi.logic.qudip_enhanced.data_generation import DataGeneration
 from qudi.logic.qudip_enhanced.util import ret_property_list_element
 from qudi.logic.queue.queue_logic import queue_logic
@@ -69,6 +65,7 @@ class NuclearOPs(DataGeneration):
     'B_amp': magnetic field amplitude in mT
     'B_theta': magnetic field polar angle in degree
     'B_phi': magnetic field azimuthal angle in degree
+    'smiq_freq': SMIQ CW microwave frequency in Hz
 
     """
 
@@ -121,7 +118,17 @@ class NuclearOPs(DataGeneration):
         self.use_defect_frame: bool = False
 
         # Parameters
-        self.slow_changing_parameters = ["B_amp", "B_theta", "B_phi"]
+        self.default_slow_changing_parameters = [
+            "sweeps",
+            "B_amp",
+            "B_theta",
+            "B_phi",
+            "smiq_freq",
+            "smiq_power_dbm",
+        ]
+        self.slow_changing_parameters = list(self.default_slow_changing_parameters)
+        self.fast_changing_parameters = []
+        self.parameter_loop_modes = {}
         self.sweeps_OPX: list = []
         self.sweep_keys_OPX: list = []
         self.i_1_array: np.ndarray
@@ -135,15 +142,11 @@ class NuclearOPs(DataGeneration):
         # FIXME: Go through all that and set it correctly from QUDI
         self.A1LaserPower = 1  # nW
         self.A2LaserPower = 1  # nW
-        #
         self.refocus_cw_odmr = False
         self.refocus_pulsed_odmr = False
-        #
         self.do_interferometerPhase_locking = False
         self.wavemeter_lock = False
-        #
         self.yellow_repump_compensation = False
-        #
         self.last_red_confocal_refocus = -10000
         self.last_odmr_refocus = -10000
         self.last_ple_refocus = -10000
@@ -152,12 +155,10 @@ class NuclearOPs(DataGeneration):
         self.odmr_refocus_interval = 0
         self.last_interferometer_refocus = -10000
         self.interferometer_refocus_interval = 0
-        #
         self.save_smartly = False
         self.no_trace = False
         self.delay_ps_list = []
         self.window_ps_list = []
-        #
         self.two_zpl_apd = False
         self.raw_clicks_processing = False
         self.raw_clicks_processing_channels = [0, 1, 2, 3, 4, 5, 6, 7]
@@ -214,15 +215,15 @@ class NuclearOPs(DataGeneration):
 
                 for i, delay_ps in enumerate(self.delay_ps_list):
                     for j, window_ps in enumerate(self.window_ps_list):
-                        name = "zpl_counter_data_{i}_{j}".format(i=i, j=j)
+                        name = f"zpl_counter_data_{i}_{j}"
                         zpl_counters.append(name)
                         if self.two_zpl_apd:
-                            name = "zpl_2_counter_data_{i}_{j}".format(i=i, j=j)
+                            name = f"zpl_2_counter_data_{i}_{j}"
                             zpl_counters.append(name)
 
                 if self.save_smartly:
                     return (
-                        ["result_{}".format(i) for i in range(self.number_of_results)]
+                        [f"result_{i}" for i in range(self.number_of_results)]
                         + zpl_counters
                         + [
                             "trace",
@@ -262,7 +263,7 @@ class NuclearOPs(DataGeneration):
 
                 else:
                     return (
-                        ["result_{}".format(i) for i in range(self.number_of_results)]
+                        [f"result_{i}" for i in range(self.number_of_results)]
                         + zpl_counters
                         + [
                             "trace",
@@ -288,7 +289,7 @@ class NuclearOPs(DataGeneration):
             traceback.print_exception(exc_type, exc_value, exc_tb)
 
     @property
-    def dtypes(self) -> Dict[str, Any]:
+    def dtypes(self) -> dict[str, Any]:
         """Return dtype hints for the observations stored in the data object."""
         print('Nuclear OPS called "def dtypes"')
         if not hasattr(self, "_dtypes"):
@@ -339,11 +340,11 @@ class NuclearOPs(DataGeneration):
 
             for i, delay_ps in enumerate(self.delay_ps_list):
                 for j, window_ps in enumerate(self.window_ps_list):
-                    name = "zpl_counter_data_{i}_{j}".format(i=i, j=j)
+                    name = f"zpl_counter_data_{i}_{j}"
                     self._dtypes.update({name: "object"})
 
                     if self.two_zpl_apd:
-                        name = "zpl_2_counter_data_{i}_{j}".format(i=i, j=j)
+                        name = f"zpl_2_counter_data_{i}_{j}"
                         self._dtypes.update({name: "object"})
 
         return self._dtypes
@@ -397,6 +398,7 @@ class NuclearOPs(DataGeneration):
 
         self.queue.log.info("cun: NuclearOps run measurement")
         self.init_run(**kwargs)
+        self.ensure_smiq_cw()
 
         # Get and safe confocal positions from Qudi
         x = self.queue.confocal.scanner_position["x"]
@@ -432,8 +434,24 @@ class NuclearOPs(DataGeneration):
                             self.current_iterator_df["click_channel"].unique()[0]
                         )
 
-                    if "B_amp" in self.current_iterator_df.keys():
+                    if "B_amp" in self.current_iterator_df.keys() and any(
+                        self.slow_parameter_changed(parameter_name)
+                        for parameter_name in ("B_amp", "B_theta", "B_phi")
+                        if parameter_name in self.current_iterator_df.keys()
+                    ):
                         self.ramp_magnet()
+
+                    if (
+                        "smiq_freq" in self.current_iterator_df.keys()
+                        and (
+                            self.slow_parameter_changed("smiq_freq")
+                            or (
+                                "smiq_power_dbm" in self.current_iterator_df.keys()
+                                and self.slow_parameter_changed("smiq_power_dbm")
+                            )
+                        )
+                    ):
+                        self.set_smiq_frequency()
 
                     if self.do_confocal_refocus_green:
                         self.refocus_confocal_green(abort)
@@ -521,9 +539,7 @@ class NuclearOPs(DataGeneration):
                             [OrderedDict({"trace": (idx, ddd)})]
                             * self.number_of_simultaneous_measurements
                         )
-                    elif self.raw_clicks_processing:
-                        pass
-                    elif self.no_trace:
+                    elif self.raw_clicks_processing or self.no_trace:
                         pass
                     else:
                         self.data.set_observations(
@@ -563,6 +579,7 @@ class NuclearOPs(DataGeneration):
             # self.update_current_str()
         finally:
             self.state = "idle"
+            self.mark_completed_rows_done()
             self.data._df = data_handling.df_take_duplicate_rows(
                 self.data.df, self.iterator_df_done
             )  # drops unfinished measurements,
@@ -577,6 +594,8 @@ class NuclearOPs(DataGeneration):
                 os.rmdir(self.save_dir)
 
             self.queue.log.info("cun: Finished function run_measurement")
+            if len(self.data.df) > 0:
+                self.save()
 
             self.stop_laser_lock()
 
@@ -621,7 +640,13 @@ class NuclearOPs(DataGeneration):
                 self.setup_rf(
                     self.current_iterator_df, hashed=False
                 )  # self.hashed) ##Is this guy stops the main loop?
-                self.queue.awg.simulate(self.mcas.program, plot=True)
+                if getattr(self.mcas, "_simulation_plotted", False):
+                    self.queue.log.info(
+                        f"cun: run_debug_sequence: skipping repeated simulation: {self.mcas.name}"
+                    )
+                else:
+                    self.queue.awg.simulate(self.mcas.program, plot=True)
+                    self.mcas._simulation_plotted = True
 
                 # self.queue.awg.simulate(self.queue._awg.mcas_dict[self.sequence_name], plot = True)
                 self.data.set_observations(
@@ -648,7 +673,6 @@ class NuclearOPs(DataGeneration):
         self,
     ) -> None:
         """Legacy placeholder hook kept for experimentation."""
-        pass
         # QtTest.QTest.qSleep(1000)
 
     def confocal_pos_moving_average(self, n: int) -> pd.DataFrame:
@@ -676,6 +700,290 @@ class NuclearOPs(DataGeneration):
     def sweeps(self) -> Any:
         """Expose the configured sweep indices from the parameter dictionary."""
         return self.parameters["sweeps"]
+
+    @property
+    def parameters(self):
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, val) -> None:
+        """Set scan parameters and apply optional per-parameter loop modes.
+
+        Supported forms:
+            OrderedDict((("MW_f", values), ...))
+            OrderedDict((("Init_state", (["e1", "e2"], "slow")), ...))
+            nuclear.scan_parameters((("Init_state", ["e1", "e2"], "slow"), ...))
+        """
+        parameters, loop_modes = self.parse_scan_parameters(val)
+        DataGeneration.parameters.fset(self, parameters)
+        self.parameter_loop_modes = loop_modes
+        self.apply_parameter_loop_modes(loop_modes)
+
+    @staticmethod
+    def scan_parameters(parameter_specs) -> OrderedDict:
+        """Build an ``OrderedDict`` from ``(name, values, mode)`` scan specs."""
+        return OrderedDict(
+            (parameter_name, (values, loop_mode))
+            for parameter_name, values, loop_mode in parameter_specs
+        )
+
+    @classmethod
+    def parse_scan_parameters(cls, val) -> tuple[OrderedDict, dict[str, str]]:
+        """Normalize scan parameters and extract optional slow/fast annotations."""
+        if isinstance(val, OrderedDict):
+            items = list(val.items())
+        else:
+            try:
+                items = list(val)
+            except TypeError as exc:
+                raise TypeError(
+                    "NuclearOPs parameters must be an OrderedDict or an iterable "
+                    "of (name, values, mode) tuples."
+                ) from exc
+
+        parameters = OrderedDict()
+        loop_modes = {}
+        for item in items:
+            if len(item) == 3:
+                parameter_name, values, loop_mode = item
+            elif len(item) == 2:
+                parameter_name, values = item
+                values, loop_mode = cls.split_parameter_values_and_loop_mode(
+                    parameter_name, values
+                )
+            else:
+                raise ValueError(
+                    "Scan parameter entries must be (name, values) or "
+                    "(name, values, 'slow'/'fast'), got {!r}".format(item)
+                )
+
+            if loop_mode is not None:
+                loop_mode = cls.normalize_parameter_loop_mode(parameter_name, loop_mode)
+                loop_modes[parameter_name] = loop_mode
+            parameters[parameter_name] = values
+
+        return parameters, loop_modes
+
+    @staticmethod
+    def split_parameter_values_and_loop_mode(parameter_name: str, values) -> tuple[Any, str | None]:
+        """Extract ``("values", "slow"/"fast")`` annotations from pair-style entries."""
+        if (
+            isinstance(values, tuple)
+            and len(values) == 2
+            and isinstance(values[1], str)
+            and values[1].lower() in ("slow", "fast")
+        ):
+            return values[0], values[1]
+
+        if isinstance(values, dict) and "values" in values:
+            loop_mode = values.get("mode", values.get("loop", values.get("speed")))
+            return values["values"], loop_mode
+
+        return values, None
+
+    @staticmethod
+    def normalize_parameter_loop_mode(parameter_name: str, loop_mode: str) -> str:
+        """Validate and normalize a per-parameter loop mode."""
+        if not isinstance(loop_mode, str):
+            raise TypeError(
+                "Loop mode for '{}' must be 'slow' or 'fast', got {!r}".format(
+                    parameter_name,
+                    loop_mode,
+                )
+            )
+
+        loop_mode = loop_mode.lower()
+        if loop_mode not in ("slow", "fast"):
+            raise ValueError(
+                "Loop mode for '{}' must be 'slow' or 'fast', got {!r}".format(
+                    parameter_name,
+                    loop_mode,
+                )
+            )
+        return loop_mode
+
+    def apply_parameter_loop_modes(self, loop_modes: dict[str, str]) -> None:
+        """Apply scan-local slow/fast overrides to the iterator and OPX fast sweeps."""
+        slow_parameters = list(self.default_slow_changing_parameters)
+        fast_parameters = []
+
+        for parameter_name, loop_mode in loop_modes.items():
+            if loop_mode == "slow":
+                if parameter_name not in slow_parameters:
+                    slow_parameters.append(parameter_name)
+                if parameter_name in fast_parameters:
+                    fast_parameters.remove(parameter_name)
+            elif loop_mode == "fast":
+                if parameter_name in slow_parameters:
+                    slow_parameters.remove(parameter_name)
+                if parameter_name not in fast_parameters:
+                    fast_parameters.append(parameter_name)
+
+        self.slow_changing_parameters = slow_parameters
+        self.fast_changing_parameters = fast_parameters
+
+    def set_iterator_df(self) -> None:
+        """Create the iterator and group slow hardware parameters together."""
+        super().set_iterator_df()
+
+        slow_parameters = [
+            key for key in self.iterator_df.columns if key in self.slow_changing_parameters
+        ]
+        if not slow_parameters:
+            return
+
+        self.iterator_df = self.iterator_df.sort_values(
+            by=slow_parameters,
+            kind="mergesort",
+        ).reset_index(drop=True)
+
+    def slow_parameter_changed(self, parameter_name: str) -> bool:
+        """Return whether a slow parameter changed for the current iterator block."""
+        if not hasattr(self, "current_iterator_df_changes"):
+            return True
+        if parameter_name not in self.current_iterator_df_changes.columns:
+            return True
+        return bool(self.current_iterator_df_changes[parameter_name].any())
+
+    def rf_sequence_iterator_df(self, current_iterator_df: pd.DataFrame) -> pd.DataFrame:
+        """Return only iterator columns that can affect the OPX/QUA sequence."""
+        slow_parameters = [
+            parameter_name
+            for parameter_name in self.slow_changing_parameters
+            if parameter_name in current_iterator_df.columns
+        ]
+        if slow_parameters:
+            current_iterator_df = current_iterator_df.drop(labels=slow_parameters, axis=1)
+        return current_iterator_df.reset_index(drop=True)
+
+    def current_slow_parameter_value(self, parameter_name: str) -> Any:
+        """Return a unique slow parameter value from the current iterator block."""
+        values = self.current_iterator_df[parameter_name].unique()
+        if len(values) != 1:
+            raise ValueError(
+                f"Slow-changing parameter '{parameter_name}' has multiple values in the current "
+                f"iterator block: {values}. Reduce number_of_simultaneous_measurements "
+                "or group the scan so this parameter is constant per block."
+            )
+        return values[0]
+
+    def set_smiq_frequency(self) -> None:
+        """Set the SMIQ CW frequency requested by the current iterator row."""
+        smiq_freq = float(self.current_slow_parameter_value("smiq_freq"))
+
+        if not hasattr(self.queue, "mw_source_smiq"):
+            raise RuntimeError(
+                "queue_logic does not expose 'mw_source_smiq'. Connect "
+                "Microwave_connector to 'mw_source_smiq' in the active config."
+            )
+
+        microwave = self.queue.mw_source_smiq
+        was_active = microwave.module_state() != "idle"
+        cw_power = (
+            float(self.current_slow_parameter_value("smiq_power_dbm"))
+            if "smiq_power_dbm" in self.current_iterator_df.keys()
+            else microwave.cw_power
+        )
+
+        if hasattr(microwave, "set_cw_parameters_live"):
+            microwave.set_cw_parameters_live(frequency=smiq_freq, power=cw_power)
+            if microwave.module_state() == "idle":
+                microwave.cw_on()
+        else:
+            if was_active:
+                microwave.off()
+            microwave.set_cw(frequency=smiq_freq, power=cw_power)
+            if was_active or microwave.module_state() == "idle":
+                microwave.cw_on()
+
+        self.queue.log.info(f"Set SMIQ frequency to {smiq_freq:.9e} Hz")
+
+    def mark_completed_rows_done(self) -> None:
+        """Keep completed measurements when final cleanup runs before another iterator step."""
+        if not hasattr(self, "data") or len(self.data.df) == 0:
+            return
+        if "end_time" not in self.data.df.columns:
+            return
+
+        end_times = pd.to_datetime(self.data.df["end_time"], errors="coerce")
+        completed_rows = self.data.df[
+            pd.notnull(end_times)
+            & (end_times > datetime.datetime(1900, 1, 1))
+        ]
+        if len(completed_rows) == 0:
+            return
+
+        completed_iterator_df = completed_rows.loc[:, self.data.parameter_names]
+        if hasattr(self, "iterator_df_done") and len(self.iterator_df_done) > 0:
+            self.iterator_df_done = pd.concat(
+                [self.iterator_df_done, completed_iterator_df],
+                ignore_index=True,
+            ).drop_duplicates()
+        else:
+            self.iterator_df_done = completed_iterator_df.drop_duplicates()
+
+    def ensure_smiq_cw(self) -> None:
+        """Ensure the SMIQ is running as the fixed CW LO for OPX IQ mixing."""
+        if not hasattr(self.queue, "mw_source_smiq"):
+            self.queue.log.warning(
+                "queue_logic does not expose 'mw_source_smiq'; fixed SMIQ CW setup skipped."
+            )
+            return
+
+        if "smiq_freq" in getattr(self, "parameters", {}):
+            self.queue.log.info(
+                "Fixed SMIQ CW setup skipped because this measurement provides smiq_freq."
+            )
+            return
+
+        smiq_params = snippets_awg.SMIQ_PARAMS()
+        target_frequency_hz = float(smiq_params.frequency_ghz) * 1e9
+        target_power_dbm = float(smiq_params.power_dbm)
+        microwave = self.queue.mw_source_smiq
+
+        if microwave.is_scanning:
+            raise RuntimeError(
+                "Unable to ensure fixed SMIQ CW. The SMIQ is currently in scan mode."
+            )
+
+        if hasattr(microwave, "read_cw_parameters"):
+            microwave.read_cw_parameters()
+
+        frequency_matches = (
+            abs(float(microwave.cw_frequency) - target_frequency_hz)
+            <= smiq_params.frequency_tolerance_hz
+        )
+        power_matches = (
+            abs(float(microwave.cw_power) - target_power_dbm)
+            <= smiq_params.power_tolerance_dbm
+        )
+        smiq_is_on = microwave.module_state() != "idle"
+
+        if not (frequency_matches and power_matches):
+            if smiq_is_on:
+                if not hasattr(microwave, "set_cw_parameters_live"):
+                    raise RuntimeError(
+                        "Unable to update fixed SMIQ CW while output is on. "
+                        "The microwave source does not support set_cw_parameters_live()."
+                    )
+                microwave.set_cw_parameters_live(
+                    frequency=target_frequency_hz,
+                    power=target_power_dbm,
+                )
+            else:
+                microwave.set_cw(
+                    frequency=target_frequency_hz,
+                    power=target_power_dbm,
+                )
+
+            self.queue.log.info(
+                f"Set fixed SMIQ CW to {target_frequency_hz:.9e} Hz, "
+                f"{target_power_dbm:.2f} dBm"
+            )
+
+        if microwave.module_state() == "idle":
+            microwave.cw_on()
+            self.queue.log.info("Turned fixed SMIQ CW output on.")
 
     def ramp_magnet(self) -> None:
         """Ramp the magnet to the field vector requested by the current iterator row."""
@@ -997,7 +1305,7 @@ class NuclearOPs(DataGeneration):
 
         return True
 
-    def start_laser_lock(self, wavelength_nm: Optional[float] = None) -> None:
+    def start_laser_lock(self, wavelength_nm: float | None = None) -> None:
         """Lock the laser to the wavemeter at the specified wavelength or current reading."""
         q = self.queue
 
@@ -1061,11 +1369,10 @@ class NuclearOPs(DataGeneration):
     # TODO: implement for Our setup and qudi
     def do_refocus_zpl(self, abort):
         """Placeholder for a future ZPL refocus routine."""
-        pass
 
     def reinit(self) -> None:
         """Reset counters and timing markers for a fresh run."""
-        super(NuclearOPs, self).reinit()
+        super().reinit()
         self.odmr_count = 0
         self.additional_recalibration_interval_count = 0
         self.last_odmr = time.time()
@@ -1074,15 +1381,20 @@ class NuclearOPs(DataGeneration):
     def get_trace(
         self,
         abort: Any,
-        delay_ps_list: Optional[Sequence[float]] = None,
-        window_ps_list: Optional[Sequence[float]] = None,
+        delay_ps_list: Sequence[float] | None = None,
+        window_ps_list: Sequence[float] | None = None,
     ) -> None:
         """Prepare the active sequence and trigger gated-counter acquisition."""
         if not self.debug_mode:
             # This is only compilation of the sequence, test run for 1 s and stop..
             # In principle we can cut it.
-            self.queue.log.info(f"cun: get_trace: initializing: {self.mcas.name}")
-            self.mcas.initialize()  # FIXME might be usefull for something?
+            if getattr(self.mcas, "_initialized", False):
+                self.queue.log.info(
+                    f"cun: get_trace: reusing initialized RF sequence: {self.mcas.name}"
+                )
+            else:
+                self.queue.log.info(f"cun: get_trace: initializing: {self.mcas.name}")
+                self.mcas.initialize()  # FIXME might be usefull for something?
 
             # to keep the syntax same to keysight... (important for crossplatform)...
             self.queue.log.info("cun:get_trace:init fininished")
@@ -1104,20 +1416,35 @@ class NuclearOPs(DataGeneration):
     def setup_rf(self, current_iterator_df: pd.DataFrame, hashed: bool = False) -> None:
         """Build and register the RF/QUA sequence for the current iterator row."""
 
-        # Drop sweeps from current iterator
-        if "sweeps" in current_iterator_df.columns:
-            current_iterator_df = current_iterator_df.drop(labels=["sweeps"], axis=1)
+        rf_iterator_df = self.rf_sequence_iterator_df(current_iterator_df)
+
+        rf_cache_key = "\n".join(
+            [
+                str(rf_iterator_df),
+                str(self.queue.gated_counter.readout_duration),
+                str(getattr(self, "parameter_loop_modes", {})),
+                str(getattr(self, "meas_code", "")),
+            ]
+        )
 
         # create hash
         hash = base64.b64encode(
             hashlib.sha1(
-                (
-                    str(current_iterator_df) + "\n" + str(self.queue.gated_counter.readout_duration)
-                ).encode()
+                rf_cache_key.encode()
             ).digest()
         )
 
-        self.sequence_name = "nuclear_op_hash_{}".format(hash)
+        self.sequence_name = f"nuclear_op_hash_{hash}"
+        self._rf_sequence_reused = False
+
+        if self.sequence_name in self.queue.awg.mcas_dict:
+            self.mcas = self.queue.awg.mcas_dict[self.sequence_name]
+            self._rf_sequence_reused = True
+            self.queue.log.info(
+                "cun:setup_rf: Reusing cached RF sequence; only slow parameters changed."
+            )
+            self.performedRefocus = False
+            return
 
         # This is usual.
         # self.queue._awg.mcas_dict.stop_awgs()
@@ -1125,6 +1452,12 @@ class NuclearOPs(DataGeneration):
         # row and stored in the AWG/OPX dictionary under its generated name.
         self.queue.log.info("cun:setup_rf:This time is the qua writing...")
         self.queue.awg.stop_awgs()
+        self.queue.nuclear_ops_opx_utils.slow_changing_parameters = (
+            self.slow_changing_parameters
+        )
+        self.queue.nuclear_ops_opx_utils.fast_changing_parameters = (
+            self.fast_changing_parameters
+        )
         self.queue.nuclear_ops_opx_utils.create_fast_sweep_qua_arrays(current_iterator_df)
         self.mcas = self.ret_mcas(self, current_iterator_df)
         # Writing the sequence...
@@ -1133,15 +1466,17 @@ class NuclearOPs(DataGeneration):
         # QtTest.QTest.qSleep(10)
         # self.sequence_name = self.mcas.name
         self.queue.awg.mcas_dict[self.mcas.name] = self.mcas
+        self.queue.awg.mcas_dict[self.sequence_name] = self.mcas
+        self._last_rf_sequence_name = self.sequence_name
 
         self.performedRefocus = False
 
     def analyze(
         self,
-        data: Optional[Any] = None,
-        ana_trace: Optional[Any] = None,
-        start_idx: Optional[int] = None,
-    ) -> Optional[bool]:
+        data: Any | None = None,
+        ana_trace: Any | None = None,
+        start_idx: int | None = None,
+    ) -> bool | None:
         """Analyze the current trace object and write observations into ``data``."""
         if ana_trace is None:
             ana_trace = self.ana_trace
@@ -1167,7 +1502,7 @@ class NuclearOPs(DataGeneration):
                 # Why we are going here, because we have only 1 readout anyway,
                 obs_r = df.pivot_table(values="result", columns="result_num", index="sm").rename(
                     columns=collections.OrderedDict(
-                        [(i, "result_{}".format(i)) for i in df.result_num.unique()]
+                        [(i, f"result_{i}") for i in df.result_num.unique()]
                     )
                 )
             else:
@@ -1213,9 +1548,7 @@ class NuclearOPs(DataGeneration):
                 continue  ## What is it for? (seems that it doing nothings.
             if type(_I_["trace"]) != np.ndarray:
                 print(
-                    "Interrupted reanalyzation at dataframe index {}, as trace is not a numpy array.\nMaybe, this is trace has just not been measured yet?\nTotal length of dataframe is {}".format(
-                        idx, len(self.data.df)
-                    )
+                    f"Interrupted reanalyzation at dataframe index {idx}, as trace is not a numpy array.\nMaybe, this is trace has just not been measured yet?\nTotal length of dataframe is {len(self.data.df)}"
                 )
                 break
             ana_trace.trace = _I_["trace"]
@@ -1223,23 +1556,25 @@ class NuclearOPs(DataGeneration):
 
     def save(self) -> None:
         """Persist measurement results and supporting metadata to disk."""
-        pass
-        if len(self.iterator_df_done) > 0 and not (hasattr(self, "do_save") and not self.do_save):
-            Thread1 = threading.Thread(
-                target=super(NuclearOPs, self).save, kwargs={"notify": False}
-            )
+        if len(self.data.df) > 0 and not (hasattr(self, "do_save") and not self.do_save):
+            Thread1 = threading.Thread(target=super().save, kwargs={"notify": False})
             Thread1.start()
             # super(NuclearOPs, self).save(notify=False) #### IMPORTANT
             Thread1.join()
-            self.save_sequence_file()
-            self.queue.save_pi3diamond(destination_dir=self.save_dir)
-            save_qutip_enhanced(destination_dir=self.save_dir)
+            try:
+                self.save_sequence_file()
+                self.queue.save_pi3diamond(destination_dir=self.save_dir)
+                save_qutip_enhanced(destination_dir=self.save_dir)
+            except Exception as exc:
+                self.queue.log.exception(
+                    "Data was saved, but saving auxiliary NuclearOps files failed: %s",
+                    exc,
+                )
             # TODO
             # has to switch to qudi log. logging.getLogger().info("saved nuclear to '{} ({:.3f})".format(self.save_dir, time.time() - t0))
 
     def save_sequence_file(self) -> None:
         """Dump the generated sequence description into ``awg-file.txt``."""
-        pass
         seq_message = []
         if hasattr(self.mcas, "sequences"):
             for k in self._md[self.mcas.name].sequences.keys():
@@ -1249,7 +1584,6 @@ class NuclearOPs(DataGeneration):
                         seq_message.append("\n")
                     except Exception as e:
                         print(e)
-                        pass
 
             seq_message.append(str(self._md[self.mcas.name].sequences["ps"][1]))
             awg_file_name = "awg-file.txt"
@@ -1263,10 +1597,10 @@ class NuclearOPs(DataGeneration):
                             "\n-------------------------------------------------------------------\n"
                         )
         else:  ## quantum machine
-            seq_message.append(self.mcas.debug_info())
             awg_file_name = "awg-file.txt"
             awg_fp = os.path.join(self.save_dir, awg_file_name)
             if not os.path.exists(awg_fp):
+                seq_message.append(self.mcas.debug_info())
                 with open(awg_fp, "w") as fp:
                     for page in seq_message:
                         fp.write(json.dumps(page))

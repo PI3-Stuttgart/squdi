@@ -176,12 +176,13 @@ config = {
             "digitalInputs": {
                 "switch": {
                     "port": ("con1", 1),
-                    "delay": (134 * u.ns) + mw_delay,
-                    "buffer": 27 * u.ns,
+                    "delay": 75 * u.ns + mw_delay,
+                    "buffer": 80 * u.ns,
                 },
             },
             "operations": {
                 "cw": "const_pulse",
+                "mw_switch": "mw_switch_pulse",
                 "x180": "x180_pulse",
                 "x90": "x90_pulse",
                 "-x90": "-x90_pulse",
@@ -331,6 +332,23 @@ config = {
                 "pulse": "AOM_pulse",
             },
         },
+        "Laser_450": {
+            "singleInput": {
+                "port": ("con1", 7),
+            },
+            "digitalInputs": {
+                "Laser": {
+                    "port": ("con1", 7),
+                    "delay": 0,
+                    "buffer": 0,
+                },
+            },
+            "operations": {
+                "power": "AOM_power",
+                "active": "AOM_TTL",
+                "pulse": "AOM_pulse",
+            },
+        },
         "Laser_620_freq": {
             "singleInput": {
                 "port": ("con1", 4),
@@ -391,6 +409,12 @@ config = {
             "operation": "control",
             "length": mw_len_NV,
             "waveforms": {"I": "cw_wf", "Q": "zero_wf"},
+            "digital_marker": "ON",
+        },
+        "mw_switch_pulse": {
+            "operation": "control",
+            "length": mw_len_NV,
+            "waveforms": {"I": "zero_wf", "Q": "zero_wf"},
             "digital_marker": "ON",
         },
         "x180_pulse": {

@@ -131,6 +131,7 @@ from qudi.hardware.laser.toptica_dl_pro import DlProLaser
 from qudi.hardware.OPX.OPX_holder import OPX
 from qudi.hardware.picoquant.ppg512 import PPG512
 from qudi.hardware.wavemeter.high_finesse_wavemeter import HighFinesseWavemeter
+from qudi.interface.microwave_interface import MicrowaveInterface
 from qudi.logic.AO_logic import AOLogic
 from qudi.logic.magnetlogic import MagnetLogic
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
@@ -166,6 +167,7 @@ class queue_logic(GenericLogic):
     NuclearOpsOPXUtils_connector = Connector(interface="NuclearOpsOPXUtils")
     AOLogic_connector = Connector(interface="AOLogic")
     Switches_connector = Connector(interface="SwitchCombinerInterfuse")
+    Microwave_connector = Connector(interface="MicrowaveInterface")
 
     update_selected_user_script_combo_box_signal = pyqtSignal(collections.OrderedDict)
     update_queue_list = pyqtSignal(collections.OrderedDict)
@@ -183,6 +185,7 @@ class queue_logic(GenericLogic):
     ple_scanner_logic: PLEScannerLogic
     magnet_logic: MagnetLogic
     ppg: PPG512
+    mw_source_smiq: MicrowaveInterface
     _counter: Any
     fast_counter_device: Any
     wavemeter: HighFinesseWavemeter
@@ -223,6 +226,7 @@ class queue_logic(GenericLogic):
         self.ao = self.AOLogic_connector()
         self.do = self.Switches_connector()
         self.nuclear_ops_opx_utils = self.NuclearOpsOPXUtils_connector()
+        self.mw_source_smiq = self.Microwave_connector()
         # self.create_odmr()  #only logic (no gui)
         self.init_run()
         # self.write_standardawg_sequences()
@@ -512,9 +516,11 @@ class queue_logic(GenericLogic):
                 stop_request.is_set(),
             )
         )
-        # Userscripts are loaded dynamically with unique module names and must
-        # provide a ``run_fun(stop_request, queue=self, **pd)`` entry point.
-        sys.modules[self.current_script["module_name"]].run_fun(stop_request, queue=self, **self.current_script["pd"])  ## Creates a nuclear and runs it.!!!
+        # Reuse the module imported when the script was queued unless its source
+        # changed in the meantime. This keeps Queue GUI startup responsive while
+        # still picking up edits before a pending measurement begins.
+        module = self.reload_user_script(self.current_script)
+        module.run_fun(stop_request, queue=self, **self.current_script["pd"])  ## Creates a nuclear and runs it.!!!
         print("entering waiting loop in queue...")
 
         ### Here the queue should wait for the measurement to be finished...# TODO signal replacement for the future...
@@ -580,7 +586,8 @@ class queue_logic(GenericLogic):
                         self.thread.stop_request.is_set(),
                     )
                 )
-                sys.modules[self.current_script["module_name"]].run_fun(self.thread.stop_request, queue=self, **self.current_script["pd"])  ## Creates a nuclear and runs it.!!!
+                module = self.reload_user_script(self.current_script)
+                module.run_fun(self.thread.stop_request, queue=self, **self.current_script["pd"])  ## Creates a nuclear and runs it.!!!
                 print("entering waiting loop in queue...")
 
                 ### Here the queue should wait for the measurement to be finished...# TODO signal replacement for the future...
@@ -730,7 +737,15 @@ class queue_logic(GenericLogic):
             return
         try:
             module_name = self.init_task(name, folder)
-            self.q.put({"module_name": module_name, "pd": pd})
+            self.q.put(
+                {
+                    "module_name": module_name,
+                    "script_name": name,
+                    "script_path": self.user_script_path(name, folder),
+                    "source_mtime_ns": os.stat(self.user_script_path(name, folder)).st_mtime_ns,
+                    "pd": pd,
+                }
+            )
             self.script_queue.append(ScriptQueueStep(module_name[10:], self.user_script_params))
         except Exception:
             print("Queuelogic: Could not add script to queue.")
@@ -779,10 +794,68 @@ class queue_logic(GenericLogic):
     def init_task(self, name: str, folder: Optional[str] = None) -> str:
         """Import a userscript file under a unique ``__script__...`` module name."""
         folder = self.user_script_folder if folder is None else folder
-        funa = "{}/{}.py".format(folder, name)
+        funa = self.user_script_path(name, folder)
         task_name = "__script__{}_{}".format(self.nowstr, name)
         _ = imp.load_source(task_name, funa)
         return task_name
+
+    def user_script_path(self, name: str, folder: Optional[str] = None) -> str:
+        """Return the absolute source path for a queue userscript."""
+        folder = self.user_script_folder if folder is None else folder
+        return os.path.abspath(os.path.join(folder, "{}.py".format(name)))
+
+    def reload_user_script(self, script: Dict[str, Any]) -> Any:
+        """Return a queued userscript module, reloading it only after source edits."""
+        module_name = script["module_name"]
+        script_path = script.get("script_path")
+        if script_path is None:
+            script_name = script.get("script_name")
+            if script_name is None:
+                raise KeyError(
+                    "Queued userscript '{}' has no script_path. Re-add it to the queue "
+                    "so it can be reloaded from disk.".format(module_name)
+                )
+            script_path = self.user_script_path(script_name)
+
+        current_mtime_ns = os.stat(script_path).st_mtime_ns
+        module = sys.modules.get(module_name)
+        queued_mtime_ns = script.get("source_mtime_ns")
+
+        if module is not None and (
+            queued_mtime_ns is None or queued_mtime_ns == current_mtime_ns
+        ):
+            return module
+
+        if module is not None:
+            self.close_user_script_module(module)
+
+        sys.modules.pop(module_name, None)
+        importlib.invalidate_caches()
+        module = imp.load_source(module_name, script_path)
+        script["source_mtime_ns"] = current_mtime_ns
+
+        if not hasattr(module, "run_fun"):
+            raise AttributeError(
+                "Userscript '{}' does not define run_fun(...)".format(script_path)
+            )
+        self.log.info("Reloaded userscript from disk: {}".format(script_path))
+        return module
+
+    def close_user_script_module(self, module: Any) -> None:
+        """Close GUI objects created by a queued userscript before re-importing it."""
+        nuclear = getattr(module, "nuclear", None)
+        pld = getattr(nuclear, "pld", None)
+        gui = getattr(pld, "gui", None)
+        close_gui = getattr(gui, "close_gui", None)
+        if close_gui is None:
+            return
+        try:
+            close_gui()
+        except Exception as exc:
+            self.log.warning(
+                "Could not close stale userscript GUI before reload: %s",
+                exc,
+            )
 
     def set_stop_request(self) -> None:
         """Public slot used by the queue GUI stop button."""

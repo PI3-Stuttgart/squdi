@@ -109,8 +109,8 @@ def settings(pdc={}):
             ("first_init_duration", [3e6]),
             ("second_init_duration", e2_init_duration),
             ("click_channel", [2]),
-            ("second_init_state", ["e1", "e2"]),
-            ("SSR_state", ["e1"]),
+            ("second_init_state", (["e1", "e2"], "slow")),
+            ("SSR_state", (["e1", "e2"], "slow")),
         )
     )
     nuclear.number_of_simultaneous_measurements = 1

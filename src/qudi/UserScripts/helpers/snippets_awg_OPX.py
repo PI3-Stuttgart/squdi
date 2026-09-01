@@ -43,16 +43,26 @@ class UpdateableDataclass:
 __pause_lp__: int = 1_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 9  # nW # det
-GENERAL_POWER_B2 = 9  # nW
+GENERAL_POWER_A1 = 4  # nW # det
+GENERAL_POWER_B2 = 4  # nW
+
+
+@dataclass
+class SMIQ_PARAMS(UpdateableDataclass):
+    """Default fixed SMIQ local-oscillator settings for OPX IQ mixing."""
+
+    frequency_ghz: float = 3.9  # 3.9
+    power_dbm: float = -14
+    frequency_tolerance_hz: float = 1.0
+    power_tolerance_dbm: float = 0.01
 
 
 @dataclass
 class ELECTRON_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
-    electron_rabi_period: int = 550  # ns
-    IQ_freq: int = int((292) * 1e6)
+    electron_rabi_period: int = 640  # ns
+    IQ_freq: int = int((234) * 1e6)
 
 
 @dataclass
@@ -64,7 +74,7 @@ class CRC_PARAMS(UpdateableDataclass):
     laser_power_repump: float | str = 50_000  # nW
     probe_len: int | str = int(1e6)  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
-    threshold: int | str = 7  # cts
+    threshold: int | str = 4  # cts
     threshold_repump: int | str = 1  # cts
     wait_before_repump: int | str = int(50e3)  # ns
     wait_after_repump: int | str = int(50e3)  # ns
@@ -86,7 +96,7 @@ class SSR_PARAMS(UpdateableDataclass):
     """Default parameters for single-shot readout (SSR) helper calls."""
 
     state: QubitState | str = QubitState.e1
-    duration: int | str = 100_000  # 50_000  # ns
+    duration: int | str = 300_000  # 50_000  # ns
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW # 620_det
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW # 620
 
@@ -96,7 +106,7 @@ class ELECTRON_INIT_PARAMS(UpdateableDataclass):
     """Default parameters for resonant electron-state initialization."""
 
     state: QubitState = QubitState.e1
-    duration: int = int(1_000e3)  # ns (1000 us)
+    duration: int = int(3e6)  # ns (1000 us)
     laser_power_A1: float = GENERAL_POWER_A1  # 7  # nW # det
     laser_power_B2: float = GENERAL_POWER_B2  # 7  # nW
 

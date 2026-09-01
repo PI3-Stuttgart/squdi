@@ -258,6 +258,37 @@ class MicrowaveSmiq(MicrowaveInterface):
             self._cw_power = float(self._device.query(':POW?'))
             self._cw_frequency = float(self._device.query(':FREQ?'))
 
+    def set_cw_parameters_live(self, frequency=None, power=None):
+        """Update CW parameters without switching the microwave output off."""
+        with self._thread_lock:
+            if frequency is None and power is None:
+                return
+
+            frequency = self._cw_frequency if frequency is None else float(frequency)
+            power = self._cw_power if power is None else float(power)
+            self._assert_cw_parameters_args(frequency, power)
+
+            if self.module_state() != 'idle' and not self._in_cw_mode():
+                raise RuntimeError(
+                    'Unable to update CW parameters live. Microwave output is currently scanning.'
+                )
+
+            if not self._in_cw_mode():
+                self._command_wait(':FREQ:MODE CW')
+
+            self._device.write(f':FREQ {frequency:f}')
+            self._device.write(f':POW {power:f}')
+            self._device.query('*OPC?')
+            self._cw_frequency = frequency
+            self._cw_power = power
+
+    def read_cw_parameters(self):
+        """Read CW frequency and power from the SMIQ and update the local cache."""
+        with self._thread_lock:
+            self._cw_frequency = float(self._device.query(':FREQ?'))
+            self._cw_power = float(self._device.query(':POW?'))
+            return self._cw_frequency, self._cw_power
+
     def configure_scan(self, power, frequencies, mode, sample_rate, powers=None):
         """
         """

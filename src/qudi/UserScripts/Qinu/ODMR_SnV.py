@@ -108,7 +108,7 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = True
+    nuclear.do_ple_refocus_A1 = False
     nuclear.lock_laser_to_wavemeter = True
     nuclear.ple_refocus_interval = 2 * 60
 

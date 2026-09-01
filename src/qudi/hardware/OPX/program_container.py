@@ -21,6 +21,9 @@ class MultiChSeq:
         self._config = awg._configuration
         self.ch_dict = None  # Here in principle the config ch_dict could be used of used channels.
         self._job = None
+        self._initialized = False
+        self._debug_info_cache = None
+        self._simulation_plotted = False
 
     @property
     def name(self):
@@ -58,9 +61,12 @@ class MultiChSeq:
         Runs the programm and stops it.
         :return:
         """
+        if self._initialized:
+            return
         self._job = self.qm.execute(self.program)
         time.sleep(0.1)
         self._job.halt()
+        self._initialized = True
 
     def run(self):
         """
@@ -80,6 +86,8 @@ class MultiChSeq:
         """
         Some debug infor regarding the sequence in a form of a json.
         """
+        if self._debug_info_cache is not None:
+            return self._debug_info_cache
 
         t0 = time.time()
         simulation_config = SimulationConfig(duration=1_000)  # In clock cycles = 4ns
@@ -95,6 +103,7 @@ class MultiChSeq:
         waveform_dict = waveform_report.to_dict()
         t1 = time.time()
         print("OPX_debug_info time:", t1 - t0)
+        self._debug_info_cache = waveform_dict
         return waveform_dict
 
     def stop(self):

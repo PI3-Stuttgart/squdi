@@ -79,7 +79,17 @@ class NuclearOpsOPXUtils(LogicBase):
 
     laser_elements: list[str] = ["Laser_520", "Laser_620", "Laser_620_pi", "Laser_620_freq"]
     quantity_types: list[str] = ["power", "freq"]
-    SLOW_CHANGING_PARAMETERS: list[str] = ["B_amp", "B_theta", "B_phi", "MW_amp"]
+    SLOW_CHANGING_PARAMETERS: list[str] = [
+        "sweeps",
+        "B_amp",
+        "B_theta",
+        "B_phi",
+        "MW_amp",
+        "smiq_freq",
+        "smiq_power_dbm",
+    ]
+    slow_changing_parameters: list[str] = []
+    fast_changing_parameters: list[str] = []
     fast_sweeps_qua: OrderedDict[str, FastSweepQUA] = OrderedDict()
     current_iterator_df: pd.DataFrame
     current_laser_power_qua: dict = {}
@@ -91,12 +101,30 @@ class NuclearOpsOPXUtils(LogicBase):
     crc_attempts: QuaVariable[int] | None = None
     crc_counts: QuaVariable[int] | None = None
 
+    @property
+    def effective_slow_changing_parameters(self) -> list[str]:
+        """Return static slow parameters plus scan-local overrides."""
+        slow_parameters = list(
+            getattr(self, "slow_changing_parameters", self.SLOW_CHANGING_PARAMETERS)
+        )
+        for parameter_name in self.SLOW_CHANGING_PARAMETERS:
+            if parameter_name not in slow_parameters:
+                slow_parameters.append(parameter_name)
+
+        for parameter_name in getattr(self, "fast_changing_parameters", []):
+            if parameter_name in slow_parameters:
+                slow_parameters.remove(parameter_name)
+
+        return slow_parameters
+
     def on_activate(self) -> None:
         """Resolve external logic and hardware connectors on activation."""
         self._power_calibration_logic = self.power_calibration_logic()
         self._ple_scanner_logic = self.ple_scanner_logic()
         self._transition_tracker = self.transition_tracker_logic()
         self._opx = self.opx()
+        self.slow_changing_parameters = list(self.SLOW_CHANGING_PARAMETERS)
+        self.fast_changing_parameters = []
 
     def on_deactivate(self) -> None:
         """Clear cached connector references on deactivation."""
@@ -114,7 +142,7 @@ class NuclearOpsOPXUtils(LogicBase):
         for key in current_iterator_df.keys():
             if (
                 len(current_iterator_df[key].unique()) > 1
-                and key not in self.SLOW_CHANGING_PARAMETERS
+                and key not in self.effective_slow_changing_parameters
             ):
                 element = self._find_element_from_current_iterator(key)
                 quantity_kind = self._find_quantity_kind_from_current_iterator(key)

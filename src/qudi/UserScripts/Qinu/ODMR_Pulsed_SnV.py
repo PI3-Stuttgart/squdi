@@ -42,6 +42,8 @@ def ret_ret_mcas(pdc):
 
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
+        init_state = current_iterator_df["Init_state"].unique()[0]
+        SSR_state = current_iterator_df["SSR_state"].unique()[0]
 
         MW_pulse_len = current_iterator_df["MW_pulse_len"].unique()[0]  # ns
         # SSR_state = current_iterator_df["SSR_state"].unique()[0]
@@ -61,17 +63,21 @@ def ret_ret_mcas(pdc):
                     )
                     sna.crc(mcas)
 
-                    sna.electron_init(mcas, "e1")
-                    sna.ssr(mcas, state="e2")
+                    sna.electron_init(mcas, init_state)
+                    sna.ssr(mcas, state="e1" if init_state == "e2" else "e2")
                     qua.align()
                     qua.play("cw" * qua.amp(1), "NV", duration=MW_pulse_len / 4)
                     qua.align()
-                    sna.ssr(mcas, state="e2")
+                    ou.pause(200)
+                    sna.ssr(mcas, state=SSR_state)
                     sna.csr(mcas)
                     ou.pause("cooldown_time")
 
         mcas.program = myprog
         # mcas.qm.set_mixer_correction("mixer_NV", intermediate_frequency=)
+        # mcas.qm.set_digital_delay("NV", "switch", (800) * u.ns + (1_015 - 200) * u.ns)
+        # mcas.qm.set_digital_buffer("NV", "switch", (27) * u.ns)
+        print("hello")
 
         return mcas
 
@@ -80,7 +86,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -90,6 +96,11 @@ def settings(pdc={}):
     # ana_seq[3]: "nlp_per_point", number of laser pulses per point. N of repetitions.
     # ana_seq[4]: set to 100 --> no counts measured; set to 7 --> counts can be measured; --> delta - exclusion zone. n > threshold +delta, or n< threhold - delta.
     # ana_seq[5]: "number of results" --> ssr = cnot1 + laser1 + cnot2 + laser2, -> n=2, etc.. laser2-laser1,  histograms are centered around 0,
+
+    # mcas.qm.set_digital_delay("NV", "switch", (800) * u.ns + (1_015 - 200) * u.ns)
+    # nuclear.queue.awg._qm.set_digital_delay("NV", "switch", (60) * u.ns + (1_015 - 200) * u.ns)
+    # nuclear.queue.awg._qm.set_digital_buffer("NV", "switch", (50) * u.ns)
+    print("hello")
 
     sch.settings(
         nuclear=nuclear,
@@ -118,9 +129,9 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_freq_array = np.arange(start=280 * u.MHz, stop=300 * u.MHz, step=0.1 * u.MHz)
-    # MW_pulse_duration_array = np.arange(start=500, stop=20_000, step=500)
-    nr_repeating_intergration: int = 100
+    MW_freq_array = np.arange(start=215 * u.MHz, stop=245 * u.MHz, step=0.5 * u.MHz)
+    # MW_pulse_duration_array = np.arange(start=400, stop=700, step=50)
+    nr_repeating_intergration: int = 200
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
@@ -129,13 +140,17 @@ def settings(pdc={}):
             # ("B_amp", [129, 130, 131]),
             ("sweeps", range(50)),
             ("click_channel", [2]),
-            ("MW_pulse_len", [620]),
             # ("MW_amp", [1.0]),
             ("cooldown_time", [1_000_000]),
+            ("Init_state", ["e1"]),
+            ("SSR_state", ["e2"]),
+            ("MW_pulse_len", [400]),
             ("MW_f", MW_freq_array),
         )
     )
-    nuclear.number_of_simultaneous_measurements = len(MW_freq_array)
+    nuclear.number_of_simultaneous_measurements = len(
+        MW_freq_array
+    )  # * len(MW_pulse_duration_array)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,
