@@ -27,7 +27,16 @@ class Gate(str, Enum):
     """Named pulse labels."""
 
     pi = "pi"
-    pi_half = "pi_half"
+    pi_half = "pi/2"
+
+
+class QubitAxis(str, Enum):
+    """Named qubit axis labels."""
+
+    x = "x"
+    y = "y"
+    minus_x = "-x"
+    minus_y = "-y"
 
 
 class UpdateableDataclass:
@@ -428,7 +437,12 @@ def optical_pi_pulse(
 ### QUBIT manupulation
 
 
-def electron_gate(mcas: MultiChSeq, gate: str | Gate, electron_rabi_period: int | None = None):
+def electron_gate(
+    mcas: MultiChSeq,
+    gate: str | Gate,
+    axis: str | QubitAxis = QubitAxis.x,
+    electron_rabi_period: int | None = None,
+):
     params = ELECTRON_PARAMS()
     params.update(electron_rabi_period=electron_rabi_period)
     ou: NuclearOpsOPXUtils = mcas.ou
@@ -439,7 +453,7 @@ def electron_gate(mcas: MultiChSeq, gate: str | Gate, electron_rabi_period: int 
         case Gate.pi_half:
             pulse_duration = params.electron_rabi_period / 4
 
-    ou.MW_pulse("NV", pulse_duration)
+    ou.MW_pulse(duration_ns=pulse_duration, pulse=str(axis))
 
 
 def set_IQ_freq(mcas, IQ_freq: int | None = None):

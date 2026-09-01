@@ -331,7 +331,7 @@ class NuclearOpsOPXUtils(LogicBase):
             )
 
     @staticmethod
-    def duration_ns_to_qua(duration_ns: float | int) -> int:
+    def duration_ns_to_qua(duration_ns: float) -> int:
         """Convert a physical duration in ns to the QUA duration argument.
 
         ``qualang_tools.units.unit`` performs the ns-to-OPX clock-cycle
@@ -341,10 +341,10 @@ class NuclearOpsOPXUtils(LogicBase):
         """
         return duration_ns * u.ns
 
-    def MW_pulse(self, element: str, duration_ns, amplitude: float = 1, reset_phase=False):
+    def MW_pulse(self, duration_ns, amplitude: float = 1, pulse: str = "x", element: str = "MW"):
 
         if duration_ns > 16:
-            play("cw" * amp(amplitude), element, duration=self.duration_ns_to_qua(duration_ns))
+            play(pulse * amp(amplitude), element, duration=self.duration_ns_to_qua(duration_ns))
 
     def play_chunked(self, pulse: object, laser_name: str, duration_ns: float) -> None:
         """Play a single-laser pulse, splitting long durations into chunks.
