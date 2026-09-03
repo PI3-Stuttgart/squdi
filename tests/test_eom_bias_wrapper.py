@@ -1,6 +1,10 @@
 import unittest
 
-from qudi.logic.eom_bias_wrapper import calculate_wrap, calculate_wrap_preview
+from qudi.logic.eom_bias_wrapper import (
+    calculate_pid_wrap_preview,
+    calculate_wrap,
+    calculate_wrap_preview,
+)
 
 
 class CalculateWrapTest(unittest.TestCase):
@@ -107,6 +111,78 @@ class CalculateWrapTest(unittest.TestCase):
         self.assertAlmostEqual(preview["saturated_output"], 0.6)
         self.assertAlmostEqual(preview["recovery_target"], -0.12)
         self.assertEqual(preview["recovery_periods"], -1)
+
+    def test_p_aware_preview_recovers_lower_windup(self):
+        preview = calculate_pid_wrap_preview(
+            {
+                'integrator_before': -4.0,
+                'output': -0.6000488340861921,
+                'integrator_after': -4.0,
+                'integrator_change_during_read': 0.0,
+                'proportional_gain': 0.10009765625,
+                'input': 'iq0',
+                'input_source_output': -0.02,
+                'setpoint': 0.0,
+                'input_filter': [0.0, 0.0, 0.0, 0.0],
+                'differential_mode_enabled': False,
+                'pid_minimum': -0.5999755859375,
+                'pid_maximum': 0.599853515625,
+            }
+        )
+
+        self.assertTrue(preview['should_wrap'])
+        self.assertEqual(preview['action_mode'], 'windup_recovery')
+        self.assertAlmostEqual(preview['target_output'], 0.12)
+        self.assertAlmostEqual(preview['proportional_term'], -0.002001953125)
+        self.assertAlmostEqual(preview['target_integrator'], 0.122001953125)
+        self.assertTrue(preview['manual_write_ready'])
+
+    def test_p_aware_preview_rejects_active_input_filter(self):
+        snapshot = {
+            'integrator_before': -4.0,
+            'output': -0.6,
+            'integrator_after': -4.0,
+            'integrator_change_during_read': 0.0,
+            'proportional_gain': 0.1,
+            'input': 'iq0',
+            'input_source_output': -0.02,
+            'setpoint': 0.0,
+            'input_filter': [10.0, 0.0, 0.0, 0.0],
+            'differential_mode_enabled': False,
+            'pid_minimum': -0.6,
+            'pid_maximum': 0.6,
+        }
+
+        preview = calculate_pid_wrap_preview(snapshot)
+
+        self.assertFalse(preview['manual_write_ready'])
+        self.assertEqual(
+            preview['action_reason'],
+            'pid_input_filter_not_supported',
+        )
+
+    def test_p_aware_preview_wraps_normal_operating_point(self):
+        preview = calculate_pid_wrap_preview(
+            {
+                'integrator_before': -0.56,
+                'output': -0.58,
+                'integrator_after': -0.56,
+                'integrator_change_during_read': 0.0,
+                'proportional_gain': 0.1,
+                'input': 'iq0',
+                'input_source_output': -0.2,
+                'setpoint': 0.0,
+                'input_filter': [0.0, 0.0, 0.0, 0.0],
+                'differential_mode_enabled': False,
+                'pid_minimum': -0.6,
+                'pid_maximum': 0.6,
+            }
+        )
+
+        self.assertEqual(preview['action_mode'], 'normal_wrap')
+        self.assertAlmostEqual(preview['target_output'], 0.14)
+        self.assertAlmostEqual(preview['target_integrator'], 0.16)
+        self.assertTrue(preview['manual_write_ready'])
 
 
 if __name__ == "__main__":

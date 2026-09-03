@@ -167,3 +167,146 @@ def calculate_wrap_preview(
         )
 
     return preview
+
+
+def calculate_pid_wrap_preview(
+    snapshot,
+    vpi=0.36,
+    min_value=-0.6,
+    max_value=0.6,
+    margin=0.05,
+    output_tolerance=1e-3,
+    state_tolerance=0.01,
+):
+    """Calculate a P-aware wrap from one coherent PID snapshot."""
+    output = float(snapshot['output'])
+    integrator_before = float(snapshot['integrator_before'])
+    integrator = float(snapshot['integrator_after'])
+    integrator_change = float(snapshot['integrator_change_during_read'])
+    proportional_gain = float(snapshot['proportional_gain'])
+    setpoint = float(snapshot['setpoint'])
+    pid_minimum = float(snapshot['pid_minimum'])
+    pid_maximum = float(snapshot['pid_maximum'])
+    minimum = float(min_value)
+    maximum = float(max_value)
+    output_tolerance = float(output_tolerance)
+    state_tolerance = float(state_tolerance)
+
+    values = (
+        output,
+        integrator_before,
+        integrator,
+        integrator_change,
+        proportional_gain,
+        setpoint,
+        pid_minimum,
+        pid_maximum,
+        minimum,
+        maximum,
+        output_tolerance,
+        state_tolerance,
+    )
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("PID wrap snapshot values must be finite.")
+    if output_tolerance < 0 or state_tolerance < 0:
+        raise ValueError("PID wrap tolerances must not be negative.")
+    if minimum >= maximum:
+        raise ValueError("min_value must be smaller than max_value.")
+    if pid_minimum >= pid_maximum:
+        raise ValueError("PID snapshot contains invalid output limits.")
+
+    decision_output = output
+    if minimum - output_tolerance <= output < minimum:
+        decision_output = minimum
+    elif maximum < output <= maximum + output_tolerance:
+        decision_output = maximum
+
+    if decision_output < minimum or decision_output > maximum:
+        return {
+            **dict(snapshot),
+            'decision_output': decision_output,
+            'should_wrap': False,
+            'action_mode': None,
+            'action_reason': 'output_outside_expected_range',
+            'manual_write_ready': False,
+            'target_output': None,
+            'target_integrator': None,
+        }
+
+    decision = calculate_wrap(
+        current_value=decision_output,
+        vpi=vpi,
+        min_value=minimum,
+        max_value=maximum,
+        margin=margin,
+    )
+    preview = {
+        **dict(snapshot),
+        'decision_output': decision_output,
+        'should_wrap': decision.should_wrap,
+        'periods': decision.periods,
+        'reason': decision.reason,
+        'vpi': float(vpi),
+        'period': 2.0 * float(vpi),
+        'minimum': minimum,
+        'maximum': maximum,
+        'safe_minimum': minimum + float(margin),
+        'safe_maximum': maximum - float(margin),
+        'target_output': decision.target if decision.should_wrap else None,
+        'target_integrator': None,
+        'proportional_term': None,
+        'p_model_ready': False,
+        'manual_write_ready': False,
+    }
+    if not decision.should_wrap:
+        preview.update(action_mode=None, action_reason=decision.reason)
+        return preview
+
+    action_mode = (
+        'windup_recovery'
+        if integrator < pid_minimum or integrator > pid_maximum
+        else 'normal_wrap'
+    )
+    preview['action_mode'] = action_mode
+
+    input_filter = [float(value) for value in snapshot['input_filter']]
+    filters_are_off = all(abs(value) <= 1e-12 for value in input_filter)
+    differential_mode = bool(snapshot.get('differential_mode_enabled', False))
+    source_output = snapshot.get('input_source_output')
+
+    if abs(proportional_gain) <= 1e-12:
+        proportional_term = 0.0
+    elif source_output is None:
+        preview['action_reason'] = 'pid_input_source_not_readable'
+        return preview
+    elif not filters_are_off:
+        preview['action_reason'] = 'pid_input_filter_not_supported'
+        return preview
+    elif differential_mode:
+        preview['action_reason'] = 'differential_pid_not_supported'
+        return preview
+    else:
+        source_output = float(source_output)
+        if not math.isfinite(source_output):
+            preview['action_reason'] = 'pid_input_source_not_finite'
+            return preview
+        proportional_term = proportional_gain * (source_output - setpoint)
+
+    target_integrator = decision.target - proportional_term
+    preview.update(
+        proportional_term=proportional_term,
+        p_model_ready=True,
+        target_integrator=target_integrator,
+    )
+    if abs(integrator_change) > state_tolerance:
+        preview['action_reason'] = 'integrator_changed_during_snapshot'
+        return preview
+    if not -4.0 <= target_integrator <= 4.0:
+        preview['action_reason'] = 'target_integrator_outside_hardware_range'
+        return preview
+
+    preview.update(
+        manual_write_ready=True,
+        action_reason='confirmation_required',
+    )
+    return preview

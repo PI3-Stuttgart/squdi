@@ -3,7 +3,7 @@ from PySide2 import QtCore
 from qudi.core.connector import Connector
 from qudi.core.module import LogicBase
 from qudi.interface.redpitaya_interface import RedPitayaInterface
-from qudi.logic.eom_bias_wrapper import calculate_wrap_preview
+from qudi.logic.eom_bias_wrapper import calculate_pid_wrap_preview
 
 
 class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
@@ -102,33 +102,20 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
         max_value=0.6,
         margin=0.05,
     ):
-        """Calculate a wrap target from the live PID value without writing."""
+        """Calculate a P-aware wrap target without writing."""
         if self._redpitaya_hardware_instance is None:
             raise RuntimeError("Red Pitaya hardware is not active.")
 
-        state = self._redpitaya_hardware_instance.get_pid_wrap_state(pid_channel)
-        preview = calculate_wrap_preview(
-            current_value=state['integrator'],
+        snapshot = self._redpitaya_hardware_instance.get_pid_output_snapshot(
+            pid_channel
+        )
+        return calculate_pid_wrap_preview(
+            snapshot=snapshot,
             vpi=vpi,
             min_value=min_value,
             max_value=max_value,
             margin=margin,
         )
-        p_is_zero = abs(state['proportional_gain']) <= 1e-12
-        preview.update(
-            proportional_gain=state['proportional_gain'],
-            proportional_gain_is_zero=p_is_zero,
-            pid_minimum=state['pid_minimum'],
-            pid_maximum=state['pid_maximum'],
-            manual_write_ready=(
-                p_is_zero
-                and (
-                    preview['should_wrap']
-                    or preview['recovery_available']
-                )
-            ),
-        )
-        return preview
 
     def get_pid_output_snapshot(self, pid_channel=0):
         """Read PID output diagnostics without changing hardware state."""
@@ -157,40 +144,34 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
             margin=margin,
         )
 
-        if preview['should_wrap']:
-            mode = 'normal_wrap'
-            candidate_target = preview['target']
-        elif preview['recovery_available']:
-            mode = 'windup_recovery'
-            candidate_target = preview['recovery_target']
-        else:
+        if not preview['should_wrap']:
             preview.update(
                 applied=False,
-                action_mode=None,
-                candidate_target=None,
                 action_reason='no_wrap_action_available',
             )
             return preview
 
         preview.update(
             applied=False,
-            action_mode=mode,
-            candidate_target=candidate_target,
-            action_reason='confirmation_required',
+            candidate_target=preview['target_integrator'],
         )
         if not preview['manual_write_ready']:
             preview['action_reason'] = 'pid_safety_check_failed'
             return preview
         if confirm is not True:
             return preview
-        if mode == 'windup_recovery' and allow_windup_recovery is not True:
+        if (
+            preview['action_mode'] == 'windup_recovery'
+            and allow_windup_recovery is not True
+        ):
             preview['action_reason'] = 'windup_recovery_not_allowed'
             return preview
 
-        result = self._redpitaya_hardware_instance.set_pid_integrator_checked(
+        result = self._redpitaya_hardware_instance.set_pid_output_target_checked(
             pid_channel=pid_channel,
-            expected_current=preview['current'],
-            target=candidate_target,
+            expected_integrator=preview['integrator_after'],
+            expected_output=preview['output'],
+            target_output=preview['target_output'],
         )
         preview.update(
             applied=True,

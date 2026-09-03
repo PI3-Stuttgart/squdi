@@ -121,6 +121,7 @@ class ReadPidIntegratorTest(unittest.TestCase):
             input='iq0',
             inputfilter=[0.0, 0.0, 0.0, 0.0],
             setpoint=0.0,
+            differential_mode_enabled=False,
             _rp=fake_rp,
         )
         self.hardware._pid1 = types.SimpleNamespace(
@@ -132,6 +133,7 @@ class ReadPidIntegratorTest(unittest.TestCase):
             input='iq1',
             inputfilter=[0.0, 10.0, 0.0, 0.0],
             setpoint=-0.05,
+            differential_mode_enabled=False,
             _rp=fake_rp,
         )
         self.hardware._pid2 = types.SimpleNamespace(
@@ -143,6 +145,7 @@ class ReadPidIntegratorTest(unittest.TestCase):
             input='iq2',
             inputfilter=0.0,
             setpoint=0.2,
+            differential_mode_enabled=False,
             _rp=fake_rp,
         )
         self.hardware.get_pyrpl = lambda: object()
@@ -198,6 +201,7 @@ class ReadPidIntegratorTest(unittest.TestCase):
                 'input_source_output': 0.1,
                 'setpoint': -0.05,
                 'input_filter': [0.0, 10.0, 0.0, 0.0],
+                'differential_mode_enabled': False,
                 'pid_minimum': -0.5,
                 'pid_maximum': 0.5,
             },
@@ -264,6 +268,42 @@ class ReadPidIntegratorTest(unittest.TestCase):
                 target=0.12,
             )
         self.assertEqual(self.hardware._pid0.ival, -0.1)
+
+    def test_p_aware_write_compensates_proportional_term(self):
+        self.hardware._pid1.inputfilter = [0.0, 0.0, 0.0, 0.0]
+
+        result = self.hardware.set_pid_output_target_checked(
+            pid_channel=1,
+            expected_integrator=0.25,
+            expected_output=0.3,
+            target_output=-0.1,
+        )
+
+        self.assertAlmostEqual(result['proportional_term'], 0.015)
+        self.assertAlmostEqual(result['target_integrator'], -0.115)
+        self.assertAlmostEqual(self.hardware._pid1.ival, -0.115)
+        self.assertAlmostEqual(result['written_output_error'], 0.4)
+        self.assertFalse(result['written_output_verified'])
+
+    def test_p_aware_write_rejects_stale_output(self):
+        with self.assertRaisesRegex(RuntimeError, "output has changed"):
+            self.hardware.set_pid_output_target_checked(
+                pid_channel=0,
+                expected_integrator=-0.1,
+                expected_output=-0.2,
+                target_output=0.12,
+            )
+        self.assertEqual(self.hardware._pid0.ival, -0.1)
+
+    def test_p_aware_write_rejects_active_input_filter(self):
+        with self.assertRaisesRegex(RuntimeError, "active input filters"):
+            self.hardware.set_pid_output_target_checked(
+                pid_channel=1,
+                expected_integrator=0.25,
+                expected_output=0.3,
+                target_output=-0.1,
+            )
+        self.assertEqual(self.hardware._pid1.ival, 0.25)
 
 
 if __name__ == '__main__':

@@ -60,6 +60,47 @@ class _PidWriteRequest(_PidReadRequest):
         self.p_tolerance = p_tolerance
 
 
+class _PidOutputTargetRequest(_PidReadRequest):
+    """Container for one checked P-aware PID output change."""
+
+    def __init__(
+        self,
+        pid_channel,
+        expected_integrator,
+        expected_output,
+        target_output,
+        current_tolerance,
+        output_tolerance,
+    ):
+        super().__init__(pid_channel)
+        self.expected_integrator = expected_integrator
+        self.expected_output = expected_output
+        self.target_output = target_output
+        self.current_tolerance = current_tolerance
+        self.output_tolerance = output_tolerance
+
+
+def _read_pid_input_state(pid):
+    input_name = str(pid.input)
+    input_source = getattr(pid._rp, input_name, None)
+    if input_source is None:
+        input_source_output = None
+    else:
+        input_source_output = float(input_source.current_output_signal)
+    input_filter = pid.inputfilter
+    try:
+        input_filter = [float(value) for value in input_filter]
+    except TypeError:
+        input_filter = [float(input_filter)]
+    return {
+        'input': input_name,
+        'input_source_output': input_source_output,
+        'setpoint': float(pid.setpoint),
+        'input_filter': input_filter,
+        'differential_mode_enabled': bool(pid.differential_mode_enabled),
+    }
+
+
 class _PyrplIoBridge(QtCore.QObject):
     """Execute PyRPL accesses in the thread that created the PyRPL GUI."""
 
@@ -67,6 +108,7 @@ class _PyrplIoBridge(QtCore.QObject):
     sigReadPidWrapState = QtCore.Signal(object)
     sigReadPidOutputSnapshot = QtCore.Signal(object)
     sigWritePidIntegrator = QtCore.Signal(object)
+    sigWritePidOutputTarget = QtCore.Signal(object)
 
     def __init__(self, pids):
         super().__init__()
@@ -85,6 +127,10 @@ class _PyrplIoBridge(QtCore.QObject):
         )
         self.sigWritePidIntegrator.connect(
             self._write_pid_integrator,
+            QtCore.Qt.QueuedConnection,
+        )
+        self.sigWritePidOutputTarget.connect(
+            self._write_pid_output_target,
             QtCore.Qt.QueuedConnection,
         )
 
@@ -118,19 +164,7 @@ class _PyrplIoBridge(QtCore.QObject):
             pid = self._pids[request.pid_channel]
             integrator_before = float(pid.ival)
             output = float(pid.current_output_signal)
-            input_name = str(pid.input)
-            input_source = getattr(pid._rp, input_name, None)
-            if input_source is None:
-                input_source_output = None
-            else:
-                input_source_output = float(
-                    input_source.current_output_signal
-                )
-            input_filter = pid.inputfilter
-            try:
-                input_filter = [float(value) for value in input_filter]
-            except TypeError:
-                input_filter = [float(input_filter)]
+            input_state = _read_pid_input_state(pid)
             integrator_after = float(pid.ival)
             request.value = {
                 'integrator_before': integrator_before,
@@ -140,12 +174,9 @@ class _PyrplIoBridge(QtCore.QObject):
                     integrator_after - integrator_before
                 ),
                 'proportional_gain': float(pid.p),
-                'input': input_name,
-                'input_source_output': input_source_output,
-                'setpoint': float(pid.setpoint),
-                'input_filter': input_filter,
                 'pid_minimum': float(pid.min_voltage),
                 'pid_maximum': float(pid.max_voltage),
+                **input_state,
             }
         except Exception as error:
             request.error = error
@@ -201,6 +232,111 @@ class _PyrplIoBridge(QtCore.QObject):
                 'proportional_gain': proportional_gain,
                 'pid_minimum': pid_minimum,
                 'pid_maximum': pid_maximum,
+            }
+        except Exception as error:
+            request.error = error
+        finally:
+            request.completed.set()
+
+    @QtCore.Slot(object)
+    def _write_pid_output_target(self, request):
+        try:
+            pid = self._pids[request.pid_channel]
+            current_integrator = float(pid.ival)
+            current_output = float(pid.current_output_signal)
+            proportional_gain = float(pid.p)
+            pid_minimum = float(pid.min_voltage)
+            pid_maximum = float(pid.max_voltage)
+            input_state = _read_pid_input_state(pid)
+
+            numeric_state = (
+                current_integrator,
+                current_output,
+                proportional_gain,
+                pid_minimum,
+                pid_maximum,
+                input_state['setpoint'],
+            )
+            if not all(math.isfinite(value) for value in numeric_state):
+                raise RuntimeError(
+                    "Refusing PID output change with non-finite PID state."
+                )
+            if pid_minimum >= pid_maximum:
+                raise RuntimeError(
+                    "Refusing PID output change with invalid PID limits."
+                )
+            if (
+                abs(current_integrator - request.expected_integrator)
+                > request.current_tolerance
+            ):
+                raise RuntimeError(
+                    "Refusing stale PID output change because ival has changed."
+                )
+            if (
+                abs(current_output - request.expected_output)
+                > request.output_tolerance
+            ):
+                raise RuntimeError(
+                    "Refusing stale PID output change because output has changed."
+                )
+            source_output = input_state['input_source_output']
+            if abs(proportional_gain) <= 1e-12:
+                proportional_term = 0.0
+            else:
+                if any(
+                    abs(value) > 1e-12
+                    for value in input_state['input_filter']
+                ):
+                    raise RuntimeError(
+                        "Refusing P-aware PID output change with active input filters."
+                    )
+                if input_state['differential_mode_enabled']:
+                    raise RuntimeError(
+                        "Refusing P-aware PID output change in differential mode."
+                    )
+                if source_output is None or not math.isfinite(source_output):
+                    raise RuntimeError(
+                        "Refusing P-aware PID output change without readable input."
+                    )
+                proportional_term = proportional_gain * (
+                    source_output - input_state['setpoint']
+                )
+            if not (
+                pid_minimum - request.output_tolerance
+                <= request.target_output
+                <= pid_maximum + request.output_tolerance
+            ):
+                raise ValueError(
+                    "Refusing PID target outside the configured PID limits."
+                )
+
+            target_integrator = request.target_output - proportional_term
+            if not -4.0 <= target_integrator <= 4.0:
+                raise ValueError(
+                    "Refusing target outside the PID integrator hardware range."
+                )
+
+            pid.ival = target_integrator
+            written_integrator = float(pid.ival)
+            if abs(written_integrator - target_integrator) > 2.0e-4:
+                raise RuntimeError("PID integrator write verification failed.")
+            written_output = float(pid.current_output_signal)
+            written_output_error = written_output - request.target_output
+
+            request.value = {
+                'previous_integrator': current_integrator,
+                'previous_output': current_output,
+                'target_output': request.target_output,
+                'target_integrator': target_integrator,
+                'written_integrator': written_integrator,
+                'written_output': written_output,
+                'written_output_error': written_output_error,
+                'written_output_verified': (
+                    abs(written_output_error) <= 0.02
+                ),
+                'proportional_gain': proportional_gain,
+                'proportional_term': proportional_term,
+                **input_state,
             }
         except Exception as error:
             request.error = error
@@ -268,6 +404,35 @@ class _PyrplIoBridge(QtCore.QObject):
             self.sigWritePidIntegrator.emit(request)
             if not request.completed.wait(timeout):
                 raise TimeoutError("Timed out while writing the PID integrator.")
+
+        if request.error is not None:
+            raise request.error
+        return request.value
+
+    def write_pid_output_target_checked(
+        self,
+        pid_channel,
+        expected_integrator,
+        expected_output,
+        target_output,
+        current_tolerance=0.01,
+        output_tolerance=0.01,
+        timeout=2.0,
+    ):
+        request = _PidOutputTargetRequest(
+            pid_channel=pid_channel,
+            expected_integrator=expected_integrator,
+            expected_output=expected_output,
+            target_output=target_output,
+            current_tolerance=current_tolerance,
+            output_tolerance=output_tolerance,
+        )
+        if self.thread() is QtCore.QThread.currentThread():
+            self._write_pid_output_target(request)
+        else:
+            self.sigWritePidOutputTarget.emit(request)
+            if not request.completed.wait(timeout):
+                raise TimeoutError("Timed out while changing the PID output target.")
 
         if request.error is not None:
             raise request.error
@@ -617,6 +782,45 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             expected_current=expected,
             target=target,
             current_tolerance=tolerance,
+        )
+
+    def set_pid_output_target_checked(
+        self,
+        pid_channel,
+        expected_integrator,
+        expected_output,
+        target_output,
+        current_tolerance=0.01,
+        output_tolerance=0.01,
+    ):
+        """Apply a P-aware PID output target through the serialized bridge."""
+        channel = int(pid_channel)
+        values = (
+            float(expected_integrator),
+            float(expected_output),
+            float(target_output),
+            float(current_tolerance),
+            float(output_tolerance),
+        )
+        if channel not in (0, 1, 2):
+            raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("PID output target values must be finite.")
+        if values[3] < 0 or values[4] < 0:
+            raise ValueError("PID output target tolerances must not be negative.")
+        if self.get_pyrpl() is None:
+            raise RuntimeError("PyRPL is not connected.")
+        bridge = getattr(self, '_pyrpl_io_bridge', None)
+        if bridge is None:
+            bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
+            self._pyrpl_io_bridge = bridge
+        return bridge.write_pid_output_target_checked(
+            pid_channel=channel,
+            expected_integrator=values[0],
+            expected_output=values[1],
+            target_output=values[2],
+            current_tolerance=values[3],
+            output_tolerance=values[4],
         )
             
     # IQ module methods
