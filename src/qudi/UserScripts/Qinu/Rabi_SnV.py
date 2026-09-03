@@ -50,7 +50,7 @@ def ret_ret_mcas(pdc):
 
         with qua.program() as myprog:
             ou.init_program()
-            qua.update_frequency("NV", MW_freq)
+            qua.update_frequency("MW", MW_freq)
             ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
             ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
             ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
@@ -66,7 +66,7 @@ def ret_ret_mcas(pdc):
                     sna.ssr(mcas, state="e2" if init_state == "e1" else "e1")
                     # #### MW pulse ###
                     qua.align()
-                    qua.play("cw" * qua.amp(MW_amp / 100), "NV", duration=MW_pulse_len_qua / 4)
+                    qua.play("x" * qua.amp(MW_amp / 100), "MW", duration=MW_pulse_len_qua / 4)
                     qua.align()
                     ou.pause(200)
                     sna.ssr(mcas, state=SSR_state)
@@ -119,8 +119,8 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_pulse_duration_array = np.arange(start=20, stop=1000, step=25)
-    f_vec_array = np.arange(start=233.5 * u.MHz, stop=236 * u.MHz, step=0.5 * u.MHz)
+    MW_pulse_duration_array = np.arange(start=20, stop=4000, step=100)
+    f_vec_array = np.arange(start=190 * u.MHz, stop=196 * u.MHz, step=0.5 * u.MHz)
     nr_repeating_intergration: int = 200
     # ntegrations_per_point = 500
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
@@ -130,7 +130,7 @@ def settings(pdc={}):
             # ("B_theta", [50]),
             # ("B_amp", [140]),
             ("sweeps", range(5)),
-            ("cooldown_time", [1_000_000]),  # 100 us
+            ("cooldown_time", [5_000_000]),  # 100 us
             ("MW_amp", [100]),
             ("click_channel", [2]),
             ("MW_f", f_vec_array),

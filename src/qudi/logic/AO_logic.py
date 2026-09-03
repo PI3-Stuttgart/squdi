@@ -122,9 +122,11 @@ class AOLogic(LogicBase):
             if channel in self._power_calibration_logic.calibrated_channels and self.use_conversion:
                 units[channel] = "W"  # TODO: Needs to be generalized
 
-                limits[channel] = tuple(
-                    [self._power_calibration_logic.voltage_to_power(v, channel) for v in self._ao_hardware.constraints.channel_limits[channel]]
+                converted_limits = tuple(
+                    self._power_calibration_logic.voltage_to_power(v, channel)
+                    for v in self._ao_hardware.constraints.channel_limits[channel]
                 )
+                limits[channel] = (min(converted_limits), max(converted_limits))
 
             else:
                 units[channel] = self._ao_hardware.constraints.channel_units[channel]

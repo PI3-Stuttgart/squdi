@@ -198,25 +198,48 @@ class AOMPowerCalibrationLogic(LogicBase):
             return 0
 
         fit_result = self.aom_configs[aom_channel]["fit_result"]
-        model_function = fit_result.model.func
-        best_fit_values = fit_result.best_values
+        min_voltage, max_voltage = self.analog_output.constraints.channel_limits[aom_channel]
 
-        if "offset" in best_fit_values.keys():
-            if best_fit_values["offset"] > power:
-                self.log.warning("Set power is to low to reach with used AOM. Output voltage is set to 0.")
-                return 0
-        elif power == 0:
-            return 0
+        voltage_grid = np.linspace(min_voltage, max_voltage, 200)
+        power_grid = np.asarray(self._evaluate_fit_result(fit_result, voltage_grid))
+        lower_power = float(np.min(power_grid))
+        upper_power = float(np.max(power_grid))
+
+        if power <= lower_power:
+            voltage = float(voltage_grid[int(np.argmin(power_grid))])
+            self.log.warning(
+                f"Set power is too low to reach with {aom_channel}. "
+                f"Output voltage is set to {voltage} V."
+            )
+            return voltage
+
+        if power >= upper_power:
+            voltage = float(voltage_grid[int(np.argmax(power_grid))])
+            self.log.warning(
+                f"Set power is too high to reach with {aom_channel}. "
+                f"Output voltage is set to {voltage} V."
+            )
+            return voltage
 
         def voltage_to_power_difference(voltage: float) -> float:
-            return model_function(voltage, **best_fit_values) - power
+            return self._evaluate_fit_result(fit_result, voltage) - power
 
+        difference_grid = np.array([voltage_to_power_difference(voltage) for voltage in voltage_grid])
+        exact_match_indices = np.where(
+            np.isclose(difference_grid, 0, rtol=1e-9, atol=1e-15)
+        )[0]
+        if len(exact_match_indices) > 0:
+            return float(voltage_grid[exact_match_indices[0]])
+
+        sign_change_indices = np.where(difference_grid[:-1] * difference_grid[1:] < 0)[0]
+        if len(sign_change_indices) == 0:
+            closest_voltage_index = int(np.argmin(np.abs(difference_grid)))
+            return float(voltage_grid[closest_voltage_index])
+
+        bracket_index = int(sign_change_indices[0])
         root_result = root_scalar(
             voltage_to_power_difference,
-            bracket=[
-                self.analog_output.constraints.channel_limits[aom_channel][0],
-                self.analog_output.constraints.channel_limits[aom_channel][1] + 0.1,  # TODO: This is a dirty workaround to avoid issues with max power
-            ],
+            bracket=[voltage_grid[bracket_index], voltage_grid[bracket_index + 1]],
             method="brentq",
         )
 
@@ -239,7 +262,20 @@ class AOMPowerCalibrationLogic(LogicBase):
             return 0
 
         fit_result = self.aom_configs[aom_channel]["fit_result"]
-        return fit_result.model.func(voltage, **fit_result.best_values)
+        return self._evaluate_fit_result(fit_result, voltage)
+
+    @staticmethod
+    def _evaluate_fit_result(fit_result: Any, voltage: Union[np.ndarray, float]) -> Any:
+        """Evaluate an lmfit result using the calibration voltage variable."""
+        scalar_input = np.isscalar(voltage)
+        try:
+            evaluated_power = fit_result.eval(voltage=voltage)
+        except TypeError:
+            evaluated_power = fit_result.model.func(voltage, **fit_result.best_values)
+
+        if scalar_input:
+            return float(np.asarray(evaluated_power).reshape(-1)[0])
+        return evaluated_power
 
     def fit_channel_calibration(self, aom_channel: str) -> None:
         """Fit the stored voltage/power dataset for one AOM channel.
@@ -254,6 +290,8 @@ class AOMPowerCalibrationLogic(LogicBase):
         )
         self.aom_configs[aom_channel]["fit_helper"] = fit_helper
         self.aom_configs[aom_channel]["fit_result"] = fit_helper.fit()
+        self.aom_configs[aom_channel]["data"].attrs["fit_model"] = fit_helper.model_name
+        self.aom_configs[aom_channel]["data"].attrs["inverted_response"] = fit_helper.is_inverted
         # self.aom_configs[aom_channel]["data"].attrs["fit_result"] = fit_helper.fit()  # TODO: Fix this
 
     def calibrate_channel_power(self, aom_channel: str, return_measurement_data: bool = False) -> Optional[xr.Dataset]:
@@ -364,6 +402,8 @@ class AOMPowerCalibrationFit:
     plot or report the result.
     """
 
+    INVERTED_POLYNOMIAL_DEGREE = 7
+
     def __init__(
         self,
         voltage_data: Sequence[float],
@@ -386,9 +426,18 @@ class AOMPowerCalibrationFit:
         self.voltage_data = np.array(voltage_data)
         self.power_data = np.array(power_data)
         self.initial_guess_function = initial_guess_function
+        self.is_inverted = self.detect_inverted_response(self.voltage_data, self.power_data)
+        self.model_name = "custom"
 
-        if not model:
+        if model:
+            self.model = model
+        elif self.is_inverted:
+            self.model = Model(self.polynomial7_voltage_to_power_model)
+            self.model_name = "inverted_polynomial_7"
+            self.initial_guess_function = self.estimate_initial_parameters_polynomial7
+        else:
             self.model = Model(self.voltage_to_power_model)
+            self.model_name = "aom_saturation"
             self.initial_guess_function = self.estimate_initial_parameters
 
     @staticmethod
@@ -423,6 +472,76 @@ class AOMPowerCalibrationFit:
         """
         x = np.maximum(voltage - v0, 0.0)
         return offset + P_max * (x**n_num) / ((x**n_den + V_s**n_den) ** alpha)
+
+    @staticmethod
+    def inverted_voltage_to_power_model(
+        voltage: Union[np.ndarray, float],
+        P_max: float,
+        V_s: float,
+        n: float,
+        offset: float,
+        v0: float,
+        initial_guess_function: Optional[Callable[..., Mapping[str, Any]]] = None,
+    ) -> Union[np.ndarray, float]:
+        """Evaluate a decreasing fiber-attenuator transfer model.
+
+        This model describes channels that transmit maximum light at low
+        voltage and block the beam as voltage increases. Voltages below ``v0``
+        stay on the high-power plateau.
+        """
+        x = np.maximum(voltage - v0, 0.0)
+        return offset + P_max * (V_s**n) / (x**n + V_s**n)
+
+    @staticmethod
+    def polynomial7_voltage_to_power_model(
+        voltage: Union[np.ndarray, float],
+        c0: float,
+        c1: float,
+        c2: float,
+        c3: float,
+        c4: float,
+        c5: float,
+        c6: float,
+        c7: float,
+        v_center: float,
+        v_scale: float,
+        initial_guess_function: Optional[Callable[..., Mapping[str, Any]]] = None,
+    ) -> Union[np.ndarray, float]:
+        """Evaluate a 7th-order polynomial voltage-to-power calibration model."""
+        scaled_voltage = (voltage - v_center) / v_scale
+        return (
+            c0
+            + c1 * scaled_voltage
+            + c2 * scaled_voltage**2
+            + c3 * scaled_voltage**3
+            + c4 * scaled_voltage**4
+            + c5 * scaled_voltage**5
+            + c6 * scaled_voltage**6
+            + c7 * scaled_voltage**7
+        )
+
+    @staticmethod
+    def detect_inverted_response(voltage: Sequence[float], power: Sequence[float]) -> bool:
+        """Return ``True`` when power decreases as voltage increases."""
+        voltage, power = np.asarray(voltage, float), np.asarray(power, float)
+        finite_mask = np.isfinite(voltage) & np.isfinite(power)
+        voltage, power = voltage[finite_mask], power[finite_mask]
+
+        if len(voltage) < 3:
+            return False
+
+        sort_indices = np.argsort(voltage)
+        voltage, power = voltage[sort_indices], power[sort_indices]
+        power_span = float(np.max(power) - np.min(power))
+        if power_span <= 0:
+            return False
+
+        edge_count = max(1, min(5, len(power) // 5))
+        low_voltage_power = float(np.median(power[:edge_count]))
+        high_voltage_power = float(np.median(power[-edge_count:]))
+        linear_slope = float(np.polyfit(voltage, power, 1)[0])
+
+        return high_voltage_power < low_voltage_power - 0.1 * power_span and linear_slope < 0
 
     @staticmethod
     def estimate_initial_parameters(voltage: Sequence[float], power: Sequence[float]) -> Mapping[str, Any]:
@@ -464,6 +583,80 @@ class AOMPowerCalibrationFit:
             "v0": initial_threshold_voltage,
         }
 
+    @staticmethod
+    def estimate_initial_parameters_inverted(
+        voltage: Sequence[float], power: Sequence[float]
+    ) -> Mapping[str, Any]:
+        """Build heuristic initial parameters for the inverted attenuator model."""
+        voltage, power = np.asarray(voltage, float), np.asarray(power, float)
+        sort_indices = np.argsort(voltage)
+        voltage, power = voltage[sort_indices], power[sort_indices]
+
+        ymin, ymax = power.min(), power.max()
+        initial_power_span = ymax - ymin
+        initial_offset = max(0.0, ymin)
+
+        threshold_power = initial_offset + 0.98 * initial_power_span
+        below_plateau_indices = np.where(power <= threshold_power)[0]
+        initial_threshold_voltage = (
+            voltage[below_plateau_indices[0]] if len(below_plateau_indices) else voltage[0]
+        )
+
+        half_max_power = initial_offset + 0.5 * initial_power_span
+        half_max_index = int(np.argmin(np.abs(power - half_max_power)))
+        initial_saturation_voltage = max(
+            1e-9,
+            abs(voltage[half_max_index] - initial_threshold_voltage),
+        )
+
+        left_index = max(0, half_max_index - 1)
+        right_index = min(len(voltage) - 1, half_max_index + 1)
+        local_slope = (power[right_index] - power[left_index]) / max(
+            1e-12, voltage[right_index] - voltage[left_index]
+        )
+        initial_exponent = float(
+            np.clip(
+                abs(4 * local_slope * initial_saturation_voltage / max(initial_power_span, 1e-12)),
+                0.5,
+                12.0,
+            )
+        )
+
+        return {
+            "P_max": {"value": initial_power_span, "min": 0, "max": np.inf},
+            "V_s": {"value": initial_saturation_voltage, "min": 1e-12, "max": np.inf},
+            "n": {"value": initial_exponent, "min": 0.2, "max": 30.0},
+            "offset": {"value": initial_offset, "min": 0, "max": np.inf},
+            "v0": {
+                "value": initial_threshold_voltage,
+                "min": float(np.min(voltage)),
+                "max": float(np.max(voltage)),
+            },
+        }
+
+    @staticmethod
+    def estimate_initial_parameters_polynomial7(
+        voltage: Sequence[float], power: Sequence[float]
+    ) -> Mapping[str, Any]:
+        """Build initial parameters for the inverted polynomial fit."""
+        voltage, power = np.asarray(voltage, float), np.asarray(power, float)
+        sort_indices = np.argsort(voltage)
+        voltage, power = voltage[sort_indices], power[sort_indices]
+
+        degree = min(AOMPowerCalibrationFit.INVERTED_POLYNOMIAL_DEGREE, len(voltage) - 1)
+        voltage_center = float(np.mean((np.min(voltage), np.max(voltage))))
+        voltage_scale = float((np.max(voltage) - np.min(voltage)) / 2)
+        voltage_scale = max(voltage_scale, 1e-12)
+        scaled_voltage = (voltage - voltage_center) / voltage_scale
+        coeffs = np.polynomial.polynomial.polyfit(scaled_voltage, power, degree)
+        padded_coeffs = np.zeros(AOMPowerCalibrationFit.INVERTED_POLYNOMIAL_DEGREE + 1)
+        padded_coeffs[: len(coeffs)] = coeffs
+
+        guesses = {f"c{index}": value for index, value in enumerate(padded_coeffs)}
+        guesses["v_center"] = {"value": voltage_center, "vary": False}
+        guesses["v_scale"] = {"value": voltage_scale, "vary": False}
+        return guesses
+
     def get_initial_parameter_guesses(self) -> Mapping[str, Any]:
         """Generate fit start values from the stored calibration arrays."""
         return self.initial_guess_function(self.voltage_data, self.power_data)
@@ -488,8 +681,15 @@ class AOMPowerCalibrationFit:
         plt.figure(figsize=(8, 6))
         if hasattr(self, "result"):
             fit_voltage = np.linspace(min(self.voltage_data), max(self.voltage_data), 500)
-            fit_power = self.model.func(fit_voltage, **self.result.best_values)
-            plt.plot(fit_voltage, fit_power * 1e3, label="Fitted Curve", color="orange", linewidth=1, zorder=1)
+            fit_power = self.result.eval(voltage=fit_voltage)
+            plt.plot(
+                fit_voltage,
+                fit_power * 1e3,
+                label=f"Fitted Curve ({self.model_name})",
+                color="orange",
+                linewidth=1,
+                zorder=1,
+            )
         plt.scatter(self.voltage_data, self.power_data * 1e3, label="Measured Data", color="blue", s=30, zorder=3)
         plt.xlabel("Voltage [V]")
         plt.ylabel("Power [mW]")

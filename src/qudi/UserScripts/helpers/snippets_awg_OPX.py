@@ -60,7 +60,7 @@ GENERAL_POWER_B2 = 4  # nW
 class SMIQ_PARAMS(UpdateableDataclass):
     """Default fixed SMIQ local-oscillator settings for OPX IQ mixing."""
 
-    frequency_ghz: float = 3.9  # 3.9
+    frequency_ghz: float = 4.2  # 3.9
     power_dbm: float = -14
     frequency_tolerance_hz: float = 1.0
     power_tolerance_dbm: float = 0.01
@@ -70,8 +70,8 @@ class SMIQ_PARAMS(UpdateableDataclass):
 class ELECTRON_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
-    electron_rabi_period: int = 640  # ns
-    IQ_freq: int = int((234) * 1e6)
+    electron_rabi_period: int = 1620 * 2  # ns
+    IQ_freq: int = int((194) * 1e6)
 
 
 @dataclass
@@ -83,8 +83,8 @@ class CRC_PARAMS(UpdateableDataclass):
     laser_power_repump: float | str = 50_000  # nW
     probe_len: int | str = int(1e6)  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
-    threshold: int | str = 4  # cts
-    threshold_repump: int | str = 1  # cts
+    threshold: int | str = 10  # cts
+    threshold_repump: int | str = 2  # cts
     wait_before_repump: int | str = int(50e3)  # ns
     wait_after_repump: int | str = int(50e3)  # ns
     max_attempts: int = 1000  # not used right now
@@ -453,13 +453,14 @@ def electron_gate(
         case Gate.pi_half:
             pulse_duration = params.electron_rabi_period / 4
 
-    ou.MW_pulse(duration_ns=pulse_duration, pulse=str(axis))
+    pulse = axis.value if isinstance(axis, QubitAxis) else axis
+    ou.MW_pulse(duration_ns=pulse_duration, pulse=pulse)
 
 
 def set_IQ_freq(mcas, IQ_freq: int | None = None):
     params = ELECTRON_PARAMS()
     params.update(IQ_freq=IQ_freq)
-    update_frequency("NV", params.IQ_freq)
+    update_frequency("MW", params.IQ_freq)
 
 
 def scan_laser_to_target(

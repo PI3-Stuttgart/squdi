@@ -54,7 +54,7 @@ def ret_ret_mcas(pdc):
                     _, mw_freq_qua = ou._get_value_from_key("MW_f")
                     # mw_amp, _ = ou._get_value_from_key("MW_amp")
                     qua.update_frequency(
-                        "NV",
+                        "MW",
                         mw_freq_qua,
                     )
                     sna.crc(mcas)
@@ -64,12 +64,12 @@ def ret_ret_mcas(pdc):
                     sna.ssr(mcas, state="e1")
                     qua.align()
                     ou.gate_trigger()
-                    ou.MW_pulse("NV", 2e6, MW_amp / 100)
+                    ou.MW_pulse(duration_ns=2e6, amplitude=MW_amp / 100, element="MW")
                     ou.laser_pulse("Laser_620_det", 2e6)
                     qua.align()
                     ou.memory_trigger()
                     sna.csr(mcas)
-                    ou.pause(100e6)
+                    ou.pause(1e6)
                 # ou.pause(int(10e12))
 
         mcas.program = myprog
@@ -81,7 +81,7 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 2, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 8, 1, 0, 1]]
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
@@ -108,7 +108,7 @@ def settings(pdc={}):
     nuclear.no_trace = False  ##Doesnt save the trace
 
     # PLE refocus
-    nuclear.do_ple_refocus_A1 = False
+    nuclear.do_ple_refocus_A1 = True
     nuclear.lock_laser_to_wavemeter = True
     nuclear.ple_refocus_interval = 2 * 60
 
@@ -120,20 +120,20 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    f_vec_array = np.arange(start=270 * u.MHz, stop=310 * u.MHz, step=0.5 * u.MHz)
+    f_vec_array = np.arange(start=175 * u.MHz, stop=225 * u.MHz, step=0.5 * u.MHz)
     # MW_power_array = np.array([1.0, 0.7, 0.5, 0.2, 0.1])
-    nr_repeating_intergration: int = 5
+    nr_repeating_intergration: int = 50
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
             ("sweeps", range(5)),
-            # ("B_phi", [0]),
-            # ("B_theta", [126]),
-            # ("B_amp", [110, 112, 114, 116]),
+            # ("B_phi", [90]),
+            # ("B_theta", [58]),
+            # ("B_amp", [136, 138, 140]),
             ("click_channel", [2]),
             # ("first_init_duration", [5e6]),
             # ("ODMR_readout_power", [6]),
-            ("MW_amp", [5, 3, 1]),
+            ("MW_amp", [100]),
             # ("Init_state", ["e1", "e2"]),
             # ("SSR_state", ["e1", "e2"]),
             # ("pulse_shape_ppg", ["square"]),
