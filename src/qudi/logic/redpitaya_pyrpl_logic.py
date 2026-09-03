@@ -130,6 +130,14 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
         )
         return preview
 
+    def get_pid_output_snapshot(self, pid_channel=0):
+        """Read PID output diagnostics without changing hardware state."""
+        if self._redpitaya_hardware_instance is None:
+            raise RuntimeError("Red Pitaya hardware is not active.")
+        return self._redpitaya_hardware_instance.get_pid_output_snapshot(
+            pid_channel
+        )
+
     def apply_pid_wrap(
         self,
         pid_channel=0,

@@ -65,6 +65,7 @@ class _PyrplIoBridge(QtCore.QObject):
 
     sigReadPidIntegrator = QtCore.Signal(object)
     sigReadPidWrapState = QtCore.Signal(object)
+    sigReadPidOutputSnapshot = QtCore.Signal(object)
     sigWritePidIntegrator = QtCore.Signal(object)
 
     def __init__(self, pids):
@@ -76,6 +77,10 @@ class _PyrplIoBridge(QtCore.QObject):
         )
         self.sigReadPidWrapState.connect(
             self._read_pid_wrap_state,
+            QtCore.Qt.QueuedConnection,
+        )
+        self.sigReadPidOutputSnapshot.connect(
+            self._read_pid_output_snapshot,
             QtCore.Qt.QueuedConnection,
         )
         self.sigWritePidIntegrator.connect(
@@ -101,6 +106,29 @@ class _PyrplIoBridge(QtCore.QObject):
                 'pid_minimum': float(pid.min_voltage),
                 'pid_maximum': float(pid.max_voltage),
                 'integrator': float(pid.ival),
+            }
+        except Exception as error:
+            request.error = error
+        finally:
+            request.completed.set()
+
+    @QtCore.Slot(object)
+    def _read_pid_output_snapshot(self, request):
+        try:
+            pid = self._pids[request.pid_channel]
+            integrator_before = float(pid.ival)
+            output = float(pid.current_output_signal)
+            integrator_after = float(pid.ival)
+            request.value = {
+                'integrator_before': integrator_before,
+                'output': output,
+                'integrator_after': integrator_after,
+                'integrator_change_during_read': (
+                    integrator_after - integrator_before
+                ),
+                'proportional_gain': float(pid.p),
+                'pid_minimum': float(pid.min_voltage),
+                'pid_maximum': float(pid.max_voltage),
             }
         except Exception as error:
             request.error = error
@@ -183,6 +211,19 @@ class _PyrplIoBridge(QtCore.QObject):
             self.sigReadPidWrapState.emit(request)
             if not request.completed.wait(timeout):
                 raise TimeoutError("Timed out while reading the PID wrap state.")
+
+        if request.error is not None:
+            raise request.error
+        return request.value
+
+    def read_pid_output_snapshot(self, pid_channel, timeout=2.0):
+        request = _PidReadRequest(pid_channel)
+        if self.thread() is QtCore.QThread.currentThread():
+            self._read_pid_output_snapshot(request)
+        else:
+            self.sigReadPidOutputSnapshot.emit(request)
+            if not request.completed.wait(timeout):
+                raise TimeoutError("Timed out while reading the PID output snapshot.")
 
         if request.error is not None:
             raise request.error
@@ -516,6 +557,19 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
             self._pyrpl_io_bridge = bridge
         return bridge.read_pid_wrap_state(channel)
+
+    def get_pid_output_snapshot(self, pid_channel=0):
+        """Read PID output diagnostics through the serialized bridge."""
+        channel = int(pid_channel)
+        if channel not in (0, 1, 2):
+            raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
+        if self.get_pyrpl() is None:
+            raise RuntimeError("PyRPL is not connected.")
+        bridge = getattr(self, '_pyrpl_io_bridge', None)
+        if bridge is None:
+            bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
+            self._pyrpl_io_bridge = bridge
+        return bridge.read_pid_output_snapshot(channel)
 
     def set_pid_integrator_checked(
         self,

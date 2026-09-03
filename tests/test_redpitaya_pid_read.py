@@ -112,18 +112,21 @@ class ReadPidIntegratorTest(unittest.TestCase):
             p=0.0,
             min_voltage=-0.6,
             max_voltage=0.6,
+            current_output_signal=-0.1,
         )
         self.hardware._pid1 = types.SimpleNamespace(
             ival=0.25,
             p=0.1,
             min_voltage=-0.5,
             max_voltage=0.5,
+            current_output_signal=0.3,
         )
         self.hardware._pid2 = types.SimpleNamespace(
             ival=0.5,
             p=-0.2,
             min_voltage=-0.4,
             max_voltage=0.4,
+            current_output_signal=0.4,
         )
         self.hardware.get_pyrpl = lambda: object()
 
@@ -162,6 +165,24 @@ class ReadPidIntegratorTest(unittest.TestCase):
             },
         )
         self.assertEqual(self.hardware._pid1.ival, 0.25)
+
+    def test_reads_pid_output_snapshot_without_writing(self):
+        snapshot = self.hardware.get_pid_output_snapshot(1)
+
+        self.assertEqual(
+            snapshot,
+            {
+                'integrator_before': 0.25,
+                'output': 0.3,
+                'integrator_after': 0.25,
+                'integrator_change_during_read': 0.0,
+                'proportional_gain': 0.1,
+                'pid_minimum': -0.5,
+                'pid_maximum': 0.5,
+            },
+        )
+        self.assertEqual(self.hardware._pid1.ival, 0.25)
+        self.assertEqual(self.hardware._pid1.current_output_signal, 0.3)
 
     def test_checked_write_updates_integrator(self):
         result = self.hardware.set_pid_integrator_checked(
