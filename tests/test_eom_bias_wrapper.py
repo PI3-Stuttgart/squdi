@@ -29,25 +29,35 @@ class CalculateWrapTest(unittest.TestCase):
         self.assertFalse(calculate_wrap(0.55).should_wrap)
         self.assertFalse(calculate_wrap(-0.55).should_wrap)
 
-    def test_target_is_safe_and_optically_equivalent(self):
-        current = 1.2
-        decision = calculate_wrap(current)
+    def test_refuses_integrator_windup_outside_output_range(self):
+        for current in (-4.0, 4.0):
+            decision = calculate_wrap(current)
 
-        self.assertTrue(decision.should_wrap)
-        self.assertGreaterEqual(decision.target, -0.55)
-        self.assertLessEqual(decision.target, 0.55)
+            self.assertFalse(decision.should_wrap)
+            self.assertEqual(decision.target, current)
+            self.assertEqual(decision.periods, 0)
+            self.assertEqual(
+                decision.reason,
+                "integrator_outside_output_range",
+            )
+
+    def test_output_limits_wrap_to_equivalent_safe_values(self):
         self.assertAlmostEqual(
-            decision.target - current,
-            decision.periods * 0.72,
+            calculate_wrap(-0.6).target,
+            0.12,
+        )
+        self.assertAlmostEqual(
+            calculate_wrap(0.6).target,
+            -0.12,
         )
 
     def test_reports_when_no_equivalent_safe_target_exists(self):
         decision = calculate_wrap(
-            0.5,
+            0.09,
             vpi=0.36,
             min_value=-0.1,
             max_value=0.1,
-            margin=0.0,
+            margin=0.05,
         )
 
         self.assertFalse(decision.should_wrap)

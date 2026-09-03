@@ -51,8 +51,24 @@ def calculate_wrap(
         raise ValueError("margin leaves no usable bias range.")
 
     comparison_tolerance = 1e-12 * max(
-        1.0, abs(current), abs(safe_minimum), abs(safe_maximum)
+        1.0,
+        abs(current),
+        abs(minimum),
+        abs(maximum),
+        abs(safe_minimum),
+        abs(safe_maximum),
     )
+    if (
+        current < minimum - comparison_tolerance
+        or current > maximum + comparison_tolerance
+    ):
+        return WrapDecision(
+            False,
+            current,
+            0,
+            "integrator_outside_output_range",
+        )
+
     if (
         safe_minimum - comparison_tolerance
         <= current
