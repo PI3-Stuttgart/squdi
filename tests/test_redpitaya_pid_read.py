@@ -104,6 +104,11 @@ class ReadPidIntegratorTest(unittest.TestCase):
         cls.module = _load_hardware_module()
 
     def setUp(self):
+        fake_rp = types.SimpleNamespace(
+            iq0=types.SimpleNamespace(current_output_signal=-0.02),
+            iq1=types.SimpleNamespace(current_output_signal=0.1),
+            iq2=types.SimpleNamespace(current_output_signal=-0.3),
+        )
         self.hardware = self.module.RedPitayaPyrpl.__new__(
             self.module.RedPitayaPyrpl
         )
@@ -113,6 +118,10 @@ class ReadPidIntegratorTest(unittest.TestCase):
             min_voltage=-0.6,
             max_voltage=0.6,
             current_output_signal=-0.1,
+            input='iq0',
+            inputfilter=[0.0, 0.0, 0.0, 0.0],
+            setpoint=0.0,
+            _rp=fake_rp,
         )
         self.hardware._pid1 = types.SimpleNamespace(
             ival=0.25,
@@ -120,6 +129,10 @@ class ReadPidIntegratorTest(unittest.TestCase):
             min_voltage=-0.5,
             max_voltage=0.5,
             current_output_signal=0.3,
+            input='iq1',
+            inputfilter=[0.0, 10.0, 0.0, 0.0],
+            setpoint=-0.05,
+            _rp=fake_rp,
         )
         self.hardware._pid2 = types.SimpleNamespace(
             ival=0.5,
@@ -127,6 +140,10 @@ class ReadPidIntegratorTest(unittest.TestCase):
             min_voltage=-0.4,
             max_voltage=0.4,
             current_output_signal=0.4,
+            input='iq2',
+            inputfilter=0.0,
+            setpoint=0.2,
+            _rp=fake_rp,
         )
         self.hardware.get_pyrpl = lambda: object()
 
@@ -177,6 +194,10 @@ class ReadPidIntegratorTest(unittest.TestCase):
                 'integrator_after': 0.25,
                 'integrator_change_during_read': 0.0,
                 'proportional_gain': 0.1,
+                'input': 'iq1',
+                'input_source_output': 0.1,
+                'setpoint': -0.05,
+                'input_filter': [0.0, 10.0, 0.0, 0.0],
                 'pid_minimum': -0.5,
                 'pid_maximum': 0.5,
             },

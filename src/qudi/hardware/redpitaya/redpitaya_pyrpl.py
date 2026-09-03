@@ -118,6 +118,19 @@ class _PyrplIoBridge(QtCore.QObject):
             pid = self._pids[request.pid_channel]
             integrator_before = float(pid.ival)
             output = float(pid.current_output_signal)
+            input_name = str(pid.input)
+            input_source = getattr(pid._rp, input_name, None)
+            if input_source is None:
+                input_source_output = None
+            else:
+                input_source_output = float(
+                    input_source.current_output_signal
+                )
+            input_filter = pid.inputfilter
+            try:
+                input_filter = [float(value) for value in input_filter]
+            except TypeError:
+                input_filter = [float(input_filter)]
             integrator_after = float(pid.ival)
             request.value = {
                 'integrator_before': integrator_before,
@@ -127,6 +140,10 @@ class _PyrplIoBridge(QtCore.QObject):
                     integrator_after - integrator_before
                 ),
                 'proportional_gain': float(pid.p),
+                'input': input_name,
+                'input_source_output': input_source_output,
+                'setpoint': float(pid.setpoint),
+                'input_filter': input_filter,
                 'pid_minimum': float(pid.min_voltage),
                 'pid_maximum': float(pid.max_voltage),
             }
