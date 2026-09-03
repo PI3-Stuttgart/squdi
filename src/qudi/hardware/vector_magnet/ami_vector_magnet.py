@@ -595,3 +595,18 @@ class Magnet3D(Base):
         self._magnet_y.set_target_field(target[1])
         self._magnet_z.set_target_field(target[2])
         return 0
+
+    def get_target_field(self):
+        """Returns the target field in x,y,z direction."""
+        field_x = self._magnet_x.get_target_field()
+        field_y = self._magnet_y.get_target_field()
+        field_z = self._magnet_z.get_target_field()
+        return [field_x, field_y, field_z]
+
+    def get_target_magnet_currents(self):
+        """Returns the target current flowing in the magnet coils."""
+        curr_x = self._magnet_x.get_target_current()
+        curr_y = self._magnet_y.get_target_current()
+        curr_z = self._magnet_z.get_target_current()
+        return [curr_x, curr_y, curr_z]
+

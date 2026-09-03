@@ -110,6 +110,7 @@ class SequenceGeneratorLogic(LogicBase):
     # _saved_pulse_blocks = StatusVar(default=OrderedDict())
     # _saved_pulse_block_ensembles = StatusVar(default=OrderedDict())
     # _saved_pulse_sequences = StatusVar(default=OrderedDict())
+    _digital_channel_names = StatusVar(default=dict())
 
     _benchmark_write = BenchmarkTool()
     _benchmark_write_state = StatusVar(representer=_benchmark_write.save, constructor=_benchmark_write.load_from_dict)
@@ -299,6 +300,7 @@ class SequenceGeneratorLogic(LogicBase):
         settings_dict['interleave'] = bool(self.__interleave)
         settings_dict['flags'] = set(self.__flags)
         settings_dict['upload_speed'] = float(self.__upload_speed)
+        settings_dict['digital_names'] = dict(self._digital_channel_names)
         return settings_dict
 
     @pulse_generator_settings.setter
@@ -369,6 +371,9 @@ class SequenceGeneratorLogic(LogicBase):
                 settings_dict.update(kwargs)
 
             # Set parameters if present
+            if 'digital_names' in settings_dict:
+                self._digital_channel_names = settings_dict['digital_names']
+                
             if 'activation_config' in settings_dict:
                 activation_config = settings_dict['activation_config']
                 available_configs = self.pulse_generator_constraints.activation_config
@@ -1861,9 +1866,12 @@ class SequenceGeneratorLogic(LogicBase):
                             digital_samples[chnl][array_write_index:array_write_index + samples_to_add] = digital_high[
                                 chnl]
                         for chnl in pulse_function:
-                            analog_samples[chnl][array_write_index:array_write_index + samples_to_add] = pulse_function[
-                                                                                                             chnl].get_samples(
-                                time_arr) / (self.__analog_levels[0][chnl] / 2)
+                            amp = self.__analog_levels[0][chnl] / 2
+                            if amp == 0.0:
+                                analog_samples[chnl][array_write_index:array_write_index + samples_to_add] = 0.0
+                            else:
+                                analog_samples[chnl][array_write_index:array_write_index + samples_to_add] = \
+                                    pulse_function[chnl].get_samples(time_arr) / amp
 
                         # Free memory
                         if pulse_function:

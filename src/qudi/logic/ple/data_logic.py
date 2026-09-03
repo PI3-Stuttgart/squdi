@@ -244,8 +244,16 @@ class PleDataLogic(LogicBase):
         scan_range_x = (scan_data.scan_range[0][0], scan_data.scan_range[0][1])
         si_prefix_x = ScaledFloat(scan_range_x[1]-scan_range_x[0]).scale
         si_factor_x = ScaledFloat(scan_range_x[1]-scan_range_x[0]).scale_val
-        si_prefix_data = ScaledFloat(np.nanmax(data)-np.nanmin(data)).scale
-        si_factor_data = ScaledFloat(np.nanmax(data)-np.nanmin(data)).scale_val
+        
+        if np.all(np.isnan(data)):
+            data_diff = 1.0
+        else:
+            data_diff = np.nanmax(data) - np.nanmin(data)
+            if data_diff == 0:
+                data_diff = 1.0
+                
+        si_prefix_data = ScaledFloat(data_diff).scale
+        si_factor_data = ScaledFloat(data_diff).scale_val
 
         # Create figure
         fig, ax = plt.subplots()
@@ -263,10 +271,33 @@ class PleDataLogic(LogicBase):
         if channel == self.current_channel:
             if self.fit_container is not None:
                 if (fit_result:= self.fit_container.last_fit) is not None and fit_result[1] is not None:
-                    ax.plot(x_axis/si_factor_x, 
-                            self.fit_container.last_fit[1].best_fit/si_factor_data, 
-                            marker='None')
-                    self.add_fit_params_to_figure(ax, self.fit_container)
+                    best_fit = fit_result[1].best_fit
+                    x_axis_full = np.linspace(scan_data.scan_range[0][0],
+                                              scan_data.scan_range[0][1],
+                                              scan_data.scan_resolution[0])
+                    if len(best_fit) == len(x_axis):
+                        fit_x = x_axis
+                    elif len(best_fit) == len(x_axis_full):
+                        fit_x = x_axis_full
+                    elif hasattr(fit_result[1], 'userkws') and 'x' in fit_result[1].userkws:
+                        fit_x = fit_result[1].userkws['x']
+                    else:
+                        fit_x = None
+
+                    if fit_x is not None and len(fit_x) == len(best_fit) and len(fit_x) > 0:
+                        ax.plot(fit_x/si_factor_x, 
+                                best_fit/si_factor_data, 
+                                marker='None', color='red', label='Fit')
+                        self.add_fit_params_to_figure(ax, self.fit_container)
+                        
+                        params = fit_result[1].params
+                        max_count = np.nanmax(data) if not np.all(np.isnan(data)) and data.size > 0 else 0
+                        lw = params.get('fwhm', params.get('gamma', params.get('sigma', None)))
+                        lw_text = f"{lw.value:.3e}" if lw is not None else "N/A"
+                        text = f"Max Count: {max_count:.1e}\nLinewidth: {lw_text}"
+                        ax.annotate(text, xy=(0.05, 0.95), xycoords='axes fraction', 
+                                    verticalalignment='top', fontsize=10, 
+                                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
         # Axes labels
         if scan_data.axes_units[axis]:
@@ -301,6 +332,7 @@ class PleDataLogic(LogicBase):
 
     def save_scan(self, scan_data, current_channel=None, fit_container=None, color_range=None, tag='', root_dir=None, control_parameters = dict()):
         self.current_channel = current_channel
+        self.fit_container = fit_container
         with self._thread_lock:
             if self.module_state() != 'idle':
                 self.log.error('Unable to save 2D scan. Saving still in progress...')
@@ -398,7 +430,7 @@ class PleDataLogic(LogicBase):
                         {f"cummulative_ch_{channel}": file_path},
                     )
                     #Averaged PLEs:
-                    data_averaged = data.mean(axis=0)
+                    data_averaged = self._scan_logic().get_average(scan_data)[channel]
                     file_path, _, _ = ds.save_data(data_averaged,
                                                    metadata=parameters,
                                                    nametag=nametag + "_averaged" if tag == '' else f'_averaged_{nametag}_{tag}',
@@ -454,13 +486,14 @@ class PleDataLogic(LogicBase):
         si_prefix_y = ScaledFloat(scan_range_y[1]-scan_range_y[0]).scale
         si_factor_y = ScaledFloat(scan_range_y[1]-scan_range_y[0]).scale_val
         si_prefix_cb = ScaledFloat(cbar_range[1]-cbar_range[0]).scale if cbar_range[1]!=cbar_range[0] \
-            else ScaledFloat(cbar_range[1])
-        si_factor_cb = ScaledFloat(cbar_range[1]-cbar_range[0]).scale_val
+            else ScaledFloat(cbar_range[1]).scale
+        si_factor_cb = ScaledFloat(cbar_range[1]-cbar_range[0]).scale_val if cbar_range[1]!=cbar_range[0] \
+            else ScaledFloat(cbar_range[1]).scale_val
 
         # Create image plot
         #plt.colormaps.register(ColorScale().colormap, name='BuRd')
         cfimage = ax.imshow(image_arr.transpose()/si_factor_cb,
-                            cmap='coolwarm',#ColorScale().colormap,  # FIXME: reference the right place in qudi
+                            cmap='RdBu_r',  # User requested RdBu_r
                             origin='lower',
                             vmin=cbar_range[0]/si_factor_cb,
                             vmax=cbar_range[1]/si_factor_cb,

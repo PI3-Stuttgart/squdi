@@ -41,7 +41,7 @@ class PulseBlockElement(object):
     a GUI as single rows of a Pulse_Block.
     """
 
-    def __init__(self, init_length_s=10e-9, increment_s=0, pulse_function=None, digital_high=None, laser_on=False):
+    def __init__(self, init_length_s=10e-9, increment_s=0, pulse_function=None, digital_high=None, laser_on=False, label=''):
         """
         The constructor for a Pulse_Block_Element needs to have:
 
@@ -66,6 +66,7 @@ class PulseBlockElement(object):
         self.init_length_s = init_length_s
         self.increment_s = increment_s
         self.laser_on = laser_on
+        self.label = label
         if pulse_function is None:
             self.pulse_function = dict()
         else:
@@ -81,8 +82,8 @@ class PulseBlockElement(object):
         self.channel_set = self.analog_channels.union(self.digital_channels)
 
     def __repr__(self):
-        repr_str = 'PulseBlockElement(init_length_s={0}, increment_s={1}, laser_on={2}, pulse_function='.format(
-            self.init_length_s, self.increment_s, self.laser_on)
+        repr_str = 'PulseBlockElement(init_length_s={0}, increment_s={1}, laser_on={2}, label={3}, pulse_function='.format(
+            self.init_length_s, self.increment_s, self.laser_on, repr(self.label))
         repr_str += '{'
         for ind, (channel, sampling_func) in enumerate(self.pulse_function.items()):
             repr_str += '\'{0}\': {1}'.format(channel, 'SamplingFunctions.' + repr(sampling_func))
@@ -94,8 +95,9 @@ class PulseBlockElement(object):
 
     def __str__(self):
         pulse_func_dict = {chnl: type(func).__name__ for chnl, func in self.pulse_function.items()}
-        return_str = 'PulseBlockElement\n\tinitial length: {0}s\n\tlength increment: {1}s\n\tlaser_on : {2},' \
-                     'analog channels: {3}\n\tdigital channels: {4}'.format(self.init_length_s,
+        return_str = 'PulseBlockElement\n\tlabel: {0}\n\tinitial length: {1}s\n\tlength increment: {2}s\n\tlaser_on : {3},' \
+                     'analog channels: {4}\n\tdigital channels: {5}'.format(self.label,
+                                                                            self.init_length_s,
                                                                             self.increment_s,
                                                                             self.laser_on,
                                                                             pulse_func_dict,
@@ -109,8 +111,8 @@ class PulseBlockElement(object):
             return True
         if self.channel_set != other.channel_set:
             return False
-        if (self.init_length_s, self.increment_s, self.laser_on) != (
-                other.init_length_s, other.increment_s, other.laser_on):
+        if (self.init_length_s, self.increment_s, self.laser_on, self.label) != (
+                other.init_length_s, other.increment_s, other.laser_on, other.label):
             return False
         if set(self.digital_high.items()) != set(other.digital_high.items()):
             return False
@@ -124,6 +126,7 @@ class PulseBlockElement(object):
         dict_repr['init_length_s'] = self.init_length_s
         dict_repr['increment_s'] = self.increment_s
         dict_repr['laser_on'] = self.laser_on
+        dict_repr['label'] = self.label
         dict_repr['digital_high'] = self.digital_high
         dict_repr['pulse_function'] = dict()
         for chnl, func in self.pulse_function.items():

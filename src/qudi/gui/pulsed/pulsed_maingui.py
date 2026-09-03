@@ -847,14 +847,15 @@ class PulsedMeasurementGui(GuiBase):
     ###########################################################################
     def _activate_main_window_ui(self):
         self._mw.setDockNestingEnabled(True)
-        self._mw.setTabPosition(QtCore.Qt.AllDockWidgetAreas, QtWidgets.QTabWidget.North)
+        self._mw.setTabPosition(QtCore.Qt.TopDockWidgetArea, QtWidgets.QTabWidget.North)
+        self._mw.setTabPosition(QtCore.Qt.BottomDockWidgetArea, QtWidgets.QTabWidget.North)
+        self._mw.setTabPosition(QtCore.Qt.LeftDockWidgetArea, QtWidgets.QTabWidget.North)
+        self._mw.setTabPosition(QtCore.Qt.RightDockWidgetArea, QtWidgets.QTabWidget.North)
         dock_options = (
             QtWidgets.QMainWindow.AllowNestedDocks
             | QtWidgets.QMainWindow.AllowTabbedDocks
             | QtWidgets.QMainWindow.AnimatedDocks
         )
-        if hasattr(QtWidgets.QMainWindow, 'GroupedDragging'):
-            dock_options |= QtWidgets.QMainWindow.GroupedDragging
         self._mw.setDockOptions(dock_options)
         self._setup_toolbar()
         self.loaded_asset_updated(*self.pulsedmasterlogic().loaded_asset)
@@ -932,12 +933,14 @@ class PulsedMeasurementGui(GuiBase):
         self._analysis_trace_dockwidget = self._create_plot_dock_widget(
             object_name='pulsed_analysis_trace_dockwidget',
             title='Analysis Trace',
-            content_widget=self._pa.first_plot_splitter
+            content_widget=self._pa.first_plot_splitter,
+            allow_close=True
         )
         self._second_plot_dockwidget = self._create_plot_dock_widget(
             object_name='pulsed_second_plot_dockwidget',
             title='Fourier Transform',
-            content_widget=self._pa.second_plot_splitter
+            content_widget=self._pa.second_plot_splitter,
+            allow_close=True
         )
 
         self._mw.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._analysis_trace_dockwidget)
@@ -1008,6 +1011,33 @@ class PulsedMeasurementGui(GuiBase):
             self._measurement_parameters_dockwidget.raise_()
         self._pa.horizontalLayout_3.removeWidget(self._pa.ssr_groupBox)
         self._pa.ssr_groupBox.setMaximumWidth(360)
+        return
+
+    def _make_analysis_tab_flexible(self):
+        if hasattr(self, '_analysis_tab_main_splitter'):
+            return
+            
+        self._analysis_tab_main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        
+        # Take the top horizontal layout out of verticalLayout_3 and put it in a widget
+        item0 = self._pa.verticalLayout_3.takeAt(0)
+        top_widget = QtWidgets.QWidget()
+        top_widget.setLayout(item0.layout())
+        
+        # Remove the group boxes from verticalLayout_3
+        self._pa.verticalLayout_3.removeWidget(self._pa.groupBox_6)
+        self._pa.verticalLayout_3.removeWidget(self._pa.second_plot_GroupBox)
+        
+        # Add everything to the splitter
+        self._analysis_tab_main_splitter.addWidget(top_widget)
+        self._analysis_tab_main_splitter.addWidget(self._pa.groupBox_6)
+        self._analysis_tab_main_splitter.addWidget(self._pa.second_plot_GroupBox)
+        
+        # Insert the splitter back into the top of verticalLayout_3
+        self._pa.verticalLayout_3.insertWidget(0, self._analysis_tab_main_splitter)
+        
+        # Set an even initial size distribution
+        self._analysis_tab_main_splitter.setSizes([300, 300, 300])
         return
 
     @QtCore.Slot(bool)
@@ -1699,10 +1729,11 @@ class PulsedMeasurementGui(GuiBase):
         digital_channels = natural_sort(digital_channels)
 
         for i, chnl in enumerate(digital_channels, 1):
+            name_edit = QtWidgets.QLineEdit()
+            name_edit.setText(chnl)
+            name_edit.setMaximumWidth(120)
             self._digital_chnl_setting_widgets[chnl] = (
-                QtWidgets.QLabel(text=chnl + ':'), ScienDSpinBox(), ScienDSpinBox())
-            self._digital_chnl_setting_widgets[chnl][0].setAlignment(
-                QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                name_edit, ScienDSpinBox(), ScienDSpinBox())
             self._digital_chnl_setting_widgets[chnl][1].setAlignment(
                 QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             self._digital_chnl_setting_widgets[chnl][1].setSizePolicy(
@@ -1742,10 +1773,13 @@ class PulsedMeasurementGui(GuiBase):
 
         digital_low = dict()
         digital_high = dict()
-        for chnl, (label, widget1, widget2) in self._digital_chnl_setting_widgets.items():
+        digital_names = dict()
+        for chnl, (name_edit, widget1, widget2) in self._digital_chnl_setting_widgets.items():
+            digital_names[chnl] = name_edit.text() if name_edit.text() else chnl
             digital_low[chnl] = widget1.value()
             digital_high[chnl] = widget2.value()
         settings_dict['digital_levels'] = (digital_low, digital_high)
+        settings_dict['digital_names'] = digital_names
 
         self.pulsedmasterlogic().set_pulse_generator_settings(settings_dict)
         return
@@ -2235,13 +2269,13 @@ class PulsedMeasurementGui(GuiBase):
                     label.hide()
                     widget1.hide()
                     widget2.hide()
-            for chnl, (label, widget1, widget2) in self._digital_chnl_setting_widgets.items():
+            for chnl, (name_edit, widget1, widget2) in self._digital_chnl_setting_widgets.items():
                 if chnl in digital_channels:
-                    label.show()
+                    name_edit.show()
                     widget1.show()
                     widget2.show()
                 else:
-                    label.hide()
+                    name_edit.hide()
                     widget1.hide()
                     widget2.hide()
 
@@ -2257,6 +2291,14 @@ class PulsedMeasurementGui(GuiBase):
                 self._digital_chnl_setting_widgets[chnl][1].setValue(low_voltage)
             for chnl, high_voltage in settings_dict['digital_levels'][1].items():
                 self._digital_chnl_setting_widgets[chnl][2].setValue(high_voltage)
+        if 'digital_names' in settings_dict:
+            digital_names = settings_dict['digital_names']
+            for chnl, name in digital_names.items():
+                if chnl in self._digital_chnl_setting_widgets:
+                    self._digital_chnl_setting_widgets[chnl][0].setText(name)
+            # Update pulse editor block headers with new names
+            if hasattr(self._pg.block_editor.model(), 'set_channel_labels'):
+                self._pg.block_editor.model().set_channel_labels(digital_names)
         if 'interleave' in settings_dict:
             self._pgs.gen_use_interleave_CheckBox.setChecked(settings_dict['interleave'])
         if 'flags' in settings_dict:
@@ -3066,8 +3108,7 @@ class PulsedMeasurementGui(GuiBase):
         window_width = self._mw.geometry().width()
         self._pa.first_plot_splitter.setSizes((window_width, window_width/3))
         self._pa.second_plot_splitter.setSizes((window_width, window_width / 3))
-        self._ensure_analysis_plot_docks()
-        self._ensure_measurement_parameter_dock()
+        self._make_analysis_tab_flexible()
 
         # set boundaries
         self._pa.ana_param_num_laser_pulse_SpinBox.setMinimum(1)
@@ -3138,7 +3179,7 @@ class PulsedMeasurementGui(GuiBase):
         layout.addWidget(self._pa.ssr_valid_fraction_LineEdit, 3, 1, 1, 2)
 
         self._pa.horizontalLayout_3.insertWidget(2, self._pa.ssr_groupBox)
-        self._ensure_ssr_parameter_dock()
+        # self._ensure_ssr_parameter_dock()
 
         self._pa.ssr_hist_groupBox = QtWidgets.QGroupBox('SSR Histogram')
         self._pa.ssr_hist_groupBox.setMinimumWidth(280)
@@ -3181,7 +3222,7 @@ class PulsedMeasurementGui(GuiBase):
         self._pa.ssr_hist_threshold_line.hide()
         hist_layout.addWidget(self._pa.ssr_hist_PlotWidget)
         self._pa.horizontalLayout_3.insertWidget(3, self._pa.ssr_hist_groupBox)
-        self._ensure_ssr_histogram_dock()
+        # self._ensure_ssr_histogram_dock()
 
         self._sync_ssr_settings_from_logic(self.pulsedmasterlogic().analysis_settings)
         self._update_ssr_statistics_display()

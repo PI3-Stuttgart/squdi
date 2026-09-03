@@ -33,22 +33,28 @@ class MultipleCheckboxWidget(QtWidgets.QWidget):
     def __init__(self, parent=None, checkbox_labels=None):
         super().__init__(parent)
 
-        checkbox_labels = list() if checkbox_labels is None else list(checkbox_labels)
+        if isinstance(checkbox_labels, dict):
+            self._keys = list(checkbox_labels.keys())
+            self._display_labels = checkbox_labels
+        else:
+            self._keys = list() if checkbox_labels is None else list(checkbox_labels)
+            self._display_labels = {k: k for k in self._keys}
 
         self._checkboxes = dict()
-        self._checkbox_width = 30
-        self._width_hint = self._checkbox_width * len(checkbox_labels)
+        self._checkbox_width = 45
+        self._width_hint = self._checkbox_width * len(self._keys)
 
         main_layout = QtWidgets.QHBoxLayout()
-        for box_label in checkbox_labels:
-            # Create QLabel and QCheckBox for each checkbox label given in init
-            label = QtWidgets.QLabel(box_label)
+        for key in self._keys:
+            display_text = self._display_labels[key]
+            # Create QLabel and QCheckBox for each checkbox
+            label = QtWidgets.QLabel(display_text)
             label.setFixedWidth(self._checkbox_width)
             label.setAlignment(QtCore.Qt.AlignCenter)
             widget = QtWidgets.QCheckBox()
             widget.setFixedWidth(19)
             widget.setChecked(False)
-            self._checkboxes[box_label] = {'label': label, 'widget': widget}
+            self._checkboxes[key] = {'label': label, 'widget': widget}
 
             # Forward editingFinished signal of child widget
             widget.stateChanged.connect(self.stateChanged)

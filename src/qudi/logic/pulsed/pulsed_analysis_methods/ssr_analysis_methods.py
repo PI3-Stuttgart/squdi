@@ -63,7 +63,7 @@ class SnVSSRAnalyzer(PulseAnalyzerBase):
         errors = np.zeros(num_of_lasers, dtype=float)
 
         stride = max(1, int(sequence_stride))
-        crc_pos = int(crc_index) % stride
+        crc_index_int = int(crc_index)
         readout_pos = int(readout_index) % stride
         output_state = str(output_state).strip().lower()
         if output_state not in ('dark', 'bright'):
@@ -98,13 +98,20 @@ class SnVSSRAnalyzer(PulseAnalyzerBase):
             return probabilities, errors
 
         shot_offsets = np.arange(complete_shots, dtype=int) * stride
-        crc_rows = shot_offsets + crc_pos
+        
+        if crc_index_int < 0:
+            valid = np.ones(complete_shots, dtype=bool)
+            crc_counts = np.zeros(complete_shots, dtype=float)
+        else:
+            crc_pos = crc_index_int % stride
+            crc_rows = shot_offsets + crc_pos
+            # 1. CRC pre-selection
+            crc_counts = integrate_rows(crc_rows, norm_start, norm_end)
+            valid = crc_counts >= float(crc_threshold)
+
         readout_rows = shot_offsets + readout_pos
-
-        crc_counts = integrate_rows(crc_rows, norm_start, norm_end)
         ssr_counts = integrate_rows(readout_rows, signal_start, signal_end)
-
-        valid = crc_counts >= float(crc_threshold)
+        
         bright = ssr_counts > float(ssr_threshold) if bright_state_if_above else ssr_counts < float(ssr_threshold)
         bright_prob = np.full(complete_shots, np.nan, dtype=float)
 

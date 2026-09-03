@@ -233,6 +233,9 @@ class BasicPulseAnalyzer(PulseAnalyzerBase):
             signal_data[ii] = signal_mean - reference_mean
 
             # calculate with respect to gaussian error 'evolution'
-            error_data[ii] = signal_data[ii] * np.sqrt(1 / abs(signal_sum) + 1 / abs(reference_sum))
+            if signal_sum == 0 or reference_sum == 0:
+                error_data[ii] = 0.0
+            else:
+                error_data[ii] = signal_data[ii] * np.sqrt(1 / abs(signal_sum) + 1 / abs(reference_sum))
 
         return signal_data, error_data

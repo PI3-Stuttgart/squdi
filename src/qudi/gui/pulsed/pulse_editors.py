@@ -51,6 +51,7 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
     channelSetRole = QtCore.Qt.UserRole + 10
     blockElementRole = QtCore.Qt.UserRole + 11
     pulseBlockRole = QtCore.Qt.UserRole + 12
+    labelRole = QtCore.Qt.UserRole + 13
 
     def __init__(self):
         super().__init__()
@@ -58,6 +59,7 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
         self.digital_channels = list()
         self.analog_channels = list()
         self.activation_config = set()
+        self.channel_labels_map = dict()
 
         # The actual model data container.
         self._pulse_block = PulseBlock('EDITOR CONTAINER')
@@ -77,15 +79,25 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
         self._notify_column_width()
         return
 
+    def set_channel_labels(self, labels_dict):
+        """ Updates the channel labels map and refreshes the headers. """
+        self.channel_labels_map = dict(labels_dict)
+        self._create_header_data()
+        self.headerDataChanged.emit(QtCore.Qt.Horizontal, 0, self.columnCount() - 1)
+
     def _create_header_data(self):
         """
-
-        @return:
+        Creates horizontal and vertical header data.
         """
         # The horizontal header data
-        self._h_header_data = ['length\nin s', 'increment\nin s', 'laser\nchannel']
-        if self.digital_channels:
-            self._h_header_data.append('digital\nchannels')
+        self._h_header_data = ['Label', 'length\nin s', 'increment\nin s', 'laser\nchannel']
+        for chnl in self.digital_channels:
+            lbl = self.channel_labels_map.get(chnl, '')
+            if lbl and lbl != chnl:
+                self._h_header_data.append(f'{lbl}\n({chnl})')
+            else:
+                self._h_header_data.append(f'{chnl}')
+
         for chnl in self.analog_channels:
             self._h_header_data.append('{0}\nshape'.format(chnl))
             self._h_header_data.append('{0}\nparameters'.format(chnl))
@@ -129,19 +141,19 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
             return -1
 
         if column < self.columnCount():
-            has_digital = bool(len(self.digital_channels))
-
-            if column < 2:
+            if column == 0:
+                width = 80
+            elif column in (1, 2):
                 width = 90
-            elif column == 2:
+            elif column == 3:
                 if not self._laser_channel_is_digital:
                     width = 50
                 else:
                     width = 0
-            elif column == 3 and has_digital:
-                width = 30 * len(self.digital_channels)
+            elif 4 <= column < 4 + len(self.digital_channels):
+                width = 65
             else:
-                a_ch_offset = 3 + int(has_digital)
+                a_ch_offset = 4 + len(self.digital_channels)
                 if (column - a_ch_offset) % 2 == 0:
                     width = 80
                 else:
@@ -210,10 +222,12 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
         return len(self._pulse_block)
 
     def columnCount(self, parent=QtCore.QModelIndex()):
-        return 3 + int(len(self.digital_channels) > 0) + 2 * len(self.analog_channels)
+        return 4 + len(self.digital_channels) + 2 * len(self.analog_channels)
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
-        if role == QtCore.Qt.DisplayRole:
+        if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.EditRole:
+            if index.column() == 0:
+                return self._pulse_block[index.row()].label
             return None
 
         if role == self.pulseBlockRole:
@@ -235,32 +249,28 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
             return self._pulse_block[index.row()].increment_s
         if role == self.laserRole:
             return self._pulse_block[index.row()].laser_on
+        if role == self.labelRole:
+            return self._pulse_block[index.row()].label
         if role == self.digitalStateRole:
-            data = self._pulse_block[index.row()].digital_high
-            data = {chnl.split('d_ch', 1)[1]: value for chnl, value in data.items()}
-            return data
+            element = self._pulse_block[index.row()]
+            digital_idx = index.column() - 4
+            if 0 <= digital_idx < len(self.digital_channels):
+                chnl = self.digital_channels[digital_idx]
+                return element.digital_high.get(chnl, False)
+            return False
         if role == self.analogFunctionRole:
             element = self._pulse_block[index.row()]
-            if len(self.digital_channels) > 0:
-                col_offset = 4
-            else:
-                col_offset = 3
+            col_offset = 4 + len(self.digital_channels)
             analog_chnl = self.analog_channels[(index.column() - col_offset) // 2]
             return element.pulse_function[analog_chnl]
         if role == self.analogShapeRole:
             element = self._pulse_block[index.row()]
-            if len(self.digital_channels) > 0:
-                col_offset = 4
-            else:
-                col_offset = 3
+            col_offset = 4 + len(self.digital_channels)
             analog_chnl = self.analog_channels[(index.column() - col_offset) // 2]
             return element.pulse_function[analog_chnl].__class__.__name__
         if role == self.analogParameterRole:
             element = self._pulse_block[index.row()]
-            if len(self.digital_channels) > 0:
-                col_offset = 4
-            else:
-                col_offset = 3
+            col_offset = 4 + len(self.digital_channels)
             analog_chnl = self.analog_channels[(index.column() - col_offset) // 2]
             return vars(element.pulse_function[analog_chnl])
         if role == self.blockElementRole:
@@ -268,21 +278,34 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
 
         return None
 
-    def setData(self, index, data, role=QtCore.Qt.DisplayRole):
+    def setData(self, index, data, role=QtCore.Qt.EditRole):
         """
         """
         if isinstance(data, PulseBlockElement):
             self._pulse_block[index.row()] = copy.deepcopy(data)
-            return
+            return True
 
-        if role == self.lengthRole and isinstance(data, (int, float)):
+        if index.column() == 0 and (role == QtCore.Qt.EditRole or role == self.labelRole):
+            old_elem = self._pulse_block[index.row()]
+            if data != old_elem.label:
+                new_elem = PulseBlockElement(init_length_s=old_elem.init_length_s,
+                                             increment_s=old_elem.increment_s,
+                                             pulse_function=old_elem.pulse_function,
+                                             digital_high=old_elem.digital_high,
+                                             laser_on=old_elem.laser_on,
+                                             label=data)
+                self._pulse_block[index.row()] = new_elem
+                self.dataChanged.emit(index, index)
+            return True
+        elif role == self.lengthRole and isinstance(data, (int, float)):
             old_elem = self._pulse_block[index.row()]
             if data != old_elem.init_length_s:
                 new_elem = PulseBlockElement(init_length_s=max(0, data),
                                              increment_s=old_elem.increment_s,
                                              pulse_function=old_elem.pulse_function,
                                              digital_high=old_elem.digital_high,
-                                             laser_on=old_elem.laser_on)
+                                             laser_on=old_elem.laser_on,
+                                             label=old_elem.label)
                 self._pulse_block[index.row()] = new_elem
         elif role == self.incrementRole and isinstance(data, (int, float)):
             old_elem = self._pulse_block[index.row()]
@@ -291,7 +314,8 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
                                              increment_s=data,
                                              pulse_function=old_elem.pulse_function,
                                              digital_high=old_elem.digital_high,
-                                             laser_on=old_elem.laser_on)
+                                             laser_on=old_elem.laser_on,
+                                             label=old_elem.label)
                 self._pulse_block[index.row()] = new_elem
         elif role == self.laserRole and isinstance(data, bool):
             old_elem = self._pulse_block[index.row()]
@@ -300,24 +324,32 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
                                              increment_s=old_elem.increment_s,
                                              pulse_function=old_elem.pulse_function,
                                              digital_high=old_elem.digital_high,
-                                             laser_on=data)
+                                             laser_on=data,
+                                             label=old_elem.label)
                 self._pulse_block[index.row()] = new_elem
-        elif role == self.digitalStateRole and isinstance(data, dict):
-            data = {'d_ch' + chnl: value for chnl, value in data.items()}
+        elif role == self.digitalStateRole and isinstance(data, bool):
             old_elem = self._pulse_block[index.row()]
-            if data != old_elem.digital_high:
-                new_elem = PulseBlockElement(init_length_s=old_elem.init_length_s,
-                                             increment_s=old_elem.increment_s,
-                                             pulse_function=old_elem.pulse_function,
-                                             digital_high=data.copy(),
-                                             laser_on=old_elem.laser_on)
-                self._pulse_block[index.row()] = new_elem
+            digital_idx = index.column() - 4
+            if 0 <= digital_idx < len(self.digital_channels):
+                chnl = self.digital_channels[digital_idx]
+                if data != old_elem.digital_high.get(chnl, False):
+                    new_digital_high = copy.deepcopy(old_elem.digital_high)
+                    new_digital_high[chnl] = data
+                    new_elem = PulseBlockElement(init_length_s=old_elem.init_length_s,
+                                                 increment_s=old_elem.increment_s,
+                                                 pulse_function=old_elem.pulse_function,
+                                                 digital_high=new_digital_high,
+                                                 laser_on=old_elem.laser_on,
+                                                 label=old_elem.label)
+                    self._pulse_block[index.row()] = new_elem
+                    self.dataChanged.emit(index, index)
+            return True
         elif role == self.analogShapeRole and isinstance(data, str):
             if self.data(index=index, role=self.analogShapeRole) != data:
                 old_elem = self._pulse_block[index.row()]
 
                 sampling_func = getattr(SamplingFunctions, data)
-                col_offset = 4 if self.digital_channels else 3
+                col_offset = 4 + len(self.digital_channels)
                 chnl = self.analog_channels[(index.column() - col_offset) // 2]
 
                 pulse_function = old_elem.pulse_function.copy()
@@ -327,7 +359,8 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
                                              increment_s=old_elem.increment_s,
                                              pulse_function=pulse_function,
                                              digital_high=old_elem.digital_high,
-                                             laser_on=old_elem.laser_on)
+                                             laser_on=old_elem.laser_on,
+                                             label=old_elem.label)
                 self._pulse_block[index.row()] = new_elem
 
                 new_column_width = self._get_column_width(index.column()+1)
@@ -336,20 +369,18 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
                     self._notify_column_width(index.column()+1)
 
         elif role == self.analogParameterRole and isinstance(data, dict):
-            col_offset = 4 if self.digital_channels else 3
+            col_offset = 4 + len(self.digital_channels)
             chnl = self.analog_channels[(index.column() - col_offset) // 2]
             self._pulse_block[index.row()].pulse_function[chnl].__init__(**data)
         elif role == self.pulseBlockRole and isinstance(data, PulseBlock):
             self._pulse_block = copy.deepcopy(data)
             self._pulse_block.name = 'EDITOR CONTAINER'
             self._pulse_block.refresh_parameters()
-        return
+        return True
 
     def headerData(self, section, orientation, role):
         # Horizontal header
         if orientation == QtCore.Qt.Horizontal:
-            # if role == QtCore.Qt.BackgroundRole:
-            #     return QVariant(QBrush(QColor(Qt::green), Qt::SolidPattern))
             if role == QtCore.Qt.SizeHintRole:
                 if section < len(self._col_widths):
                     return QtCore.QSize(self._col_widths[section], 40)
@@ -359,10 +390,13 @@ class BlockEditorTableModel(QtCore.QAbstractTableModel):
                     return self._h_header_data[section]
 
         # Vertical header
-        # if orientation == QtCore.Qt.Vertical:
-        #     if role == QtCore.Qt.BackgroundRole:
-        #         return QtCore.Qt.QVariant(QtGui.Qt.QBrush(QtGui.Qt.QColor(QtCore.Qt.green),
-        #                                                   QtCore.Qt.SolidPattern))
+        if orientation == QtCore.Qt.Vertical:
+            if role == QtCore.Qt.DisplayRole:
+                if 0 <= section < len(self._pulse_block):
+                    label = self._pulse_block[section].label
+                    if label:
+                        return f"{section + 1} - {label}"
+                return str(section + 1)
         return super().headerData(section, orientation, role)
 
     def flags(self, index):
@@ -452,9 +486,9 @@ class BlockEditor(QtWidgets.QTableView):
         self.model().sigColumnWidthChanged.connect(self.setColumnWidth)
 
         # Set header sizes
-        self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
-        # self.horizontalHeader().setStyleSheet('QHeaderView { font-weight: 400; }')
-        self.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
+        self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        self.horizontalHeader().setMinimumSectionSize(30)
+        self.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         self.verticalHeader().setDefaultSectionSize(50)
 
         # Set item selection and editing behaviour
@@ -472,6 +506,10 @@ class BlockEditor(QtWidgets.QTableView):
 
         @return:
         """
+        # Delete old item delegates if present
+        for col in range(self.model().columnCount()):
+            self.setItemDelegateForColumn(col, None)
+
         # Set item delegates (scientific SpinBoxes) for length and increment column
         length_item_dict = {'unit': 's',
                             'init_val': '10.0e-9',
@@ -479,27 +517,24 @@ class BlockEditor(QtWidgets.QTableView):
                             'max': np.inf,
                             'dec': 6}
         self.setItemDelegateForColumn(
-            0, ScienDSpinBoxItemDelegate(self, length_item_dict, self.model().lengthRole))
+            1, ScienDSpinBoxItemDelegate(self, length_item_dict, self.model().lengthRole))
+            
         increment_item_dict = {'unit': 's',
                                'init_val': 0,
                                'min': -np.inf,
                                'max': np.inf,
                                'dec': 6}
         self.setItemDelegateForColumn(
-            1, ScienDSpinBoxItemDelegate(self, increment_item_dict, self.model().incrementRole))
-
+            2, ScienDSpinBoxItemDelegate(self, increment_item_dict, self.model().incrementRole))
         self.setItemDelegateForColumn(
-            2, CheckBoxItemDelegate(self, self.model().laserRole))
+            3, CheckBoxItemDelegate(self, self.model().laserRole))
 
-        # If any digital channels are present, set item delegate (custom multi-CheckBox widget)
-        # for digital channels column.
-        if len(self.model().digital_channels) > 0:
-            chnl_labels = natural_sort(chnl.split('d_ch')[1] for chnl in self.model().digital_channels)
-            self.setItemDelegateForColumn(
-                3, MultipleCheckboxItemDelegate(self, chnl_labels, self.model().digitalStateRole))
-            offset_index = 4  # to indicate which column comes next.
-        else:
-            offset_index = 3  # to indicate which column comes next.
+        offset_index = 4
+        if self.model().digital_channels:
+            for i, chnl in enumerate(self.model().digital_channels):
+                self.setItemDelegateForColumn(
+                    4 + i, CheckBoxItemDelegate(self, self.model().digitalStateRole))
+            offset_index = 4 + len(self.model().digital_channels)
 
         # loop through all analog channels and set two item delegates for each channel.
         # First a ComboBox delegate for the analog shape column and second a custom

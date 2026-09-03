@@ -64,17 +64,17 @@ class PulseStreamer(PulserInterface):
         self.__currently_loaded_waveform = ''  # loaded and armed waveform name
         self.__samples_written = 0
         self._trigger = ps.TriggerStart.SOFTWARE
-        self._laser_mw_on_state = ps.OutputState([self._laser_channel, self._uw_x_channel], 0, 0)
+        self._idle_state = ps.OutputState([], 0, 0)
 
     def on_activate(self):
         """ Establish connection to pulse streamer and tell it to cancel all operations """
         self.pulse_streamer = ps.PulseStreamer(self._pulsestreamer_ip)
         if self._use_external_clock:
-            if int(self._external_clock_option) is 2:
+            if int(self._external_clock_option) == 2:
                 self.pulse_streamer.selectClock(ps.ClockSource.EXT_10MHZ)
-            elif int(self._external_clock_option) is 1:
+            elif int(self._external_clock_option) == 1:
                 self.pulse_streamer.selectClock(ps.ClockSource.EXT_125MHZ)
-            elif int(self._external_clock_option) is 0:
+            elif int(self._external_clock_option) == 0:
                 self.pulse_streamer.selectClock(ps.ClockSource.INTERNAL)
             else:
                 self.log.error('pulsestreamer external clock selection not allowed')
@@ -249,7 +249,7 @@ class PulseStreamer(PulserInterface):
         """
 
         self.__current_status = 0
-        self.pulse_streamer.constant(self._laser_mw_on_state)
+        self.pulse_streamer.constant(self._idle_state)
         return 0
 
     def load_waveform(self, load_dict):
@@ -431,13 +431,13 @@ class PulseStreamer(PulserInterface):
         offset_dict = {}
         if amplitude or offset:
             for channel in amplitude:
-                amplitude_dict[channel] = 0.0
+                amplitude_dict[channel] = 2.0
             for channel in offset:
                 offset_dict[channel] = 0.0
         else:
             for channel in self.get_active_channels():
                 if 'a_ch' in channel:
-                    amplitude_dict[channel] = 0.0
+                    amplitude_dict[channel] = 2.0
                     offset_dict[channel] = 0.0
         return amplitude_dict, offset_dict
 

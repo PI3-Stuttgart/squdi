@@ -433,6 +433,14 @@ class AMI430(Base):
         self._write('CONF:CURR:TARG ' + str(target))
 
 
+    def get_target_current(self):
+        """Returns the target current in amperes."""
+        ans = self._query('CURR:TARG?')
+        ans = float(ans[0])
+        return ans
+
+
+
     def get_magnet_current(self):
         """Returns the current flowing in the magnet.
         

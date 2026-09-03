@@ -312,8 +312,8 @@ class TT(Base):
     def count_between_markers_nops(self, n_values=1):
         ## Adapted to work best with nuclear ops, might be rewritten with return statement, but takes time to see
         ## how it affects usage of the class.
-        print('Setting the gated counter with n values', n_values)
-        print('channels: start stop -- ',self._count_between_markers['begin_channel'],self._count_between_markers['end_channel'])
+        self.log.debug('Setting the gated counter with n values %s', n_values)
+        self.log.debug('channels: start stop -- %s %s', self._count_between_markers['begin_channel'], self._count_between_markers['end_channel'])
         # TODO parse the channels from kwargs, otherwise if not present keep default.
         # something liek this.  cl_ch = getattr(kwargs['cl_ch'], self._click_channel)
         self.gated_counter_countbetweenmarkers = CountBetweenMarkers(self.tagger,

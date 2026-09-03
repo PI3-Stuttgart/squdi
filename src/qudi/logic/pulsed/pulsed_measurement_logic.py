@@ -204,7 +204,7 @@ class PulsedMeasurementLogic(LogicBase):
     _tagger = Connector(name='tagger', interface='TT')
     _pulsegenerator = Connector(name='pulsegenerator', interface='PulserInterface')
     _microwave = Connector(name='microwave', interface='MicrowaveInterface', optional=True)
-    _crc = Connector(name='crc', interface='STM32CRC', optional=True)
+    _crc_logic = Connector(name='crc_logic', interface='CRCLogic', optional=True)
 
     # Config options
     # Optional additional paths to import from
@@ -471,8 +471,9 @@ class PulsedMeasurementLogic(LogicBase):
 
         self.log.info('Using direct tagger backend for pulsed counting.')
         crc_enabled = False
-        if self._crc() is not None:
-            crc_enabled = self._crc().crc_enabled
+        crc_logic = self._crc_logic()
+        if crc_logic is not None:
+            crc_enabled = crc_logic._enabled
 
         return _TimeTaggerFastCounterAdapter(
             tagger=tagger,
@@ -543,33 +544,33 @@ class PulsedMeasurementLogic(LogicBase):
 
     @property
     def crc_settings(self):
-        crc = self._crc()
-        if crc is None:
+        crc_logic = self._crc_logic()
+        if crc_logic is None:
             return None
         return {
-            'threshold': crc.threshold,
-            'kick': crc.kick,
-            'interval': crc.interval,
-            'enabled': crc.crc_enabled
+            'threshold': crc_logic._threshold,
+            'kick': crc_logic._kick,
+            'interval': crc_logic._interval,
+            'enabled': crc_logic._enabled
         }
 
     @QtCore.Slot(dict)
     def set_crc_settings(self, settings_dict):
         """ Update CRC parameters in the STM32 device. Note: Changing enabled requires counter re-init. """
-        crc = self._crc()
-        if crc is None or not settings_dict:
+        crc_logic = self._crc_logic()
+        if crc_logic is None or not settings_dict:
             return
 
         reinit_needed = False
-        if 'threshold' in settings_dict:
-            crc.set_threshold(settings_dict['threshold'])
-        if 'kick' in settings_dict:
-            crc.set_kick(settings_dict['kick'])
-        if 'interval' in settings_dict:
-            crc.set_interval(settings_dict['interval'])
-        if 'enabled' in settings_dict and crc.crc_enabled != settings_dict['enabled']:
-            crc.crc_enabled = settings_dict['enabled']
+        if 'enabled' in settings_dict and crc_logic._enabled != settings_dict['enabled']:
+            crc_logic.set_enabled(settings_dict['enabled'])
             reinit_needed = True
+
+        th = settings_dict.get('threshold', crc_logic._threshold)
+        ki = settings_dict.get('kick', crc_logic._kick)
+        iv = settings_dict.get('interval', crc_logic._interval)
+        
+        crc_logic.apply_parameters(th, ki, iv)
 
         if reinit_needed:
             self._counter_backend = self._resolve_counter_backend()
@@ -1579,7 +1580,7 @@ class PulsedMeasurementLogic(LogicBase):
             elapsed_sweeps += self._saved_raw_data[self._recalled_raw_data_tag][1]['elapsed_sweeps']
             elapsed_time += self._saved_raw_data[self._recalled_raw_data_tag][1]['elapsed_time']
             if not fc_data.any():
-                self.log.warning('Only zeros received from fast counter!\n'
+                self.log.debug('Only zeros received from fast counter!\n'
                                  'Using recalled raw data only.')
                 fc_data = self._saved_raw_data[self._recalled_raw_data_tag][0]
             elif self._saved_raw_data[self._recalled_raw_data_tag][0].shape == fc_data.shape:
@@ -1589,7 +1590,7 @@ class PulsedMeasurementLogic(LogicBase):
                 self.log.warning('Recalled raw data has not the same shape as current data.'
                                  '\nDid NOT add recalled raw data to current time trace.')
         elif not fc_data.any():
-            self.log.warning('Only zeros received from fast counter!')
+            self.log.debug('Only zeros received from fast counter!')
             fc_data = np.zeros(fc_data.shape, dtype='int64')
 
         return fc_data, {'elapsed_sweeps': elapsed_sweeps, 'elapsed_time': elapsed_time}
@@ -1674,8 +1675,11 @@ class PulsedMeasurementLogic(LogicBase):
                 nametag = ''
             return None, f'{nametag}{suffix_str}'
         else:
-            file_name_stub, file_extension = file_name.rsplit('.', 1)
-            return f'{file_name_stub}{suffix_str}.{file_extension}', None
+            parts = file_name.rsplit('.', 1)
+            if len(parts) == 2:
+                file_name_stub, file_extension = parts
+                return f'{file_name_stub}{suffix_str}.{file_extension}', None
+            return f'{file_name}{suffix_str}', None
 
     def _get_signal_column_headers(self, with_error):
         """ Helper method to retrieve formatted column header strings for pulsed measurement data.

@@ -91,7 +91,21 @@ class PulsedPlotting(GuiBase):
                                                 antialias=True)
 
             self._pw.addItem(self.curves[ch])
-            self.label[ch] = pg.TextItem(text=f'{ch}', color=self.color[i], anchor=(0+i*-1, 0))
+            channel_labels_map = {
+                '1': 'Laser',
+                '2': 'MW',
+                '3': 'MW X',
+                '4': 'MW Y',
+                '5': 'Trigger',
+                '6': 'CRC Veto',
+                '7': 'Repump',
+                '8': 'Sync'
+            }
+            num_str = ch.replace('d_ch', '')
+            lbl = channel_labels_map.get(num_str, '')
+            display_text = f'{num_str} ({lbl})' if lbl else ch
+            
+            self.label[ch] = pg.TextItem(text=display_text, color=self.color[i], anchor=(0+i*-1, 0))
             self.label[ch].setPos(0,0)
                         
             # self.legend1.addItem(self.curves[ch], ch)

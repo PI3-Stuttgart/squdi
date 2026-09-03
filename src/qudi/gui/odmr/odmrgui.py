@@ -362,6 +362,9 @@ class OdmrGui(GuiBase):
             oversampling=self._odmr_settings_dialog.oversampling_spinbox.value()
         )
         self._max_shown_scans = self._odmr_settings_dialog.max_scans_shown_spinbox.value()
+        pulsed = self._odmr_settings_dialog.pulsed_connector_checkbox.isChecked()
+        use_ref = self._odmr_settings_dialog.use_ref_checkbox.isChecked()
+        self._odmr_logic().set_tt_settings(pulsed, use_ref)
 
     @QtCore.Slot()
     def _restore_odmr_settings(self):
@@ -369,6 +372,8 @@ class OdmrGui(GuiBase):
         self._odmr_settings_dialog.oversampling_spinbox.setValue(logic.oversampling)
         self._odmr_settings_dialog.data_rate_spinbox.setValue(logic.data_rate)
         self._odmr_settings_dialog.max_scans_shown_spinbox.setValue(self._max_shown_scans)
+        self._odmr_settings_dialog.pulsed_connector_checkbox.setChecked(logic.tt_pulsed)
+        self._odmr_settings_dialog.use_ref_checkbox.setChecked(logic.tt_use_ref)
 
     @QtCore.Slot(bool)
     def _update_scan_state(self, running=None):

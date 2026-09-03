@@ -21,6 +21,7 @@ class MagnetLogic(LogicBase):
     sigRamp = QtCore.Signal(np.ndarray, bool)
     sigStatusUpdated = QtCore.Signal(object)
     sigRequestStatusUpdate = QtCore.Signal()
+    sigRampSettingsReady = QtCore.Signal(object)  # emits settings dict back to GUI
 
     _status_poll_interval_ms = ConfigOption(
         name="status_poll_interval_ms", default=1000, missing="nothing"
@@ -79,6 +80,16 @@ class MagnetLogic(LogicBase):
             ramp_states = list(self._magnet.get_ramping_state())
             curr_amps = np.asarray(self._magnet.get_magnet_currents(), dtype=float)
             field_cart = np.asarray(self._magnet.get_field(), dtype=float)
+            
+            # Query targets
+            try:
+                target_amps = np.asarray(self._magnet.get_target_magnet_currents(), dtype=float)
+            except Exception:
+                target_amps = np.array([0.0, 0.0, 0.0])
+            try:
+                target_field = np.asarray(self._magnet.get_target_field(), dtype=float)
+            except Exception:
+                target_field = np.array([0.0, 0.0, 0.0])
         except Exception:
             self.log.exception("Failed to query magnet status.")
             return
@@ -90,14 +101,79 @@ class MagnetLogic(LogicBase):
         elif field_spherical[1] < 0.5 or field_spherical[1] > 179.5:
             field_spherical[2] = 0
 
+        target_field_spherical = self.cartesian_to_spherical(target_field)
         self.sigStatusUpdated.emit(
             {
                 "ramping_state": ramp_states,
                 "magnet_currents": curr_amps,
                 "field_cartesian": field_cart,
                 "field_spherical": field_spherical,
+                "target_currents": target_amps,
+                "target_field": target_field,
+                "target_field_spherical": target_field_spherical,
             }
         )
+
+    @QtCore.Slot(result=object)
+    def get_ramp_settings(self):
+        """Returns the current ramp settings from the magnet hardware and emits them via signal."""
+        settings = {}
+        if hasattr(self._magnet, "ramp_freq"): # ADwin
+            settings["type"] = "adwin"
+            settings["ramp_freq"] = float(self._magnet.ramp_freq)
+            settings["voltage_step_size"] = float(self._magnet.voltage_step_size)
+        elif hasattr(self._magnet, "_magnet_x") and hasattr(self._magnet._magnet_x, "get_ramp_rates"): # AMI
+            settings["type"] = "ami"
+            try:
+                rate_units = "s" if self._magnet._magnet_x.get_ramp_rate_units() == 0 else "min"
+                field_units = "kG" if self._magnet._magnet_x.get_field_units() == 0 else "T"
+                settings["rate_units"] = rate_units
+                settings["field_units"] = field_units
+                
+                rates_x = self._magnet._magnet_x.get_ramp_rates()
+                rates_y = self._magnet._magnet_y.get_ramp_rates()
+                rates_z = self._magnet._magnet_z.get_ramp_rates()
+                
+                settings["rate_x"] = float(rates_x[0][0].split(',')[0]) if rates_x else 0.0
+                settings["rate_y"] = float(rates_y[0][0].split(',')[0]) if rates_y else 0.0
+                settings["rate_z"] = float(rates_z[0][0].split(',')[0]) if rates_z else 0.0
+            except Exception:
+                self.log.exception("Failed to query AMI ramp rates.")
+        else:
+            settings["type"] = "unknown"
+        # Emit result back to GUI — works correctly over QueuedConnection
+        self.sigRampSettingsReady.emit(settings)
+        return settings
+
+    @QtCore.Slot(object)
+    def set_ramp_settings(self, settings):
+        """Sets the ramp settings on the magnet hardware."""
+        if not isinstance(settings, dict):
+            return
+        hw_type = settings.get("type")
+        if hw_type == "adwin":
+            try:
+                freq = float(settings["ramp_freq"])
+                step = float(settings["voltage_step_size"])
+                self._magnet.ramp_freq = freq
+                self._magnet.voltage_step_size = step
+                self._magnet.write_fpar(13, step)
+                self._magnet.write_fpar(14, freq)
+                self.log.info(f"Updated ADwin ramp settings: freq={freq}Hz, step={step}V")
+            except Exception:
+                self.log.exception("Failed to set ADwin ramp settings.")
+        elif hw_type == "ami":
+            try:
+                max_x = self._magnet.constraints.get("B_max", 1.0) if hasattr(self._magnet, "constraints") else 1.0
+                max_y = self._magnet.constraints.get("B_max", 1.0) if hasattr(self._magnet, "constraints") else 1.0
+                max_z = self._magnet.constraints.get("Bz_max", 6.0) if hasattr(self._magnet, "constraints") else 6.0
+                
+                self._magnet._magnet_x.set_ramp_rate(1, float(settings["rate_x"]), max_x)
+                self._magnet._magnet_y.set_ramp_rate(1, float(settings["rate_y"]), max_y)
+                self._magnet._magnet_z.set_ramp_rate(1, float(settings["rate_z"]), max_z)
+                self.log.info(f"Updated AMI ramp rates: X={settings['rate_x']}, Y={settings['rate_y']}, Z={settings['rate_z']}")
+            except Exception:
+                self.log.exception("Failed to set AMI ramp rates.")
 
     def set_up_scan(self, params, int_time):
         self.log.debug("set up scan")

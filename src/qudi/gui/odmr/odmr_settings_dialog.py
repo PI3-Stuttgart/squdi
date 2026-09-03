@@ -57,6 +57,12 @@ class OdmrSettingsDialog(QtWidgets.QDialog):
         self.sample_rate_label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self._sample_rate_changed()
 
+        # Checkboxes for TT Finite Sampling settings
+        self.pulsed_connector_checkbox = QtWidgets.QCheckBox('Use Pulsed Connector')
+        self.pulsed_connector_checkbox.setChecked(True)
+        self.use_ref_checkbox = QtWidgets.QCheckBox('Use Reference')
+        self.use_ref_checkbox.setChecked(True)
+
         # Buttonbox for this QDialog
         buttons = QtWidgets.QDialogButtonBox.Ok | \
                   QtWidgets.QDialogButtonBox.Apply | \
@@ -87,7 +93,15 @@ class OdmrSettingsDialog(QtWidgets.QDialog):
         label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight)
         layout.addWidget(label, 4, 0)
         layout.addWidget(self.max_scans_shown_spinbox, 4, 1)
-        layout.addWidget(self.button_box, 5, 0, 1, 2)
+
+        hline2 = QtWidgets.QFrame()
+        hline2.setFrameShape(QtWidgets.QFrame.HLine)
+        layout.addWidget(hline2, 5, 0, 1, 2)
+
+        layout.addWidget(self.pulsed_connector_checkbox, 6, 0, 1, 2)
+        layout.addWidget(self.use_ref_checkbox, 7, 0, 1, 2)
+
+        layout.addWidget(self.button_box, 8, 0, 1, 2)
         layout.setColumnStretch(1, 1)
 
     @QtCore.Slot()

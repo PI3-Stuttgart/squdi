@@ -388,8 +388,9 @@ class ScanningDataLogic(LogicBase):
         si_prefix_y = ScaledFloat(scan_range_y[1]-scan_range_y[0]).scale
         si_factor_y = ScaledFloat(scan_range_y[1]-scan_range_y[0]).scale_val
         si_prefix_cb = ScaledFloat(cbar_range[1]-cbar_range[0]).scale if cbar_range[1]!=cbar_range[0] \
-            else ScaledFloat(cbar_range[1])
-        si_factor_cb = ScaledFloat(cbar_range[1]-cbar_range[0]).scale_val
+            else ScaledFloat(cbar_range[1]).scale
+        si_factor_cb = ScaledFloat(cbar_range[1]-cbar_range[0]).scale_val if cbar_range[1]!=cbar_range[0] \
+            else ScaledFloat(cbar_range[1]).scale_val
 
         # Create image plot
         #plt.colormaps.register(ColorScale().colormap, name='BuRd')

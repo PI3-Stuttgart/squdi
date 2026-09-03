@@ -110,9 +110,29 @@ class WavemeterLoggerLogic(LogicBase):
         self._wavemeter.start_acquisition()
         self.count_time = self._wavemeter._measurement_timing
 
-        self._get_new_wavelength_data = lambda :  np.rec.array(np.array(self._wavemeter.get_wavelength_buffer()), dtype = WAVELENGTH_DTYPE)
+        def fetch_wavelengths():
+            buf = np.array(self._wavemeter.get_wavelength_buffer())
+            if len(buf.shape) == 1:
+                # E.g. [val, 0] fallback from ws_wavemeter
+                if len(buf) < 2:
+                    return np.rec.array(np.empty(0, dtype=WAVELENGTH_DTYPE))
+                return np.rec.array([(buf[0], buf[-1])], dtype=WAVELENGTH_DTYPE)
+                
+            try:
+                sel_channels = self._wavemeter.get_selected_channels()
+                ch = self.get_current_channel()
+                col_idx = sel_channels.index(ch) if ch in sel_channels else 0
+            except AttributeError:
+                col_idx = 0
+                
+            vals = buf[:, col_idx]
+            times = buf[:, -1]
+            return np.rec.array(list(zip(vals, times)), dtype=WAVELENGTH_DTYPE)
+            
+        self._get_new_wavelength_data = fetch_wavelengths
         
         self.wavelengths = self._get_new_wavelength_data()
+        self._last_processed_idx = len(self.wavelengths)
         
         if self._timetagger:
             self.determine_count_time()
@@ -135,9 +155,42 @@ class WavemeterLoggerLogic(LogicBase):
         self._acquisition_start_time = time.time()
 
         self._queryTimer.start()
+        self._queryTimer.start()
         #self.sig_query_wavemeter.emit()
 
-        
+    def get_available_channels(self):
+        """ Return a list of available wavemeter channels, e.g. [1, 2, 3, ...]. """
+        if hasattr(self._wavemeter, 'get_active_channels'):
+            return self._wavemeter.get_active_channels()
+        # Fallback if method doesn't exist
+        return [1, 2, 3, 4, 5, 6, 7, 8]
+
+    def get_current_channel(self):
+        """ Return the currently selected wavemeter channel. """
+        if hasattr(self._wavemeter, 'get_default_channel'):
+            return self._wavemeter.get_default_channel()
+        return 1
+
+    def set_channel(self, channel):
+        """ Update the wavemeter to listen to the specified channel. """
+        # We need to tell the wavemeter to select this channel for its buffer and output
+        if hasattr(self._wavemeter, 'set_selected_channels'):
+            self._wavemeter.set_selected_channels([channel])
+        if hasattr(self._wavemeter, 'set_default_channel'):
+            self._wavemeter.set_default_channel(channel)
+            
+        # Also ensure it is in the active channels list being polled by the thread
+        if hasattr(self._wavemeter, 'get_active_channels') and hasattr(self._wavemeter, 'set_active_channels'):
+            active = self._wavemeter.get_active_channels()
+            if channel not in active:
+                if isinstance(active, list):
+                    active.append(channel)
+                else:
+                    active = list(active) + [channel]
+                self._wavemeter.set_active_channels(active)
+                
+        # Empty the logic buffer so we don't mix channels
+        self.empty_buffer()
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -148,21 +201,33 @@ class WavemeterLoggerLogic(LogicBase):
 
     @QtCore.Slot()
     def update_data(self):
-        self.wavelengths = self._get_new_wavelength_data() # calling for wavelengths with callback
+        full_buffer = self._get_new_wavelength_data() 
+        self.wavelengths = full_buffer
         
-        wavelengths = self.wavelengths[self.wavelengths.wavelength > 0]
-        if len(wavelengths) > 0:   
-            self.current_wavelength = wavelengths.wavelength.mean() *1e12 
+        valid_buffer = full_buffer[full_buffer.wavelength > 0]
+        if len(valid_buffer) > 0:   
+            self.current_wavelength = valid_buffer.wavelength.mean() * 1e12 
         
         self._time_elapsed = time.time() - self._acquisition_start_time
         
         
-        wavelengths = wavelengths[-self.wavelength_buffer:]
+        display_wavelengths = valid_buffer[-self.wavelength_buffer:]
        
         count_data = None
         if self.start_toggled:
-            count_data = self.update_histogram()
-        self.sig_update_data.emit(wavelengths, count_data)
+            # Only process new points we haven't seen yet
+            new_idx = len(full_buffer)
+            if new_idx > self._last_processed_idx:
+                new_points = full_buffer[self._last_processed_idx:]
+                self.update_histogram(new_points)
+                self._last_processed_idx = new_idx
+                
+            # Pack count data for plotting
+            count_data = np.zeros(self.plot_x.shape[0], dtype=COUNT_DTYPE)
+            count_data['wavelength'] = self.plot_x
+            count_data['counts'] = self.plot_y
+
+        self.sig_update_data.emit(display_wavelengths, count_data)
 
     @QtCore.Slot()
     def start_scan(self):
@@ -171,6 +236,7 @@ class WavemeterLoggerLogic(LogicBase):
 
     def empty_buffer(self):
         self.wavelengths = None
+        self._last_processed_idx = len(self.wavelengths) if self.wavelengths is not None else 0
         self._wavemeter.empty_buffer()
         self._acquisition_start_time = time.time()
         
@@ -198,19 +264,30 @@ class WavemeterLoggerLogic(LogicBase):
                                                 bin_width = bin_width, 
                                                 n_values = n_values)
     
-    def update_histogram(self):
-        self.cts = self.counter.getData().mean(axis=0) # should have a shape of N -- the same as wavelengths
-        wavelengths = np.array(self.wavelengths) * 1e12
-        detected_wavelengths = np.argmin(np.abs(wavelengths[:, np.newaxis] - self.wlth_xs), axis=1)
-        self.cts_ys[detected_wavelengths] += self.cts
-        self.samples_num[detected_wavelengths] += 1
+    def update_histogram(self, new_points):
+        if len(new_points) == 0:
+            return
+            
+        # Get scalar mean of counts over the last update period
+        self.cts = self.counter.getData().mean() 
         
-        self.plot_y = np.divide(self.cts_ys, self.samples_num, out = np.zeros_like(self.cts_ys), where=self.samples_num != 0)
-        count_data = np.zeros(self.plot_x.shape[0], dtype = COUNT_DTYPE)
-        count_data['wavelength'] = self.plot_x
-        count_data['counts'] = self.plot_y
-
-        return count_data
+        new_wavelengths = np.array(new_points.wavelength) * 1e12
+        # Filter valid wavelengths
+        valid_mask = new_wavelengths > 0
+        new_wavelengths = new_wavelengths[valid_mask]
+        
+        if len(new_wavelengths) == 0:
+            return
+            
+        # For each new point, find the closest bin in our histogram
+        detected_idxs = np.argmin(np.abs(new_wavelengths[:, np.newaxis] - self.wlth_xs), axis=1)
+        
+        for idx in detected_idxs:
+            self.cts_ys[idx] += self.cts
+            self.samples_num[idx] += 1
+        
+        # Safe average
+        np.divide(self.cts_ys, self.samples_num, out=self.plot_y, where=self.samples_num!=0)
 
     @QtCore.Slot(dict)
     def _udpate_settings(self, settings):
@@ -228,7 +305,8 @@ class WavemeterLoggerLogic(LogicBase):
                 self.module_state.lock()
                 self.recalculate_histogram()
                 self._queryTimer.start(int(self._logic_update_timing))
-                self._acquisition_start_time = time.time()
+                self.empty_buffer() # flush buffer to avoid processing old data
+                self._last_processed_idx = 0
                 # self.sig_query_wavemeter.emit()
             else:
                 self._queryTimer.stop()

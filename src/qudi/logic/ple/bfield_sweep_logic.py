@@ -22,8 +22,13 @@ bfield_sweep_logic:
 from __future__ import annotations
 
 import datetime as dt
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend — safe in logic thread
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 from PySide2 import QtCore
 
@@ -31,7 +36,7 @@ from qudi.core.configoption import ConfigOption
 from qudi.core.connector import Connector
 from qudi.core.module import LogicBase
 from qudi.core.statusvariable import StatusVar
-from qudi.util.datastorage import TextDataStorage
+from qudi.util.datastorage import TextDataStorage, NpyDataStorage
 
 
 class BFieldSweepLogic(LogicBase):
@@ -335,6 +340,18 @@ class BFieldSweepLogic(LogicBase):
         )
 
         saved = {"summary_file": file_path}
+
+        # Save the full PLE matrix (all scan traces stacked by angle)
+        matrix_files = self._save_ple_matrix(
+            name_tag=name_tag,
+            timestamp=timestamp,
+            ds=ds,
+            save_root=save_root,
+            metadata=metadata,
+        )
+        if matrix_files:
+            saved["matrix_files"] = matrix_files
+
         if include_last_ple and self._last_scan_data is not None:
             ple_saved = self._save_ple_snapshot(
                 scan_data=self._last_scan_data,
@@ -348,6 +365,342 @@ class BFieldSweepLogic(LogicBase):
         self.sigSaveFinished.emit(saved)
         self.sigMessage.emit(f"Saved B-field sweep summary to: {file_path}")
         return saved
+
+    def _save_ple_matrix(self, name_tag, timestamp, ds, save_root, metadata):
+        """Build a 2-D PLE matrix (rows=angles, cols=scan-axis) and save to disk.
+
+        Returns a dict with the paths of the saved files, or an empty dict on failure.
+        """
+        try:
+            # ----------------------------------------------------------------
+            # Collect traces, interpolating onto a common x-axis
+            # ----------------------------------------------------------------
+            traces = []
+            angles = []
+            x_axis_ref = None
+            x_unit = ""
+            x_name = ""
+
+            for res in self._results:
+                y = np.asarray(res.get("scan_signal", []), dtype=float).ravel()
+                x = np.asarray(res.get("scan_axis_values", []), dtype=float).ravel()
+                angle = float(res.get("angle_deg", np.nan))
+
+                if y.size == 0 or not np.isfinite(angle):
+                    continue
+
+                # Make x and y the same length
+                if x.size != y.size:
+                    if x.size > 1:
+                        x = np.linspace(x[0], x[-1], y.size, dtype=float)
+                    else:
+                        x = np.arange(y.size, dtype=float)
+
+                # Sort ascending
+                if x.size > 1 and x[1] < x[0]:
+                    x = x[::-1]
+                    y = y[::-1]
+
+                if x_axis_ref is None:
+                    x_axis_ref = x
+                    x_unit = str(res.get("scan_axis_unit", "")).strip()
+                    x_name = str(res.get("scan_axis_name", "freq")).strip()
+                    traces.append(y)
+                    angles.append(angle)
+                    continue
+
+                # Interpolate onto the reference x-axis if needed
+                if y.size != x_axis_ref.size:
+                    try:
+                        sort_idx = np.argsort(x)
+                        y = np.interp(
+                            x_axis_ref,
+                            x[sort_idx],
+                            y[sort_idx],
+                            left=np.nan,
+                            right=np.nan,
+                        )
+                    except Exception:
+                        common = int(min(x_axis_ref.size, y.size))
+                        x_axis_ref = x_axis_ref[:common]
+                        traces = [t[:common] for t in traces]
+                        y = y[:common]
+
+                traces.append(y)
+                angles.append(angle)
+
+            if len(traces) == 0 or x_axis_ref is None:
+                return {}
+
+            matrix = np.asarray(traces, dtype=float)   # shape (n_angles, n_freq)
+            angles_arr = np.asarray(angles, dtype=float)
+
+            # Sort by angle
+            sort_order = np.argsort(angles_arr)
+            angles_arr = angles_arr[sort_order]
+            matrix = matrix[sort_order, :]
+
+            # ----------------------------------------------------------------
+            # Save matrix as .npy  (lossless, fast to reload)
+            # ----------------------------------------------------------------
+            npy_root = self.module_default_data_dir if save_root is None else save_root
+            nds = NpyDataStorage(root_dir=npy_root)
+            matrix_npy_path, _, _ = nds.save_data(
+                matrix,
+                nametag=f"{name_tag}_matrix",
+                timestamp=timestamp,
+                metadata=metadata,
+                column_headers=(
+                    f"PLE matrix: rows=angle_deg (n={len(angles_arr)}), "
+                    f"cols={x_name or 'scan_axis'} (n={x_axis_ref.size})"
+                ),
+            )
+
+            # ----------------------------------------------------------------
+            # Save x-axis (frequencies) as .dat text
+            # ----------------------------------------------------------------
+            x_header = (
+                f"{x_name or 'scan_axis'}"
+                + (f"_{x_unit}" if x_unit else "")
+            )
+            x_path, _, _ = ds.save_data(
+                x_axis_ref.reshape(-1, 1),
+                metadata=metadata,
+                nametag=f"{name_tag}_matrix_xaxis",
+                timestamp=timestamp,
+                column_headers=x_header,
+            )
+
+            # ----------------------------------------------------------------
+            # Save angle axis as .dat text
+            # ----------------------------------------------------------------
+            ang_path, _, _ = ds.save_data(
+                angles_arr.reshape(-1, 1),
+                metadata=metadata,
+                nametag=f"{name_tag}_matrix_angles",
+                timestamp=timestamp,
+                column_headers="angle_deg",
+            )
+
+            self.sigMessage.emit(
+                f"Saved PLE matrix ({matrix.shape[0]} angles \u00d7 "
+                f"{matrix.shape[1]} points) to: {matrix_npy_path}"
+            )
+
+            # ----------------------------------------------------------------
+            # Render and save a figure — matrix image + parameter annotation
+            # ----------------------------------------------------------------
+            figure_path = None
+            try:
+                fig = self._draw_matrix_figure(
+                    matrix=matrix,
+                    angles=angles_arr,
+                    x_axis=x_axis_ref,
+                    x_name=x_name,
+                    x_unit=x_unit,
+                    metadata=metadata,
+                )
+                # save_thumbnail expects the path WITHOUT extension;
+                # it appends the configured image format and closes the figure.
+                thumb_base = matrix_npy_path.rsplit('.', 1)[0]
+                figure_path = ds.save_thumbnail(fig, file_path=thumb_base)
+            except Exception:
+                self.log.exception('Failed to render PLE matrix figure.')
+
+            result = {
+                "matrix_npy": matrix_npy_path,
+                "x_axis_dat": x_path,
+                "angles_dat": ang_path,
+            }
+            if figure_path is not None:
+                result["figure_png"] = figure_path
+            return result
+
+        except Exception:
+            self.log.exception("Failed to save PLE matrix.")
+            return {}
+
+    def _draw_matrix_figure(self, matrix, angles, x_axis, x_name, x_unit, metadata=None):
+        """Render the PLE matrix as a matplotlib figure with a parameter sidebar.
+
+        The layout mirrors what is visible in the B-field sweep GUI:
+        • Left: colour-mesh of signal vs (angle × scan-axis frequency)
+        • Right: parameter box with all sweep settings from self._settings
+        """
+        s = self._settings  # shorthand
+        m = metadata or {}  # for timestamps
+
+        # ---- figure layout --------------------------------------------------
+        fig = plt.figure(figsize=(12, 6), constrained_layout=False)
+        fig.patch.set_facecolor('#1a1a2e')
+
+        # Two columns: matrix (wide) + parameter panel (narrow)
+        gs = fig.add_gridspec(
+            1, 2,
+            width_ratios=[3, 1],
+            left=0.07, right=0.98,
+            top=0.92, bottom=0.10,
+            wspace=0.35,
+        )
+        ax_img  = fig.add_subplot(gs[0])
+        ax_info = fig.add_subplot(gs[1])
+
+        # ---- colour-mesh ----------------------------------------------------
+        ax_img.set_facecolor('#0d0d1a')
+
+        # Scale x-axis to best SI prefix
+        x_vals = x_axis.copy()
+        x_scale, x_prefix = 1.0, ''
+        if x_vals.size > 1:
+            x_range = abs(x_vals[-1] - x_vals[0])
+            if x_range >= 1e12:
+                x_scale, x_prefix = 1e12, 'T'
+            elif x_range >= 1e9:
+                x_scale, x_prefix = 1e9,  'G'
+            elif x_range >= 1e6:
+                x_scale, x_prefix = 1e6,  'M'
+            elif x_range >= 1e3:
+                x_scale, x_prefix = 1e3,  'k'
+            elif x_range >= 1.0:
+                x_scale, x_prefix = 1.0,  ''
+            elif x_range >= 1e-3:
+                x_scale, x_prefix = 1e-3, 'm'
+        x_vals_scaled = x_vals / x_scale
+
+        # Build a regular grid for pcolormesh
+        if x_vals_scaled.size > 1:
+            dx = (x_vals_scaled[-1] - x_vals_scaled[0]) / (x_vals_scaled.size - 1)
+            x_edges = np.append(x_vals_scaled - dx / 2, x_vals_scaled[-1] + dx / 2)
+        else:
+            x_edges = np.array([x_vals_scaled[0] - 0.5, x_vals_scaled[0] + 0.5])
+
+        if angles.size > 1:
+            da = (angles[-1] - angles[0]) / (angles.size - 1)
+            y_edges = np.append(angles - da / 2, angles[-1] + da / 2)
+        else:
+            y_edges = np.array([angles[0] - 0.5, angles[0] + 0.5])
+
+        pcm = ax_img.pcolormesh(
+            x_edges, y_edges, matrix,
+            cmap='RdBu_r', shading='flat',
+            rasterized=True,
+        )
+
+        cbar = fig.colorbar(pcm, ax=ax_img, pad=0.02, fraction=0.04)
+        cbar.set_label('Signal (arb.)', color='#cdd6f4', fontsize=9)
+        cbar.ax.yaxis.set_tick_params(color='#cdd6f4', labelsize=8)
+        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='#cdd6f4')
+
+        x_label = f"{x_name or 'Scan axis'}"
+        if x_unit:
+            x_label += f" ({x_prefix}{x_unit})"
+        elif x_prefix:
+            x_label += f" ({x_prefix})"
+        ax_img.set_xlabel(x_label, color='#cdd6f4', fontsize=10)
+        ax_img.set_ylabel('B-field angle (deg)', color='#cdd6f4', fontsize=10)
+        ax_img.tick_params(colors='#888aaa', labelsize=8)
+        for spine in ax_img.spines.values():
+            spine.set_edgecolor('#44445a')
+
+        # Title
+        plane  = str(s.get('plane', '?')).upper()
+        amp_t  = float(s.get('amplitude_t', float('nan')))
+        n_done = int(matrix.shape[0])
+        n_tot  = int(s.get('steps', n_done))
+        ax_img.set_title(
+            f"PLE Matrix  —  {plane} plane, B = {amp_t*1e3:.2f} mT,  "
+            f"{n_done}/{n_tot} points",
+            color='#cdd6f4', fontsize=11, pad=8,
+        )
+
+        # ---- parameter panel ------------------------------------------------
+        ax_info.set_facecolor('#12121f')
+        ax_info.set_axis_off()
+
+        def _fmt_t(v):
+            """Format Tesla value nicely."""
+            try:
+                v = float(v)
+                return f"{v*1e3:.3f} mT" if abs(v) < 1.0 else f"{v:.4f} T"
+            except Exception:
+                return str(v)
+
+        def _fmt_v(v):
+            try:
+                f = float(v)
+                if f == int(f):
+                    return str(int(f))
+                return f"{f:.4g}"
+            except Exception:
+                return str(v)
+
+        # Collect parameter rows  (label, value)
+        a_start = float(s.get('start_angle_deg', float('nan')))
+        a_stop  = float(s.get('stop_angle_deg',  float('nan')))
+        steps   = int(s.get('steps', n_done))
+        bx_off  = float(s.get('bx_offset_t', 0.0))
+        by_off  = float(s.get('by_offset_t', 0.0))
+        bz_off  = float(s.get('bz_offset_t', 0.0))
+        scan_ax = str(s.get('scan_axis', '')).strip() or 'auto'
+        fit_cfg = str(s.get('fit_config', '')).strip() or 'none'
+        fit_ch  = str(s.get('fit_channel', '')).strip() or 'auto'
+        repeats = int(s.get('ple_repeats', 1))
+        do_fit  = bool(s.get('do_fit', True))
+        started = str(m.get('started_at', s.get('started_at', ''))).strip() or ''
+        saved   = str(m.get('saved_at',   s.get('saved_at', dt.datetime.now().isoformat()))).strip()
+
+        rows = [
+            ('Plane',     plane),
+            ('Amplitude', _fmt_t(amp_t)),
+            ('Start \u03b1', f'{a_start:.2f}\u00b0'),
+            ('Stop \u03b1',  f'{a_stop:.2f}\u00b0'),
+            ('Steps',     str(steps)),
+            ('Points done', str(n_done)),
+            ('Bx offset',  _fmt_t(bx_off)),
+            ('By offset',  _fmt_t(by_off)),
+            ('Bz offset',  _fmt_t(bz_off)),
+            ('Scan axis',  scan_ax),
+            ('Fit config', fit_cfg),
+            ('Fit channel', fit_ch),
+            ('Fit enabled', 'yes' if do_fit else 'no'),
+            ('PLE repeats', str(repeats)),
+        ]
+        if started:
+            rows.append(('Started', started[:19].replace('T', '  ')))
+        rows.append(('Saved',  saved[:19].replace('T', '  ')))
+
+        n_rows = len(rows)
+        row_h  = 1.0 / (n_rows + 1)
+        y      = 1.0 - row_h * 0.6
+
+        ax_info.text(
+            0.5, y + row_h * 0.4, 'Sweep Parameters',
+            ha='center', va='center',
+            fontsize=9, fontweight='bold', color='#cdd6f4',
+            transform=ax_info.transAxes,
+        )
+        ax_info.axhline(
+            y=y + row_h * 0.1,
+            xmin=0.02, xmax=0.98,
+            color='#44445a', linewidth=0.8,
+        )
+        y -= row_h
+
+        for label, value in rows:
+            ax_info.text(
+                0.02, y, f"{label}:",
+                ha='left', va='center', fontsize=8,
+                color='#888aaa', transform=ax_info.transAxes,
+            )
+            ax_info.text(
+                0.98, y, value,
+                ha='right', va='center', fontsize=8,
+                color='#cdd6f4', transform=ax_info.transAxes,
+                fontfamily='monospace',
+            )
+            y -= row_h
+
+        return fig
 
     @QtCore.Slot()
     def _emit_current_field(self):

@@ -582,6 +582,10 @@ class NiScanningProbeInterfuseBare(ScanningProbeInterface):
 
             with self._thread_lock_data:
                 self.raw_data_container.fill_container(new_data)
+                if self._scan_data is None:
+                    self.log.error("Scan data became None during fetch! Aborting scan.")
+                    self.stop_scan()
+                    return
                 self._scan_data.data = self.raw_data_container.forwards_data()
                 # if self._backwards_line_resolution == len(self.raw_data_container.backwards_data()):
                 self._scan_data.retrace_data = self.raw_data_container.backwards_data()

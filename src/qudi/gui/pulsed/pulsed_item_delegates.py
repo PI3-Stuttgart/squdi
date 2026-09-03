@@ -456,7 +456,10 @@ class MultipleCheckboxItemDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent, label_list, data_access_role=QtCore.Qt.DisplayRole):
 
         super().__init__(parent)
-        self._label_list = list() if label_list is None else list(label_list)
+        if isinstance(label_list, dict):
+            self._label_list = label_list
+        else:
+            self._label_list = list() if label_list is None else list(label_list)
         self._access_role = data_access_role
         return
 

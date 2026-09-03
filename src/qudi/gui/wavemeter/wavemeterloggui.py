@@ -66,6 +66,23 @@ class WavemeterLogGui(GuiBase):
         self._mw.actionStart_scan.triggered.connect(self.start_clicked)
         # self._mw.actionAuto_range.triggered.connect(self.set_auto_range)
 
+        # Channel selector
+        self.channel_combo = QtWidgets.QComboBox()
+        self.channel_combo.setMinimumWidth(80)
+        channels = self.wavelog_logic.get_available_channels()
+        if channels:
+            self.channel_combo.addItems([str(ch) for ch in channels])
+            default_ch = self.wavelog_logic.get_current_channel()
+            if default_ch in channels:
+                self.channel_combo.setCurrentText(str(default_ch))
+        self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
+        
+        # Add to toolbar
+        self._mw.scanToolBar.addSeparator()
+        label = QtWidgets.QLabel(" Channel: ")
+        self._mw.scanToolBar.addWidget(label)
+        self._mw.scanToolBar.addWidget(self.channel_combo)
+
         # defining the parameters to edit
         self._mw.binDoubleSpinBox.setValue(self.wavelog_logic._settings['bin_width'])
         self._mw.minDoubleSpinBox.setValue(self.wavelog_logic._settings['start_value'])
@@ -141,6 +158,15 @@ class WavemeterLogGui(GuiBase):
         self._mw.maxDoubleSpinBox.setValue(x_range[1])
         self._mw.sweepRangeDoubleSpinBox.setValue(abs(x_range[1] - x_range[0] ))
         self._mw.centreDoubleSpinBox.setValue((x_range[0] + x_range[1] )/ 2 )
+        
+    @QtCore.Slot(str)
+    def _on_channel_changed(self, ch_str):
+        if ch_str.isdigit():
+            ch = int(ch_str)
+            self.wavelog_logic.set_channel(ch)
+            # Optionally reset scan when channel changes to clear old data
+            if self.wavelog_logic.module_state() == 'idle':
+                self._reset_scan()
     
     def _reset_scan(self):
         self.wavelog_logic.empty_buffer()

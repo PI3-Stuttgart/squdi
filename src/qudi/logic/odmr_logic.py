@@ -429,6 +429,27 @@ class OdmrLogic(LogicBase):
             )
 
     @property
+    def tt_pulsed(self):
+        if hasattr(self._data_scanner(), 'pulsed'):
+            return self._data_scanner().pulsed
+        return False
+
+    @property
+    def tt_use_ref(self):
+        if hasattr(self._data_scanner(), 'use_ref'):
+            return self._data_scanner().use_ref
+        return False
+
+    @QtCore.Slot(bool, bool)
+    def set_tt_settings(self, pulsed, use_ref):
+        with self._threadlock:
+            scanner = self._data_scanner()
+            if hasattr(scanner, 'pulsed'):
+                scanner.pulsed = pulsed
+            if hasattr(scanner, 'use_ref'):
+                scanner.use_ref = use_ref
+
+    @property
     def scan_parameters(self):
         params = {'data_rate': self._data_rate,
                   'oversampling': self._oversampling_factor,
