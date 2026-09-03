@@ -103,14 +103,32 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
         margin=0.05,
     ):
         """Calculate a wrap target from the live PID value without writing."""
-        current = self.get_pid_integrator(pid_channel)
-        return calculate_wrap_preview(
-            current_value=current,
+        if self._redpitaya_hardware_instance is None:
+            raise RuntimeError("Red Pitaya hardware is not active.")
+
+        state = self._redpitaya_hardware_instance.get_pid_wrap_state(pid_channel)
+        preview = calculate_wrap_preview(
+            current_value=state['integrator'],
             vpi=vpi,
             min_value=min_value,
             max_value=max_value,
             margin=margin,
         )
+        p_is_zero = abs(state['proportional_gain']) <= 1e-12
+        preview.update(
+            proportional_gain=state['proportional_gain'],
+            proportional_gain_is_zero=p_is_zero,
+            pid_minimum=state['pid_minimum'],
+            pid_maximum=state['pid_maximum'],
+            manual_write_ready=(
+                p_is_zero
+                and (
+                    preview['should_wrap']
+                    or preview['recovery_available']
+                )
+            ),
+        )
+        return preview
 
     def get_pyrpl(self):
         """Get the underlying Pyrpl instance."""

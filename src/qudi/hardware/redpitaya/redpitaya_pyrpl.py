@@ -31,7 +31,7 @@ import threading
 from PySide2 import QtCore
 
 
-class _PidIntegratorReadRequest:
+class _PidReadRequest:
     """Container used to return one queued PyRPL register read."""
 
     def __init__(self, pid_channel):
@@ -45,12 +45,17 @@ class _PyrplIoBridge(QtCore.QObject):
     """Execute PyRPL accesses in the thread that created the PyRPL GUI."""
 
     sigReadPidIntegrator = QtCore.Signal(object)
+    sigReadPidWrapState = QtCore.Signal(object)
 
     def __init__(self, pids):
         super().__init__()
         self._pids = tuple(pids)
         self.sigReadPidIntegrator.connect(
             self._read_pid_integrator,
+            QtCore.Qt.QueuedConnection,
+        )
+        self.sigReadPidWrapState.connect(
+            self._read_pid_wrap_state,
             QtCore.Qt.QueuedConnection,
         )
 
@@ -63,14 +68,42 @@ class _PyrplIoBridge(QtCore.QObject):
         finally:
             request.completed.set()
 
+    @QtCore.Slot(object)
+    def _read_pid_wrap_state(self, request):
+        try:
+            pid = self._pids[request.pid_channel]
+            request.value = {
+                'proportional_gain': float(pid.p),
+                'pid_minimum': float(pid.min_voltage),
+                'pid_maximum': float(pid.max_voltage),
+                'integrator': float(pid.ival),
+            }
+        except Exception as error:
+            request.error = error
+        finally:
+            request.completed.set()
+
     def read_pid_integrator(self, pid_channel, timeout=2.0):
-        request = _PidIntegratorReadRequest(pid_channel)
+        request = _PidReadRequest(pid_channel)
         if self.thread() is QtCore.QThread.currentThread():
             self._read_pid_integrator(request)
         else:
             self.sigReadPidIntegrator.emit(request)
             if not request.completed.wait(timeout):
                 raise TimeoutError("Timed out while reading the PID integrator.")
+
+        if request.error is not None:
+            raise request.error
+        return request.value
+
+    def read_pid_wrap_state(self, pid_channel, timeout=2.0):
+        request = _PidReadRequest(pid_channel)
+        if self.thread() is QtCore.QThread.currentThread():
+            self._read_pid_wrap_state(request)
+        else:
+            self.sigReadPidWrapState.emit(request)
+            if not request.completed.wait(timeout):
+                raise TimeoutError("Timed out while reading the PID wrap state.")
 
         if request.error is not None:
             raise request.error
@@ -364,6 +397,19 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
             self._pyrpl_io_bridge = bridge
         return bridge.read_pid_integrator(channel)
+
+    def get_pid_wrap_state(self, pid_channel=0):
+        """Return the live PID values needed for a safe wrap decision."""
+        channel = int(pid_channel)
+        if channel not in (0, 1, 2):
+            raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
+        if self.get_pyrpl() is None:
+            raise RuntimeError("PyRPL is not connected.")
+        bridge = getattr(self, '_pyrpl_io_bridge', None)
+        if bridge is None:
+            bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
+            self._pyrpl_io_bridge = bridge
+        return bridge.read_pid_wrap_state(channel)
             
     # IQ module methods
     def setup_iq(self, iq_channel, frequency, bandwidth, input_signal, output_direct='off',
