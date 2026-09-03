@@ -302,6 +302,15 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             self._pid2.ival = value
         else:
             raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
+
+    def get_pid_integrator(self, pid_channel=0):
+        """Return the current PID integrator value without modifying it."""
+        channel = int(pid_channel)
+        if channel not in (0, 1, 2):
+            raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
+        if self.get_pyrpl() is None:
+            raise RuntimeError("PyRPL is not connected.")
+        return float((self._pid0, self._pid1, self._pid2)[channel].ival)
             
     # IQ module methods
     def setup_iq(self, iq_channel, frequency, bandwidth, input_signal, output_direct='off',

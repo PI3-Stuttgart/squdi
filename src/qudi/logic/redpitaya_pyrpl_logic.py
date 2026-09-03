@@ -87,6 +87,12 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
             self.log.error(f'Error getting histogram: {e}')
             return None, None, None
 
+    def get_pid_integrator(self, pid_channel=0):
+        """Read a PID integrator value without changing hardware state."""
+        if self._redpitaya_hardware_instance is None:
+            raise RuntimeError("Red Pitaya hardware is not active.")
+        return self._redpitaya_hardware_instance.get_pid_integrator(pid_channel)
+
     def get_pyrpl(self):
         """Get the underlying Pyrpl instance."""
         if self._redpitaya_hardware_instance is not None:
