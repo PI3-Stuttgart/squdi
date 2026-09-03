@@ -125,7 +125,7 @@ def calculate_wrap_preview(
     minimum = float(min_value)
     maximum = float(max_value)
     margin = float(margin)
-    return {
+    preview = {
         "current": float(current_value),
         "should_wrap": decision.should_wrap,
         "target": decision.target,
@@ -138,3 +138,32 @@ def calculate_wrap_preview(
         "safe_minimum": minimum + margin,
         "safe_maximum": maximum - margin,
     }
+
+    if decision.reason == "integrator_outside_output_range":
+        saturated_output = minimum if float(current_value) < minimum else maximum
+        recovery = calculate_wrap(
+            current_value=saturated_output,
+            vpi=vpi,
+            min_value=minimum,
+            max_value=maximum,
+            margin=margin,
+        )
+        preview.update(
+            recovery_required=True,
+            saturated_output=saturated_output,
+            recovery_available=recovery.should_wrap,
+            recovery_target=recovery.target if recovery.should_wrap else None,
+            recovery_periods=recovery.periods if recovery.should_wrap else 0,
+            recovery_assumes_p_zero=True,
+        )
+    else:
+        preview.update(
+            recovery_required=False,
+            saturated_output=None,
+            recovery_available=False,
+            recovery_target=None,
+            recovery_periods=0,
+            recovery_assumes_p_zero=False,
+        )
+
+    return preview

@@ -84,6 +84,29 @@ class CalculateWrapTest(unittest.TestCase):
         self.assertEqual(preview["period"], 0.72)
         self.assertAlmostEqual(preview["safe_minimum"], -0.55)
         self.assertAlmostEqual(preview["safe_maximum"], 0.55)
+        self.assertFalse(preview["recovery_required"])
+
+    def test_preview_proposes_recovery_from_lower_windup(self):
+        preview = calculate_wrap_preview(-4.0)
+
+        self.assertFalse(preview["should_wrap"])
+        self.assertEqual(
+            preview["reason"],
+            "integrator_outside_output_range",
+        )
+        self.assertTrue(preview["recovery_required"])
+        self.assertAlmostEqual(preview["saturated_output"], -0.6)
+        self.assertTrue(preview["recovery_available"])
+        self.assertAlmostEqual(preview["recovery_target"], 0.12)
+        self.assertEqual(preview["recovery_periods"], 1)
+        self.assertTrue(preview["recovery_assumes_p_zero"])
+
+    def test_preview_proposes_recovery_from_upper_windup(self):
+        preview = calculate_wrap_preview(4.0)
+
+        self.assertAlmostEqual(preview["saturated_output"], 0.6)
+        self.assertAlmostEqual(preview["recovery_target"], -0.12)
+        self.assertEqual(preview["recovery_periods"], -1)
 
 
 if __name__ == "__main__":
