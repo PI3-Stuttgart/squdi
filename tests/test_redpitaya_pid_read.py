@@ -61,9 +61,24 @@ class ReadPidIntegratorTest(unittest.TestCase):
         self.hardware = self.module.RedPitayaPyrpl.__new__(
             self.module.RedPitayaPyrpl
         )
-        self.hardware._pid0 = types.SimpleNamespace(ival=-0.1)
-        self.hardware._pid1 = types.SimpleNamespace(ival=0.25)
-        self.hardware._pid2 = types.SimpleNamespace(ival=0.5)
+        self.hardware._pid0 = types.SimpleNamespace(
+            ival=-0.1,
+            current_output_signal=-0.1,
+            min_voltage=-0.6,
+            max_voltage=0.6,
+        )
+        self.hardware._pid1 = types.SimpleNamespace(
+            ival=0.25,
+            current_output_signal=0.2,
+            min_voltage=-0.5,
+            max_voltage=0.5,
+        )
+        self.hardware._pid2 = types.SimpleNamespace(
+            ival=0.5,
+            current_output_signal=0.4,
+            min_voltage=-0.4,
+            max_voltage=0.4,
+        )
         self.hardware.get_pyrpl = lambda: object()
 
     def test_reads_selected_pid_without_writing(self):
@@ -78,11 +93,30 @@ class ReadPidIntegratorTest(unittest.TestCase):
     def test_rejects_invalid_channel(self):
         with self.assertRaises(ValueError):
             self.hardware.get_pid_integrator(3)
+        with self.assertRaises(ValueError):
+            self.hardware.get_pid_wrap_state(3)
 
     def test_reports_missing_connection(self):
         self.hardware.get_pyrpl = lambda: None
         with self.assertRaises(RuntimeError):
             self.hardware.get_pid_integrator(0)
+        with self.assertRaises(RuntimeError):
+            self.hardware.get_pid_wrap_state(0)
+
+    def test_reads_integrator_and_limited_output_without_writing(self):
+        state = self.hardware.get_pid_wrap_state(1)
+
+        self.assertEqual(
+            state,
+            {
+                'integrator': 0.25,
+                'pid_output': 0.2,
+                'pid_minimum': -0.5,
+                'pid_maximum': 0.5,
+            },
+        )
+        self.assertEqual(self.hardware._pid1.ival, 0.25)
+        self.assertEqual(self.hardware._pid1.current_output_signal, 0.2)
 
 
 if __name__ == '__main__':

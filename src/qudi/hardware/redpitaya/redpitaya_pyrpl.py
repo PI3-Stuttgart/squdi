@@ -311,6 +311,22 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         if self.get_pyrpl() is None:
             raise RuntimeError("PyRPL is not connected.")
         return float((self._pid0, self._pid1, self._pid2)[channel].ival)
+
+    def get_pid_wrap_state(self, pid_channel=0):
+        """Read the PID integrator and limited output without modifying them."""
+        channel = int(pid_channel)
+        if channel not in (0, 1, 2):
+            raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
+        if self.get_pyrpl() is None:
+            raise RuntimeError("PyRPL is not connected.")
+
+        pid = (self._pid0, self._pid1, self._pid2)[channel]
+        return {
+            'integrator': float(pid.ival),
+            'pid_output': float(pid.current_output_signal),
+            'pid_minimum': float(pid.min_voltage),
+            'pid_maximum': float(pid.max_voltage),
+        }
             
     # IQ module methods
     def setup_iq(self, iq_channel, frequency, bandwidth, input_signal, output_direct='off',
