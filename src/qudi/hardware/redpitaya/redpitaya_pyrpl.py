@@ -27,7 +27,54 @@ from qudi.core.configoption import ConfigOption
 from qudi.core.statusvariable import StatusVar
 from qudi.interface.redpitaya_interface import RedPitayaInterface
 import time
+import threading
 from PySide2 import QtCore
+
+
+class _PidIntegratorReadRequest:
+    """Container used to return one queued PyRPL register read."""
+
+    def __init__(self, pid_channel):
+        self.pid_channel = pid_channel
+        self.completed = threading.Event()
+        self.value = None
+        self.error = None
+
+
+class _PyrplIoBridge(QtCore.QObject):
+    """Execute PyRPL accesses in the thread that created the PyRPL GUI."""
+
+    sigReadPidIntegrator = QtCore.Signal(object)
+
+    def __init__(self, pids):
+        super().__init__()
+        self._pids = tuple(pids)
+        self.sigReadPidIntegrator.connect(
+            self._read_pid_integrator,
+            QtCore.Qt.QueuedConnection,
+        )
+
+    @QtCore.Slot(object)
+    def _read_pid_integrator(self, request):
+        try:
+            request.value = float(self._pids[request.pid_channel].ival)
+        except Exception as error:
+            request.error = error
+        finally:
+            request.completed.set()
+
+    def read_pid_integrator(self, pid_channel, timeout=2.0):
+        request = _PidIntegratorReadRequest(pid_channel)
+        if self.thread() is QtCore.QThread.currentThread():
+            self._read_pid_integrator(request)
+        else:
+            self.sigReadPidIntegrator.emit(request)
+            if not request.completed.wait(timeout):
+                raise TimeoutError("Timed out while reading the PID integrator.")
+
+        if request.error is not None:
+            raise request.error
+        return request.value
 
 
 class RedPitayaPyrpl(Base, RedPitayaInterface):
@@ -54,6 +101,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         self._iq0 = None 
         self._iq1 = None
         self._iq2 = None
+        self._pyrpl_io_bridge = None
 
     def on_deactivate(self):
         self._pyrpl = None 
@@ -67,6 +115,7 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
         self._iq0 = None 
         self._iq1 = None
         self._iq2 = None
+        self._pyrpl_io_bridge = None
 
     def setup_asg(self, channel , freq = 0 , amp = 0, start_p= 0 , wf= 'sin'  , trig_source = 'immediately'):
         self.get_pyrpl()
@@ -310,7 +359,11 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
         if self.get_pyrpl() is None:
             raise RuntimeError("PyRPL is not connected.")
-        return float((self._pid0, self._pid1, self._pid2)[channel].ival)
+        bridge = getattr(self, '_pyrpl_io_bridge', None)
+        if bridge is None:
+            bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
+            self._pyrpl_io_bridge = bridge
+        return bridge.read_pid_integrator(channel)
             
     # IQ module methods
     def setup_iq(self, iq_channel, frequency, bandwidth, input_signal, output_direct='off',
@@ -483,6 +536,9 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
                 self._iq0 = self._rp.iq0 
                 self._iq1 = self._rp.iq1
                 self._iq2 = self._rp.iq2
+                self._pyrpl_io_bridge = _PyrplIoBridge(
+                    (self._pid0, self._pid1, self._pid2)
+                )
                 print("y")
             except Exception as e:
                 self.log.error(f'Failed to connect to Red Pitaya: {str(e)}')

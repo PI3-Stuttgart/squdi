@@ -27,8 +27,54 @@ def _load_hardware_module():
     class FakeInterface:
         pass
 
+    class FakeBoundSignal:
+        def __init__(self):
+            self._slot = None
+
+        def connect(self, slot, _connection_type=None):
+            self._slot = slot
+
+        def emit(self, request):
+            self._slot(request)
+
+    class FakeSignal:
+        def __set_name__(self, _owner, name):
+            self._storage_name = f'_fake_signal_{name}'
+
+        def __get__(self, instance, _owner):
+            if instance is None:
+                return self
+            signal = getattr(instance, self._storage_name, None)
+            if signal is None:
+                signal = FakeBoundSignal()
+                setattr(instance, self._storage_name, signal)
+            return signal
+
+    class FakeThread:
+        current = object()
+
+        @classmethod
+        def currentThread(cls):
+            return cls.current
+
+    class FakeQObject:
+        def __init__(self):
+            self._thread = FakeThread.current
+
+        def thread(self):
+            return self._thread
+
+    def fake_slot(*_args, **_kwargs):
+        return lambda function: function
+
     fake_modules['pyrpl'].Pyrpl = object
-    fake_modules['PySide2'].QtCore = types.SimpleNamespace()
+    fake_modules['PySide2'].QtCore = types.SimpleNamespace(
+        QObject=FakeQObject,
+        QThread=FakeThread,
+        Signal=lambda *_args, **_kwargs: FakeSignal(),
+        Slot=fake_slot,
+        Qt=types.SimpleNamespace(QueuedConnection=object()),
+    )
     fake_modules['qudi.core.module'].Base = FakeBase
     fake_modules['qudi.core.configoption'].ConfigOption = (
         lambda *_args, **_kwargs: None
