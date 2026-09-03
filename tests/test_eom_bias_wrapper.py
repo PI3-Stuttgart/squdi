@@ -1,6 +1,6 @@
 import unittest
 
-from qudi.logic.eom_bias_wrapper import calculate_wrap
+from qudi.logic.eom_bias_wrapper import calculate_wrap, calculate_wrap_preview
 
 
 class CalculateWrapTest(unittest.TestCase):
@@ -63,6 +63,17 @@ class CalculateWrapTest(unittest.TestCase):
             calculate_wrap(0.0, min_value=0.6, max_value=-0.6)
         with self.assertRaises(ValueError):
             calculate_wrap(0.0, margin=0.6)
+
+    def test_preview_contains_live_value_and_safe_target(self):
+        preview = calculate_wrap_preview(0.58)
+
+        self.assertEqual(preview["current"], 0.58)
+        self.assertTrue(preview["should_wrap"])
+        self.assertAlmostEqual(preview["target"], -0.14)
+        self.assertEqual(preview["periods"], -1)
+        self.assertEqual(preview["period"], 0.72)
+        self.assertAlmostEqual(preview["safe_minimum"], -0.55)
+        self.assertAlmostEqual(preview["safe_maximum"], 0.55)
 
 
 if __name__ == "__main__":

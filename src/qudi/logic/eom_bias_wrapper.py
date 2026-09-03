@@ -88,3 +88,37 @@ def calculate_wrap(
     )
     target = current + periods * period
     return WrapDecision(True, target, periods, "outside_safe_range")
+
+
+def calculate_wrap_preview(
+    current_value,
+    vpi=0.36,
+    min_value=-0.6,
+    max_value=0.6,
+    margin=0.05,
+):
+    """Return a serializable preview without changing any hardware value."""
+    decision = calculate_wrap(
+        current_value=current_value,
+        vpi=vpi,
+        min_value=min_value,
+        max_value=max_value,
+        margin=margin,
+    )
+    vpi = float(vpi)
+    minimum = float(min_value)
+    maximum = float(max_value)
+    margin = float(margin)
+    return {
+        "current": float(current_value),
+        "should_wrap": decision.should_wrap,
+        "target": decision.target,
+        "periods": decision.periods,
+        "reason": decision.reason,
+        "vpi": vpi,
+        "period": 2.0 * vpi,
+        "minimum": minimum,
+        "maximum": maximum,
+        "safe_minimum": minimum + margin,
+        "safe_maximum": maximum - margin,
+    }

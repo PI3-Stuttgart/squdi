@@ -3,6 +3,7 @@ from PySide2 import QtCore
 from qudi.core.connector import Connector
 from qudi.core.module import LogicBase
 from qudi.interface.redpitaya_interface import RedPitayaInterface
+from qudi.logic.eom_bias_wrapper import calculate_wrap_preview
 
 
 class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
@@ -92,6 +93,24 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
         if self._redpitaya_hardware_instance is None:
             raise RuntimeError("Red Pitaya hardware is not active.")
         return self._redpitaya_hardware_instance.get_pid_integrator(pid_channel)
+
+    def get_pid_wrap_preview(
+        self,
+        pid_channel=0,
+        vpi=0.36,
+        min_value=-0.6,
+        max_value=0.6,
+        margin=0.05,
+    ):
+        """Calculate a wrap target from the live PID value without writing."""
+        current = self.get_pid_integrator(pid_channel)
+        return calculate_wrap_preview(
+            current_value=current,
+            vpi=vpi,
+            min_value=min_value,
+            max_value=max_value,
+            margin=margin,
+        )
 
     def get_pyrpl(self):
         """Get the underlying Pyrpl instance."""
