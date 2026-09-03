@@ -163,6 +163,66 @@ class ReadPidIntegratorTest(unittest.TestCase):
         )
         self.assertEqual(self.hardware._pid1.ival, 0.25)
 
+    def test_checked_write_updates_integrator(self):
+        result = self.hardware.set_pid_integrator_checked(
+            pid_channel=0,
+            expected_current=-0.1,
+            target=0.12,
+        )
+
+        self.assertAlmostEqual(self.hardware._pid0.ival, 0.12)
+        self.assertAlmostEqual(result['previous_integrator'], -0.1)
+        self.assertAlmostEqual(result['written_integrator'], 0.12)
+
+    def test_checked_write_rejects_nonzero_proportional_gain(self):
+        with self.assertRaisesRegex(RuntimeError, "proportional gain"):
+            self.hardware.set_pid_integrator_checked(
+                pid_channel=1,
+                expected_current=0.25,
+                target=-0.1,
+            )
+        self.assertEqual(self.hardware._pid1.ival, 0.25)
+
+    def test_checked_write_rejects_stale_integrator_value(self):
+        with self.assertRaisesRegex(RuntimeError, "ival has changed"):
+            self.hardware.set_pid_integrator_checked(
+                pid_channel=0,
+                expected_current=-0.2,
+                target=0.12,
+            )
+        self.assertEqual(self.hardware._pid0.ival, -0.1)
+
+    def test_checked_write_rejects_target_outside_pid_limits(self):
+        with self.assertRaisesRegex(ValueError, "outside the configured PID limits"):
+            self.hardware.set_pid_integrator_checked(
+                pid_channel=0,
+                expected_current=-0.1,
+                target=0.7,
+            )
+        self.assertEqual(self.hardware._pid0.ival, -0.1)
+
+    def test_checked_write_rejects_non_finite_pid_state(self):
+        self.hardware._pid0.ival = float('nan')
+
+        with self.assertRaisesRegex(RuntimeError, "non-finite PID state"):
+            self.hardware.set_pid_integrator_checked(
+                pid_channel=0,
+                expected_current=-0.1,
+                target=0.12,
+            )
+
+    def test_checked_write_rejects_invalid_pid_limits(self):
+        self.hardware._pid0.min_voltage = 0.6
+        self.hardware._pid0.max_voltage = -0.6
+
+        with self.assertRaisesRegex(RuntimeError, "invalid PID limits"):
+            self.hardware.set_pid_integrator_checked(
+                pid_channel=0,
+                expected_current=-0.1,
+                target=0.12,
+            )
+        self.assertEqual(self.hardware._pid0.ival, -0.1)
+
 
 if __name__ == '__main__':
     unittest.main()

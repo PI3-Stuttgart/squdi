@@ -28,6 +28,7 @@ from qudi.core.statusvariable import StatusVar
 from qudi.interface.redpitaya_interface import RedPitayaInterface
 import time
 import threading
+import math
 from PySide2 import QtCore
 
 
@@ -41,11 +42,30 @@ class _PidReadRequest:
         self.error = None
 
 
+class _PidWriteRequest(_PidReadRequest):
+    """Container for one checked PID integrator write."""
+
+    def __init__(
+        self,
+        pid_channel,
+        expected_current,
+        target,
+        current_tolerance,
+        p_tolerance,
+    ):
+        super().__init__(pid_channel)
+        self.expected_current = expected_current
+        self.target = target
+        self.current_tolerance = current_tolerance
+        self.p_tolerance = p_tolerance
+
+
 class _PyrplIoBridge(QtCore.QObject):
     """Execute PyRPL accesses in the thread that created the PyRPL GUI."""
 
     sigReadPidIntegrator = QtCore.Signal(object)
     sigReadPidWrapState = QtCore.Signal(object)
+    sigWritePidIntegrator = QtCore.Signal(object)
 
     def __init__(self, pids):
         super().__init__()
@@ -56,6 +76,10 @@ class _PyrplIoBridge(QtCore.QObject):
         )
         self.sigReadPidWrapState.connect(
             self._read_pid_wrap_state,
+            QtCore.Qt.QueuedConnection,
+        )
+        self.sigWritePidIntegrator.connect(
+            self._write_pid_integrator,
             QtCore.Qt.QueuedConnection,
         )
 
@@ -83,6 +107,61 @@ class _PyrplIoBridge(QtCore.QObject):
         finally:
             request.completed.set()
 
+    @QtCore.Slot(object)
+    def _write_pid_integrator(self, request):
+        try:
+            pid = self._pids[request.pid_channel]
+            proportional_gain = float(pid.p)
+            pid_minimum = float(pid.min_voltage)
+            pid_maximum = float(pid.max_voltage)
+            current = float(pid.ival)
+
+            if not all(
+                math.isfinite(value)
+                for value in (
+                    proportional_gain,
+                    pid_minimum,
+                    pid_maximum,
+                    current,
+                )
+            ):
+                raise RuntimeError(
+                    "Refusing PID integrator write with non-finite PID state."
+                )
+            if pid_minimum >= pid_maximum:
+                raise RuntimeError(
+                    "Refusing PID integrator write with invalid PID limits."
+                )
+            if abs(proportional_gain) > request.p_tolerance:
+                raise RuntimeError(
+                    "Refusing PID integrator write while proportional gain is non-zero."
+                )
+            if abs(current - request.expected_current) > request.current_tolerance:
+                raise RuntimeError(
+                    "Refusing stale PID integrator write because ival has changed."
+                )
+            if not pid_minimum <= request.target <= pid_maximum:
+                raise ValueError(
+                    "Refusing PID integrator target outside the configured PID limits."
+                )
+
+            pid.ival = request.target
+            written = float(pid.ival)
+            if abs(written - request.target) > 2.0e-4:
+                raise RuntimeError("PID integrator write verification failed.")
+
+            request.value = {
+                'previous_integrator': current,
+                'written_integrator': written,
+                'proportional_gain': proportional_gain,
+                'pid_minimum': pid_minimum,
+                'pid_maximum': pid_maximum,
+            }
+        except Exception as error:
+            request.error = error
+        finally:
+            request.completed.set()
+
     def read_pid_integrator(self, pid_channel, timeout=2.0):
         request = _PidReadRequest(pid_channel)
         if self.thread() is QtCore.QThread.currentThread():
@@ -104,6 +183,33 @@ class _PyrplIoBridge(QtCore.QObject):
             self.sigReadPidWrapState.emit(request)
             if not request.completed.wait(timeout):
                 raise TimeoutError("Timed out while reading the PID wrap state.")
+
+        if request.error is not None:
+            raise request.error
+        return request.value
+
+    def write_pid_integrator_checked(
+        self,
+        pid_channel,
+        expected_current,
+        target,
+        current_tolerance=0.01,
+        p_tolerance=1e-12,
+        timeout=2.0,
+    ):
+        request = _PidWriteRequest(
+            pid_channel=pid_channel,
+            expected_current=expected_current,
+            target=target,
+            current_tolerance=current_tolerance,
+            p_tolerance=p_tolerance,
+        )
+        if self.thread() is QtCore.QThread.currentThread():
+            self._write_pid_integrator(request)
+        else:
+            self.sigWritePidIntegrator.emit(request)
+            if not request.completed.wait(timeout):
+                raise TimeoutError("Timed out while writing the PID integrator.")
 
         if request.error is not None:
             raise request.error
@@ -410,6 +516,37 @@ class RedPitayaPyrpl(Base, RedPitayaInterface):
             bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
             self._pyrpl_io_bridge = bridge
         return bridge.read_pid_wrap_state(channel)
+
+    def set_pid_integrator_checked(
+        self,
+        pid_channel,
+        expected_current,
+        target,
+        current_tolerance=0.01,
+    ):
+        """Set ival through the serialized bridge after safety checks."""
+        channel = int(pid_channel)
+        expected = float(expected_current)
+        target = float(target)
+        tolerance = float(current_tolerance)
+        if channel not in (0, 1, 2):
+            raise ValueError("Invalid PID channel. Must be 0, 1, or 2.")
+        if not all(math.isfinite(value) for value in (expected, target, tolerance)):
+            raise ValueError("PID integrator write values must be finite.")
+        if tolerance < 0:
+            raise ValueError("current_tolerance must not be negative.")
+        if self.get_pyrpl() is None:
+            raise RuntimeError("PyRPL is not connected.")
+        bridge = getattr(self, '_pyrpl_io_bridge', None)
+        if bridge is None:
+            bridge = _PyrplIoBridge((self._pid0, self._pid1, self._pid2))
+            self._pyrpl_io_bridge = bridge
+        return bridge.write_pid_integrator_checked(
+            pid_channel=channel,
+            expected_current=expected,
+            target=target,
+            current_tolerance=tolerance,
+        )
             
     # IQ module methods
     def setup_iq(self, iq_channel, frequency, bandwidth, input_signal, output_direct='off',

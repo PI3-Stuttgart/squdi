@@ -130,6 +130,67 @@ class RedPitayaPyrplLogic(LogicBase, RedPitayaInterface):
         )
         return preview
 
+    def apply_pid_wrap(
+        self,
+        pid_channel=0,
+        vpi=0.36,
+        min_value=-0.6,
+        max_value=0.6,
+        margin=0.05,
+        confirm=False,
+        allow_windup_recovery=False,
+    ):
+        """Apply one explicitly confirmed wrap; never runs automatically."""
+        preview = self.get_pid_wrap_preview(
+            pid_channel=pid_channel,
+            vpi=vpi,
+            min_value=min_value,
+            max_value=max_value,
+            margin=margin,
+        )
+
+        if preview['should_wrap']:
+            mode = 'normal_wrap'
+            candidate_target = preview['target']
+        elif preview['recovery_available']:
+            mode = 'windup_recovery'
+            candidate_target = preview['recovery_target']
+        else:
+            preview.update(
+                applied=False,
+                action_mode=None,
+                candidate_target=None,
+                action_reason='no_wrap_action_available',
+            )
+            return preview
+
+        preview.update(
+            applied=False,
+            action_mode=mode,
+            candidate_target=candidate_target,
+            action_reason='confirmation_required',
+        )
+        if not preview['manual_write_ready']:
+            preview['action_reason'] = 'pid_safety_check_failed'
+            return preview
+        if confirm is not True:
+            return preview
+        if mode == 'windup_recovery' and allow_windup_recovery is not True:
+            preview['action_reason'] = 'windup_recovery_not_allowed'
+            return preview
+
+        result = self._redpitaya_hardware_instance.set_pid_integrator_checked(
+            pid_channel=pid_channel,
+            expected_current=preview['current'],
+            target=candidate_target,
+        )
+        preview.update(
+            applied=True,
+            action_reason='applied',
+            write_result=result,
+        )
+        return preview
+
     def get_pyrpl(self):
         """Get the underlying Pyrpl instance."""
         if self._redpitaya_hardware_instance is not None:
