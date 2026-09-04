@@ -11,12 +11,15 @@ unix_dep = [
     'lmfit>=1.0.3',
     'lxml>=4.9.1',
     'matplotlib>=3.6.0',
+    'h5py>=3.8.0',
     'nidaqmx>=0.5.7',
     'numpy>=1.23.3',
+    'pandas>=1.5.0',
     'pyqtgraph>=0.13.1',
     'PySide2',  # get fixed version from core
     'PyVisa>=1.12.0',
     'scipy>=1.9.1',
+    'xarray>=2023.1.0',
     'zaber_motion>=2.14.6'
 ]
 
@@ -27,12 +30,15 @@ windows_dep = [
     'lmfit>=1.0.3',
     'lxml>=4.9.1',
     'matplotlib>=3.6.0',
+    'h5py>=3.8.0',
     'nidaqmx>=0.5.7',
     'numpy>=1.23.3',
+    'pandas>=1.5.0',
     'pyqtgraph>=0.13.1',
     'PySide2',  # get fixed version from core
     'PyVisa>=1.12.0',
     'scipy>=1.9.1',
+    'xarray>=2023.1.0',
     'zaber_motion>=2.14.6'
 ]
 
