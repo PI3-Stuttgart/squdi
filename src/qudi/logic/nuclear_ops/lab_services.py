@@ -105,7 +105,7 @@ class NuclearLabServices(RunServices):
             or not self._values_equal(self._last_values[name], values[name])
         }
 
-        if "click_channel" in changed:
+        if "click_channel" in changed and not callable(getattr(self.external_counter, "arm", None)):
             counter = self._require(self.external_counter, "External click-channel selection")
             device = getattr(
                 counter,

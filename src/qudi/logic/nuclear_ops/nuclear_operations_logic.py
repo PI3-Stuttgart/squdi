@@ -12,7 +12,7 @@ from qudi.core.connector import Connector
 from qudi.interface.nuclear_operations_runner_interface import NuclearOperationsRunnerInterface
 from qudi.util.mutex import RecursiveMutex
 
-from .execution_engine import ExecutionCallbacks, NuclearExperimentEngine
+from .execution_engine import ExecutionCallbacks, NuclearExperimentEngine, RunServices
 from .lab_services import NuclearLabServices
 from .models import ExperimentSpec, RunProvenance
 from .recipes import RecipeRegistry
@@ -25,7 +25,7 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
     threshold_provider = Connector(interface="ReadoutCalibrationLogic")
     magnet = Connector(interface="MagnetLogic", optional=True)
     microwave = Connector(interface="MicrowaveInterface", optional=True)
-    external_counter = Connector(interface="GatedCounter", optional=True)
+    external_counter = Connector(interface="NuclearCounterInterface", optional=True)
     confocal = Connector(interface="ScanningProbeLogic", optional=True)
     confocal_optimizer = Connector(interface="ScanningOptimizeLogic", optional=True)
     ple_optimizer = Connector(interface="PLEOptimizeScannerLogic", optional=True)
@@ -40,6 +40,7 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
     recipe_modules = ConfigOption(name="recipe_modules", default=[])
     shutdown_timeout_s = ConfigOption(name="shutdown_timeout_s", default=10.0)
 
+    sigDataUpdated = QtCore.Signal(object)
     sigRecipesChanged = QtCore.Signal(object)
 
     def __init__(self, *args, **kwargs):
@@ -70,7 +71,7 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
             self.cancel_experiment()
             worker.join(timeout=float(self.shutdown_timeout_s))
             if worker.is_alive():
-                self.log.error("Nuclear experiment worker did not stop before deactivation")
+                raise RuntimeError("Nuclear experiment worker did not stop before deactivation")
         self._engine = None
         self._worker = None
         self._active_item_id = ""
@@ -78,6 +79,20 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
     @property
     def recipe_names(self):
         return self._recipes.names
+
+    @property
+    def is_dummy(self):
+        return bool(self.quantum_machine().dummy_mode)
+
+    def validate_experiment(self, experiment):
+        self._recipes.get(experiment.recipe).validate(experiment)
+        self.threshold_provider().snapshot_for_experiment(experiment)
+
+    def reanalyze(self, path):
+        if self._worker is not None:
+            raise RuntimeError("Wait for the current experiment before reanalysis")
+        from .fitting import reanalyze_file
+        return reanalyze_file(path, self._recipes)
 
     def register_recipe(self, recipe):
         """Register a recipe before a run (primarily useful for development)."""
@@ -125,20 +140,26 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
             self._engine.cancel()
 
     def _run_worker(self, experiment, queue_item_id):
-        result = self._engine.run(experiment, queue_item_id=queue_item_id)
+        try:
+            result = self._engine.run(experiment, queue_item_id=queue_item_id)
+        except Exception as exc:
+            from .execution_engine import RunResult
+            result = RunResult("failed", "", 0, str(exc))
+        with self._thread_lock:
+            self._active_item_id = ""
+            self._worker = None
         if result.status == "completed":
             self.sigExperimentFinished.emit(queue_item_id, result.run_file)
         elif result.status == "cancelled":
             self.sigExperimentCancelled.emit(queue_item_id, result.run_file)
         else:
             self.sigExperimentFailed.emit(queue_item_id, result.error, result.run_file)
-        with self._thread_lock:
-            self._active_item_id = ""
 
     def _make_engine(self, queue_item_id):
         machine = self.quantum_machine()
         thresholds = self.threshold_provider()
         callbacks = ExecutionCallbacks(
+            data=self.sigDataUpdated.emit,
             started=lambda path: self.sigExperimentStarted.emit(queue_item_id, path),
             progress=lambda value: self.sigProgressUpdated.emit(queue_item_id, value),
             paused=lambda: self.sigExperimentPaused.emit(queue_item_id),
@@ -166,7 +187,7 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
             thresholds=thresholds,
             quantum_machine=machine,
             output_directory=Path(str(self.output_directory)),
-            services=services,
+            services=RunServices() if machine.dummy_mode else services,
             callbacks=callbacks,
             provenance_provider=lambda _experiment: self._provenance(machine),
         )

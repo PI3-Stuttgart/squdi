@@ -15,7 +15,7 @@ import xarray as xr
 
 from .analysis import analyze_readout_thresholds, combine_analysis
 from .hdf5_store import NuclearDataset
-from .models import ExperimentSpec, MeasurementBatch, RunMetadata, RunProvenance
+from .models import AcquisitionMode, ExperimentSpec, MeasurementBatch, RunMetadata, RunProvenance
 from .recipes import AcquisitionResult, ProgramBundle, RecipeContext, RecipeRegistry
 from .scan_planner import ExecutionBlock, ScanPlanner
 from .thresholds import ThresholdRegistry
@@ -35,6 +35,7 @@ class RunResult:
 
 @dataclass
 class ExecutionCallbacks:
+    data: Callable[[object], None] = lambda _dataset: None
     started: Callable[[str], None] = lambda _path: None
     progress: Callable[[float], None] = lambda _progress: None
     paused: Callable[[], None] = lambda: None
@@ -181,7 +182,6 @@ class NuclearExperimentEngine:
         status = "failed"
         error = ""
         try:
-            self._control = ExecutionControl(self.callbacks)
             recipe = self.recipes.get(experiment.recipe)
             recipe.validate(experiment)
             threshold_snapshot = self.thresholds.snapshot_for_experiment(experiment)
@@ -204,6 +204,12 @@ class NuclearExperimentEngine:
             )
             run.store.append_log("Execution plan contains {} program blocks".format(len(plan.blocks)))
             self.callbacks.started(str(run_path))
+            if getattr(self.quantum_machine, "dummy_mode", False):
+                run.store.append_log("DUMMY MODE: synthetic data, no devices or QUA simulation")
+            if experiment.execution.acquisition_mode == AcquisitionMode.EXTERNAL_COUNTER:
+                counter = getattr(self.services, "external_counter", None)
+                if counter is None or not callable(getattr(counter, "arm", None)):
+                    raise RuntimeError("external_counter requires a NuclearCounterInterface connector")
             self.services.before_run(experiment, self._control)
 
             completed_points = 0
@@ -217,6 +223,7 @@ class NuclearExperimentEngine:
                 if not experiment.execution.save_raw_events:
                     batch = MeasurementBatch(dataset=batch.dataset, raw_events={})
                 run.append(batch)
+                self.callbacks.data(run.dataset.copy(deep=True))
                 self.services.after_block(context, result, self._control)
                 completed_points += block.qua_points
                 self.callbacks.progress(completed_points / max(1, plan.total_points))
@@ -249,6 +256,7 @@ class NuclearExperimentEngine:
             return RunResult("failed", str(run_path or ""), run.store.committed_records if run else 0, error)
         finally:
             try:
+                self.quantum_machine.stop_current_job()
                 self.services.after_run(experiment, status)
             finally:
                 self._running_lock.release()
@@ -272,7 +280,11 @@ class NuclearExperimentEngine:
                 attempt=attempt,
                 observations=dict(observations),
             )
-            bundle = recipe.build_program(context)
+            if getattr(self.quantum_machine, "dummy_mode", False):
+                from .dummy import build_dummy_program
+                bundle = build_dummy_program(context)
+            else:
+                bundle = recipe.build_program(context)
             if not isinstance(bundle, ProgramBundle):
                 raise TypeError("Recipe.build_program() must return ProgramBundle")
             run.store.append_log(
@@ -287,14 +299,29 @@ class NuclearExperimentEngine:
                     duration_cycles=experiment.execution.simulation_duration_cycles,
                 )
                 return self._simulation_result(block), context
-            job = self.quantum_machine.execute(bundle.program)
+            counter = getattr(self.services, "external_counter", None) if experiment.execution.acquisition_mode == AcquisitionMode.EXTERNAL_COUNTER else None
             try:
-                result = recipe.acquire(job, context, experiment.execution.result_timeout_s)
+                if counter is not None:
+                    counter.arm(context)
+                job = self.quantum_machine.execute(bundle.program)
+                timeout = experiment.execution.result_timeout_s
+                started = time.monotonic()
+                if counter is not None:
+                    from .counter_streams import CounterJob
+                    streams = counter.read_streams(context, self._control, timeout)
+                    job = CounterJob(job, streams)
+                remaining = timeout - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise TimeoutError("Acquisition timeout")
+                result = recipe.acquire(job, context, remaining)
             except Exception:
                 # A halt requested by cancel() often surfaces in the SDK as a
                 # job/result-handle error. Preserve cancellation semantics.
                 self._control.check_cancelled()
                 raise
+            finally:
+                if counter is not None:
+                    counter.stop()
             if not isinstance(result, AcquisitionResult):
                 raise TypeError("Recipe.acquire() must return AcquisitionResult")
             self._control.check_cancelled()

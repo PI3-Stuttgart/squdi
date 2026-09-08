@@ -168,6 +168,8 @@ class ExperimentQueueLogic(LogicBase):
     @QtCore.Slot(str, str)
     def _on_started(self, item_id, run_file):
         with self._thread_lock:
+            if self._queue.get(item_id).status == QueueStatus.CANCELLING:
+                return
             item = self._queue.mark_running(item_id, run_file=run_file)
             self._emit_queue(item)
 
@@ -196,12 +198,16 @@ class ExperimentQueueLogic(LogicBase):
     @QtCore.Slot(str)
     def _on_paused(self, item_id):
         with self._thread_lock:
+            if self._queue.get(item_id).status == QueueStatus.CANCELLING:
+                return
             item = self._queue.mark_paused(item_id)
             self._emit_queue(item)
 
     @QtCore.Slot(str)
     def _on_resumed(self, item_id):
         with self._thread_lock:
+            if self._queue.get(item_id).status == QueueStatus.CANCELLING:
+                return
             item = self._queue.mark_resumed(item_id)
             self._emit_queue(item)
 

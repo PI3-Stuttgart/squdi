@@ -46,7 +46,8 @@ def analyze_readout_thresholds(
                     step.kind.value, step.output_name
                 )
             )
-        source = dataset[step.output_name]
+        shot_name = step.output_name + "_shots"
+        source = dataset[shot_name] if shot_name in dataset else dataset[step.output_name]
         rule = thresholds.profile.resolve(step.threshold_ref)
         accepted, classified = evaluate_threshold(source, rule)
         base = "{}_{}".format(step.output_name, step.threshold_ref)

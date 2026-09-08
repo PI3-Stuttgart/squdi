@@ -20,6 +20,10 @@ class QuantumMachineHardware(QuantumMachineInterface):
         name="configuration_module",
         default="qudi.hardware.OPX.configuration",
     )
+    dummy_mode = ConfigOption(name="dummy_mode", default=False)
+    dummy_seed = ConfigOption(name="dummy_seed", default=0)
+    dummy_delay_s = ConfigOption(name="dummy_delay_s", default=0.25)
+
     close_on_deactivate = ConfigOption(name="close_on_deactivate", default=True)
 
     def __init__(self, *args, **kwargs):
@@ -31,6 +35,9 @@ class QuantumMachineHardware(QuantumMachineInterface):
         self._current_job = None
 
     def on_activate(self):
+        if self.dummy_mode:
+            self._qm = True
+            return
         self._configuration = importlib.import_module(str(self.configuration_module))
         self._connect()
 
@@ -62,10 +69,16 @@ class QuantumMachineHardware(QuantumMachineInterface):
             if self._qm is None:
                 raise RuntimeError("Quantum Machine hardware is not connected")
             self.stop_current_job()
-            self._current_job = self._qm.execute(program)
+            if self.dummy_mode:
+                from qudi.logic.nuclear_ops.dummy import DummyJob
+                self._current_job = DummyJob(program, self.dummy_seed, self.dummy_delay_s)
+            else:
+                self._current_job = self._qm.execute(program)
             return self._current_job
 
     def simulate(self, program, duration_cycles=10_000):
+        if self.dummy_mode:
+            return self.execute(program)
         from qm import SimulationConfig
 
         with self._thread_lock:
@@ -95,7 +108,7 @@ class QuantumMachineHardware(QuantumMachineInterface):
     def qm(self):
         """Native QM object for setup-level controls that are not job execution."""
 
-        return self._qm
+        return None if self.dummy_mode else self._qm
 
     @property
     def configuration_snapshot(self):
@@ -106,6 +119,8 @@ class QuantumMachineHardware(QuantumMachineInterface):
         except importlib.metadata.PackageNotFoundError:
             qm_version = "unknown"
         return {
+            "dummy": bool(self.dummy_mode),
+            "dummy_seed": int(self.dummy_seed) if self.dummy_mode else None,
             "module": str(self.configuration_module),
             "sha256": digest,
             "cluster_name": getattr(self._configuration, "cluster_name", ""),

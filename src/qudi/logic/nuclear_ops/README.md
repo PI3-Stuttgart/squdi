@@ -116,3 +116,10 @@ Rabi/power-Rabi, PLE iterator, initialization calibration, field alignment and
 spin-photon-correlation scripts still need dedicated recipe migration because
 their hardware timing and result shapes are not interchangeable with the
 common spin protocol.
+
+## Local offline setup and migration update
+
+See `docs/tinOps.md` for the new GUI, twelve-recipe registry, dummy hardware,
+individual counts/raw tags, fits, external gated-counter adapter, and the exact
+remaining hardware-parity limits. The six additional protocols are registered
+through `qudi.logic.nuclear_ops.extended_recipes`.
