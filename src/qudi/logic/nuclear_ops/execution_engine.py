@@ -141,8 +141,10 @@ class NuclearExperimentEngine:
         callbacks: Optional[ExecutionCallbacks] = None,
         metadata_provider: Optional[Callable[[ExperimentSpec], RunMetadata]] = None,
         provenance_provider: Optional[Callable[[ExperimentSpec], RunProvenance]] = None,
+        setup_provider=None,
         run_path_factory: Callable[[Path, ExperimentSpec, str], Path] = default_run_path,
     ) -> None:
+        self.setup_provider = setup_provider
         self.recipes = recipes
         self.thresholds = thresholds
         self.quantum_machine = quantum_machine
@@ -215,9 +217,12 @@ class NuclearExperimentEngine:
             completed_points = 0
             for block in plan.blocks:
                 self._control.wait_until_runnable()
-                observations = self.services.before_block(experiment, block, self._control)
+                setup = self.setup_provider() if self.setup_provider else {"revision": 0, "values": {}}
+                effective = replace(experiment, parameters=dict(setup["values"], **experiment.parameters))
+                observations = dict(self.services.before_block(effective, block, self._control))
+                observations["setup_revision"] = setup["revision"]
                 result, context = self._execute_block(
-                    recipe, experiment, block, threshold_snapshot, observations, run
+                    recipe, effective, block, threshold_snapshot, observations, run
                 )
                 batch = self._normalize_batch(result.batch, block, context.observations)
                 if not experiment.execution.save_raw_events:
@@ -292,7 +297,14 @@ class NuclearExperimentEngine:
                     block.index, attempt + 1, dict(bundle.metadata)
                 )
             )
-            run.store.save_program_metadata(block.index, attempt, bundle.metadata)
+            program_metadata = dict(bundle.metadata)
+            program_metadata.update(effective_parameters=context.parameters,
+                                    setup_revision=observations.get("setup_revision", 0),
+                                    thresholds=threshold_snapshot.to_dict(), scan_block=block.to_dict())
+            if type(bundle.program).__module__.startswith("qm."):
+                from qm import generate_qua_script
+                program_metadata["qua_source"] = generate_qua_script(bundle.program)
+            run.store.save_program_metadata(block.index, attempt, program_metadata)
             if experiment.execution.debug_simulation:
                 self.quantum_machine.simulate(
                     bundle.program,

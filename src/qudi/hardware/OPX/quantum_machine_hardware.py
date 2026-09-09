@@ -121,6 +121,7 @@ class QuantumMachineHardware(QuantumMachineInterface):
         return {
             "dummy": bool(self.dummy_mode),
             "dummy_seed": int(self.dummy_seed) if self.dummy_mode else None,
+            "configuration": configuration,
             "module": str(self.configuration_module),
             "sha256": digest,
             "cluster_name": getattr(self._configuration, "cluster_name", ""),

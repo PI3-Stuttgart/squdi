@@ -117,7 +117,8 @@ class OfflineTest(unittest.TestCase):
                 block = ScanPlanner(recipe.axis_policies).plan(spec).blocks[0]
                 ctx = RecipeContext(spec, block, self.thresholds.snapshot_for_experiment(spec))
                 source = generate_qua_script(recipe.build_program(ctx).program)
-                self.assertIn('result_tags', source)
+                self.assertNotIn('result_tags', source)
+                self.assertEqual(source.count('time_tagging.analog'), 1)
                 self.assertIn('Gate_Trigger', source)
                 self.assertIn('Memory_Trigger', source)
 

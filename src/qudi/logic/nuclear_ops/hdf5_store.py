@@ -280,6 +280,8 @@ class Hdf5RunStore:
     def _append_xarray_group(
         self, group: h5py.Group, dataset: xr.Dataset, start: int, stop: int
     ) -> None:
+        if start == 0:
+            write_hdf_tree(group, "dataset_attributes", dict(dataset.attrs))
         expected_coords = set(dataset.coords)
         expected_variables = set(dataset.data_vars)
         if start > 0:
@@ -461,7 +463,8 @@ class Hdf5RunStore:
             variables = self._load_array_collection(
                 handle["data/variables"], handle["data/variable_attributes"], committed
             )
-        return xr.Dataset(data_vars=variables, coords=coordinates)
+            attrs = read_hdf_tree(handle["data/dataset_attributes"]) if "dataset_attributes" in handle["data"] else {}
+        return xr.Dataset(data_vars=variables, coords=coordinates, attrs=attrs)
 
     @staticmethod
     def _load_array_collection(
@@ -531,7 +534,8 @@ class Hdf5RunStore:
             variables = self._load_array_collection(
                 analysis["variables"], analysis["variable_attributes"], committed
             )
-            return xr.Dataset(data_vars=variables, coords=coordinates)
+            attrs = read_hdf_tree(analysis["dataset_attributes"]) if "dataset_attributes" in analysis else {}
+            return xr.Dataset(data_vars=variables, coords=coordinates, attrs=attrs)
 
     def load_raw_events(self, channel: str, record: int) -> np.ndarray:
         with h5py.File(str(self.path), "r") as handle:

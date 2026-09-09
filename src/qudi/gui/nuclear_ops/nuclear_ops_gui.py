@@ -24,6 +24,7 @@ class NuclearOpsGui(GuiBase):
     sigCancel = QtCore.Signal()
     sigRemove = QtCore.Signal(str)
     sigQueuePaused = QtCore.Signal(bool)
+    sigSetup = QtCore.Signal(object)
     sigProfile = QtCore.Signal(object)
 
     def on_activate(self):
@@ -47,13 +48,14 @@ class NuclearOpsGui(GuiBase):
         el = QtWidgets.QVBoxLayout(experiments)
         form = QtWidgets.QHBoxLayout()
         self.recipe = QtWidgets.QComboBox()
-        self.recipe.addItems(self.runner().recipe_names)
-        form.addWidget(QtWidgets.QLabel("Recipe")); form.addWidget(self.recipe)
-        self._button(form, "Load recipe template", self.load_template)
+        self._scripts = {p.stem: p for p in self.runner().userscript_paths}
+        self.recipe.addItems(sorted(self._scripts))
+        form.addWidget(QtWidgets.QLabel("Userscript")); form.addWidget(self.recipe)
+        self._button(form, "Load script", self.load_template)
         self._button(form, "Import specification…", self.import_spec)
         self._button(form, "Export specification…", self.export_spec)
         el.addLayout(form)
-        el.addWidget(QtWidgets.QLabel("Edit the scan values, integration count and parameters below, then add the experiment to the queue."))
+        el.addWidget(QtWidgets.QLabel("Python userscript: edit pulses above and SWEEPS/PARAMETERS below. Shared defaults are in Setup."))
         self.editor = QtWidgets.QPlainTextEdit()
         self.editor.setStyleSheet("font-family:Consolas;font-size:12px")
         el.addWidget(self.editor)
@@ -97,13 +99,62 @@ class NuclearOpsGui(GuiBase):
         self.yaxis.currentTextChanged.connect(self.draw)
         threshold_tab = QtWidgets.QWidget(); tl = QtWidgets.QVBoxLayout(threshold_tab)
         tl.addWidget(QtWidgets.QLabel("Threshold changes create a new profile version. Existing runs retain their stored snapshot."))
-        self.threshold_editor = QtWidgets.QPlainTextEdit(); tl.addWidget(self.threshold_editor)
+        self.threshold_title = QtWidgets.QLabel(); tl.addWidget(self.threshold_title)
+        self.threshold_table = QtWidgets.QTableWidget(0, 5)
+        self.threshold_table.setHorizontalHeaderLabels(["Rule", "Comparison", "Counts", "Exclusion band", "QM channel"])
+        self.threshold_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        tl.addWidget(self.threshold_table)
         self._button(tl, "Save as next threshold version", self.save_profile)
         tabs.addTab(threshold_tab, "Readout thresholds")
+        from qudi.logic.nuclear_ops.setup_parameters import PARAMETERS
+        setup_tab = QtWidgets.QWidget()
+        setup_layout = QtWidgets.QVBoxLayout(setup_tab)
+        self.setup_label = QtWidgets.QLabel("Edits apply at the next program boundary. Script PARAMETERS and scan axes take precedence.")
+        setup_layout.addWidget(self.setup_label)
+        scroll = QtWidgets.QScrollArea(); scroll.setWidgetResizable(True)
+        settings = QtWidgets.QWidget(); settings_layout = QtWidgets.QVBoxLayout(settings)
+        self.setup_widgets = {}
+        groups = {}
+        for key, (group, label, default, unit, minimum, maximum) in PARAMETERS.items():
+            if group not in groups:
+                box = QtWidgets.QGroupBox(group); form = QtWidgets.QFormLayout(box)
+                groups[group] = form; settings_layout.addWidget(box)
+            widget = QtWidgets.QSpinBox() if isinstance(default, int) else QtWidgets.QDoubleSpinBox()
+            widget.setRange(minimum, maximum)
+            if isinstance(widget, QtWidgets.QDoubleSpinBox):
+                widget.setDecimals(6); widget.setSingleStep(.001)
+            if unit == "ns":
+                widget.setSingleStep(4)
+            widget.setSuffix(" " + unit if unit else "")
+            groups[group].addRow(label, widget); self.setup_widgets[key] = widget
+        scroll.setWidget(settings); setup_layout.addWidget(scroll)
+        self.live_setup = QtWidgets.QCheckBox("Apply edits live when leaving a field")
+        self.live_setup.setChecked(True); setup_layout.addWidget(self.live_setup)
+        for widget in self.setup_widgets.values():
+            widget.editingFinished.connect(self.setup_edited)
+        self._button(setup_layout, "Apply setup now", self.apply_setup)
+        tabs.addTab(setup_tab, "Setup")
+        self.load_setup(self.runner().setup_snapshot)
+        counter_tab = QtWidgets.QWidget(); cl = QtWidgets.QVBoxLayout(counter_tab)
+        cl.addWidget(QtWidgets.QLabel("Swabian gated counter — raw photon times in ps; CRC remains on QM. Channel routing is in Setup."))
+        self.counter_status = QtWidgets.QLabel("Idle"); cl.addWidget(self.counter_status)
+        self.counter_progress = QtWidgets.QProgressBar(); cl.addWidget(self.counter_progress)
+        self.counter_trace = pg.PlotWidget(title="Recent gate counts", background="#16222d")
+        self.counter_trace.setLabel("left", "Photons"); self.counter_trace.setLabel("bottom", "Gate index")
+        cl.addWidget(self.counter_trace)
+        self.counter_histogram = pg.PlotWidget(title="Gate count distribution", background="#16222d")
+        self.counter_histogram.setLabel("bottom", "Photons / gate"); cl.addWidget(self.counter_histogram)
+        counter_buttons = QtWidgets.QHBoxLayout()
+        self._button(counter_buttons, "Start queued measurement", self.sigStart.emit)
+        self._button(counter_buttons, "Stop counting / cancel run", self.sigCancel.emit)
+        cl.addLayout(counter_buttons)
+        tabs.addTab(counter_tab, "Gated counter")
         self.tabs = tabs
         self.status = QtWidgets.QLabel("Ready"); layout.addWidget(self.status)
         queue, runner, calibration = self.queue(), self.runner(), self.calibration()
-        for signal, slot in ((self.sigEnqueue, queue.enqueue), (self.sigStart, queue.start_next),
+        for signal, slot in ((self.sigSetup, runner.update_setup), (runner.sigSetupChanged, self.load_setup),
+                             (runner.sigSetupError, self.setup_error), (runner.sigCounterUpdated, self.update_counter),
+                             (self.sigEnqueue, queue.enqueue), (self.sigStart, queue.start_next),
                              (self.sigPause, queue.pause_current), (self.sigResume, queue.resume_current),
                              (self.sigCancel, queue.cancel_current), (self.sigRemove, queue.remove_pending),
                              (self.sigQueuePaused, queue.set_queue_paused), (self.sigProfile, calibration.set_profile),
@@ -134,36 +185,68 @@ class NuclearOpsGui(GuiBase):
         return button
 
     def load_template(self):
-        name = self.recipe.currentText()
-        from qudi.logic.nuclear_ops.templates import experiment_template
-        self.editor.setPlainText(json.dumps(experiment_template(name), indent=2))
+        path = self._scripts[self.recipe.currentText()]
+        self._script_path = str(path)
+        self.editor.setPlainText(path.read_text(encoding="utf-8"))
 
     def enqueue(self):
         try:
-            spec = ExperimentSpec.from_dict(json.loads(self.editor.toPlainText()))
+            spec = self.runner().script_specification(self.editor.toPlainText(), self._script_path)
             self.runner().validate_experiment(spec)
             self.sigEnqueue.emit(spec.to_dict())
-            self.status.setText("Experiment added to queue")
+            self.status.setText("Queued a frozen copy of the Python userscript")
         except Exception as exc:
             self.status.setText(str(exc))
 
     def import_spec(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self._mw, "Import specification", "", "JSON (*.json)")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self._mw, "Open userscript", "", "Python (*.py)")
         if path:
             try:
-                spec = ExperimentSpec.from_dict(json.loads(Path(path).read_text()))
-                self.editor.setPlainText(json.dumps(spec.to_dict(), indent=2))
+                self._script_path = path
+                self.editor.setPlainText(Path(path).read_text(encoding="utf-8"))
             except Exception as exc:
                 self.status.setText(str(exc))
 
     def export_spec(self):
-        try:
-            spec = ExperimentSpec.from_dict(json.loads(self.editor.toPlainText()))
-            path, _ = QtWidgets.QFileDialog.getSaveFileName(self._mw, "Export specification", "experiment.json", "JSON (*.json)")
-            if path:
-                Path(path).write_text(json.dumps(spec.to_dict(), indent=2))
-        except Exception as exc:
-            self.status.setText(str(exc))
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self._mw, "Save userscript", self._script_path, "Python (*.py)")
+        if path:
+            try:
+                compile(self.editor.toPlainText(), path, "exec")
+                Path(path).write_text(self.editor.toPlainText(), encoding="utf-8")
+                self._script_path = path
+                self.status.setText("Saved " + path)
+            except Exception as exc:
+                self.status.setText(str(exc))
+
+    def setup_edited(self):
+        if self.live_setup.isChecked():
+            self.apply_setup()
+
+    def apply_setup(self):
+        self.sigSetup.emit({key: widget.value() for key, widget in self.setup_widgets.items()})
+
+    @QtCore.Slot(object)
+    def load_setup(self, snapshot):
+        for key, widget in self.setup_widgets.items():
+            widget.setValue(snapshot["values"][key])
+        self.setup_label.setText("Setup revision {} saved. Applies at the next program boundary; script overrides take precedence.".format(snapshot["revision"]))
+
+    @QtCore.Slot(str)
+    def setup_error(self, message):
+        self.setup_label.setText("Not applied: " + message)
+
+    @QtCore.Slot(object)
+    def update_counter(self, snapshot):
+        self.counter_status.setText("Swabian: " + snapshot["status"])
+        if "completed" in snapshot:
+            self.counter_progress.setValue(round(100*snapshot["completed"]/max(1, snapshot["expected"])))
+            self.counter_status.setText("Swabian: {} — {} / {} gates".format(snapshot["status"], snapshot["completed"], snapshot["expected"]))
+        counts = np.asarray(snapshot.get("counts", []))
+        if counts.size:
+            self.counter_trace.clear(); self.counter_histogram.clear()
+            self.counter_trace.plot(counts, pen="#67d7dd")
+            hist, edges = np.histogram(counts, bins=min(100, max(1, int(np.ptp(counts))+1)))
+            self.counter_histogram.plot((edges[:-1]+edges[1:])/2, hist, pen="#ffcd76", fillLevel=0, brush=(255,205,118,60))
 
     @QtCore.Slot(object)
     def update_queue(self, snapshot):
@@ -270,13 +353,30 @@ class NuclearOpsGui(GuiBase):
 
     @QtCore.Slot(object)
     def load_profile(self, *_):
-        self.threshold_editor.setPlainText(json.dumps(self.calibration().snapshot().profile.to_dict(), indent=2))
+        self._profile = self.calibration().snapshot().profile.to_dict()
+        self.threshold_title.setText("{} / version {}. Threshold updates apply to the next run.".format(self._profile["name"], self._profile["version"]))
+        self.threshold_table.setRowCount(len(self._profile["rules"]))
+        for row, (name, rule) in enumerate(self._profile["rules"].items()):
+            item = QtWidgets.QTableWidgetItem(name); item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.threshold_table.setItem(row, 0, item)
+            comparison = QtWidgets.QComboBox(); comparison.addItems([">", ">=", "<", "<="])
+            comparison.setCurrentText(rule["comparison"]); self.threshold_table.setCellWidget(row, 1, comparison)
+            for column, key in [(2, "counts"), (3, "exclusion_width")]:
+                value = QtWidgets.QDoubleSpinBox(); value.setRange(0 if column == 3 else -1e9, 1e9)
+                value.setDecimals(3); value.setValue(rule[key]); self.threshold_table.setCellWidget(row, column, value)
+            channel = QtWidgets.QLineEdit(rule["channel"]); self.threshold_table.setCellWidget(row, 4, channel)
 
     def save_profile(self):
         try:
-            value = json.loads(self.threshold_editor.toPlainText())
-            current = self.calibration().snapshot(value["name"]).profile
-            value["version"] = current.version + 1
+            value = dict(self._profile)
+            value["rules"] = {}
+            for row in range(self.threshold_table.rowCount()):
+                value["rules"][self.threshold_table.item(row, 0).text()] = {
+                    "comparison": self.threshold_table.cellWidget(row, 1).currentText(),
+                    "counts": self.threshold_table.cellWidget(row, 2).value(),
+                    "exclusion_width": self.threshold_table.cellWidget(row, 3).value(),
+                    "channel": self.threshold_table.cellWidget(row, 4).text()}
+            value["version"] = self.calibration().snapshot(value["name"]).profile.version + 1
             value.pop("updated_at", None)
             self.sigProfile.emit(ReadoutThresholdProfile.from_dict(value))
             self.status.setText("Saving threshold version {}".format(value["version"]))

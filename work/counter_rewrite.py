@@ -1,4 +1,6 @@
-"""Swabian photon counting and raw tags with an offline stream emulator."""
+from pathlib import Path
+p=Path('src/qudi/hardware/timetagger/nuclear_counter.py')
+p.write_text('''"""Swabian photon counting and raw tags with an offline stream emulator."""
 import time
 import numpy as np
 from PySide2 import QtCore
@@ -164,3 +166,4 @@ class NuclearTimeTaggerCounter(NuclearCounterInterface):
             self._stream.stop()
             self._stream = None
         self.sigCounterUpdated.emit({"status": "idle"})
+''', encoding='utf-8')

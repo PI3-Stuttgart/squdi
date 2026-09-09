@@ -40,6 +40,11 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
     recipe_modules = ConfigOption(name="recipe_modules", default=[])
     shutdown_timeout_s = ConfigOption(name="shutdown_timeout_s", default=10.0)
 
+    setup_file = ConfigOption(name="setup_file", default="~/Documents/qudi/tinOps/setup.h5")
+    userscript_directory = ConfigOption(name="userscript_directory", default="")
+    sigSetupChanged = QtCore.Signal(object)
+    sigSetupError = QtCore.Signal(str)
+    sigCounterUpdated = QtCore.Signal(object)
     sigDataUpdated = QtCore.Signal(object)
     sigRecipesChanged = QtCore.Signal(object)
 
@@ -52,6 +57,8 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
         self._active_item_id = ""
 
     def on_activate(self):
+        from .setup_parameters import SetupRegistry
+        self._setup = SetupRegistry(self.setup_file)
         self._recipes = RecipeRegistry()
         for module_name in self.recipe_modules or ():
             module = importlib.import_module(str(module_name))
@@ -63,7 +70,32 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
                     )
                 )
             register(self._recipes)
+        from .userscripts import UserScriptRecipe
+        self._recipes.register(UserScriptRecipe())
+        self._counter = self._optional(self.external_counter)
+        if self._counter is not None and hasattr(self._counter, "sigCounterUpdated"):
+            self._counter.sigCounterUpdated.connect(self.sigCounterUpdated)
         self.sigRecipesChanged.emit(self._recipes.names)
+
+    @property
+    def setup_snapshot(self):
+        return self._setup.snapshot()
+
+    @QtCore.Slot(object)
+    def update_setup(self, values):
+        try:
+            self.sigSetupChanged.emit(self._setup.update(values))
+        except Exception as exc:
+            self.sigSetupError.emit(str(exc))
+
+    @property
+    def userscript_paths(self):
+        path = Path(str(self.userscript_directory)).expanduser() if self.userscript_directory else Path(__file__).parents[2] / "UserScripts/nuclear_ops"
+        return tuple(sorted(path.glob("*.py")))
+
+    def script_specification(self, source, filename):
+        from .userscripts import specification
+        return specification(source, filename)
 
     def on_deactivate(self):
         worker = self._worker
@@ -72,6 +104,8 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
             worker.join(timeout=float(self.shutdown_timeout_s))
             if worker.is_alive():
                 raise RuntimeError("Nuclear experiment worker did not stop before deactivation")
+        if self._counter is not None and hasattr(self._counter, "sigCounterUpdated"):
+            self._counter.sigCounterUpdated.disconnect(self.sigCounterUpdated)
         self._engine = None
         self._worker = None
         self._active_item_id = ""
@@ -182,12 +216,16 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
             ppg=self._optional(self.ppg),
             log=self.log,
         )
+        if machine.dummy_mode:
+            services = RunServices()
+            services.external_counter = self._counter
         return NuclearExperimentEngine(
+            setup_provider=self._setup.snapshot,
             recipes=self._recipes,
             thresholds=thresholds,
             quantum_machine=machine,
             output_directory=Path(str(self.output_directory)),
-            services=RunServices() if machine.dummy_mode else services,
+            services=services,
             callbacks=callbacks,
             provenance_provider=lambda _experiment: self._provenance(machine),
         )
@@ -199,18 +237,21 @@ class NuclearOperationsLogic(NuclearOperationsRunnerInterface):
         except Exception:
             return None
 
-    @staticmethod
-    def _provenance(machine):
+    def _provenance(self, machine):
         versions = {}
-        for distribution in ("qudi", "qm-qua", "xarray", "h5py"):
+        for distribution in ("qudi-core", "qudi-iqo-modules", "qm-qua", "xarray", "h5py", "numpy", "scipy", "PySide2", "Swabian-TimeTagger"):
             try:
                 versions[distribution] = importlib.metadata.version(distribution)
             except importlib.metadata.PackageNotFoundError:
                 versions[distribution] = "unknown"
+        from .userscripts import source_archive
         snapshot = machine.configuration_snapshot
         return RunProvenance(
             qm_configuration=snapshot.get("sha256", ""),
             software_versions=versions,
-            hardware={"quantum_machine": snapshot},
+            hardware={"quantum_machine": snapshot,
+                      "counter": getattr(self._counter, "configuration_snapshot", {}),
+                      "initial_setup": self.setup_snapshot,
+                      "source_archive": source_archive()},
         )
 

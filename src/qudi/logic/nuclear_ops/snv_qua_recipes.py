@@ -151,7 +151,8 @@ class SnVQuaRecipe(QmStreamRecipe):
                 )
             }
 
-            save_tags = context.experiment.execution.save_raw_events
+            external = context.experiment.execution.acquisition_mode == AcquisitionMode.EXTERNAL_COUNTER
+            save_tags = context.experiment.execution.save_raw_events and not external
             tag_index = qua.declare(int)
             tag_streams = {name: qua.declare_stream() for name in ("initial", "result", "csr", "optical")} if save_tags else {}
             length_streams = {name: qua.declare_stream() for name in tag_streams}
@@ -173,28 +174,32 @@ class SnVQuaRecipe(QmStreamRecipe):
             def pulse(laser, duration_ns):
                 qua.play("active", laser, duration=self._cycles(duration_ns))
 
-            def readout(lasers, duration_ns):
+            def readout(lasers, duration_ns, count_with_qm=True):
                 lasers = tuple(lasers)
                 qua.align(spcm, *lasers)
-                qua.measure(
-                    "readout",
-                    spcm,
-                    None,
-                    qua.time_tagging.analog(times, int(duration_ns), counts),
-                )
+                if count_with_qm:
+                    qua.measure(
+                        "readout",
+                        spcm,
+                        None,
+                        qua.time_tagging.analog(times, int(duration_ns), counts),
+                    )
+                else:
+                    qua.wait(self._cycles(duration_ns), spcm)
+                    qua.assign(counts, 0)
                 for laser in lasers:
                     pulse(laser, duration_ns)
                 qua.align(spcm, *lasers)
 
             external = context.experiment.execution.acquisition_mode == AcquisitionMode.EXTERNAL_COUNTER
             def marker(element):
-                qua.play("trigit", element, duration=4)
+                qua.play("trigit", element, duration=self._cycles(parameters.get("gate_trigger_ns", 20)))
 
             def save_readout(stream_name, lasers, duration_ns):
                 qua.align()
                 if external:
                     marker("Gate_Trigger")
-                readout(lasers, duration_ns)
+                readout(lasers, duration_ns, count_with_qm=not external)
                 if external:
                     qua.align()
                     marker("Memory_Trigger")
@@ -241,7 +246,22 @@ class SnVQuaRecipe(QmStreamRecipe):
                 )
                 qua.align()
 
+            def custom_pulses():
+                custom = getattr(self, "pulse_function", None)
+                if custom is not None:
+                    from types import SimpleNamespace
+                    q = SimpleNamespace(qua=qua, mw=mw, laser=pulse, align=qua.align,
+                        wait=lambda duration: qua.wait(self._cycles(duration)),
+                        phase=lambda turns: qua.frame_rotation_2pi(turns, mw_element),
+                        reset_phase=lambda: qua.reset_frame(mw_element))
+                    custom(q, dict(parameters, **axis_variables))
+                    return
+
             def manipulate():
+                if getattr(self, "pulse_function", None) is not None:
+                    if self.protocol not in (SnVProtocol.OPTICAL_RABI, SnVProtocol.OPTICAL_POWER_RABI, SnVProtocol.SPIN_PHOTON):
+                        custom_pulses()
+                    return
                 pi_ns = value("electron_pi_duration_ns", default=parameters.get("electron_pi_duration_ns", 1620))
                 pi_half_ns = pi_ns / 2
                 if self.protocol == SnVProtocol.RABI:
@@ -280,9 +300,16 @@ class SnVQuaRecipe(QmStreamRecipe):
                 qua.align()
                 if external:
                     marker("Gate_Trigger")
-                pulse(optical_laser, value("optical_duration_ns", default=48))
-                qua.measure("readout", spcm, None,
-                    qua.time_tagging.analog(times, int(parameters.get("optical_window_ns", 1000)), counts))
+                if not external:
+                    qua.measure("readout", spcm, None,
+                        qua.time_tagging.analog(times, int(parameters.get("optical_window_ns", 1000)), counts))
+                else:
+                    qua.wait(self._cycles(parameters.get("optical_window_ns", 1000)), spcm)
+                    qua.assign(counts, 0)
+                if getattr(self, "pulse_function", None) is not None:
+                    custom_pulses()
+                else:
+                    pulse(optical_laser, value("optical_duration_ns", default=48))
                 qua.align()
                 if external:
                     marker("Memory_Trigger")
@@ -293,6 +320,15 @@ class SnVQuaRecipe(QmStreamRecipe):
                         qua.save(times[tag_index], tag_streams["optical"])
 
             def point():
+                if "mw_frequency" in parameters:
+                    qua.update_frequency(mw_element, int(parameters["mw_frequency"]))
+                for key, element, inputs in (
+                    ("laser_620_voltage", "Laser_620", ("AOM_1", "AOM_2")),
+                    ("laser_620_det_voltage", "Laser_620_det", ("single",)),
+                    ("laser_520_voltage", "Laser_520", ("single",))):
+                    if key in parameters:
+                        for input_name in inputs:
+                            qua.set_dc_offset(element, input_name, parameters[key])
                 if self.protocol == SnVProtocol.PLE:
                     qua.set_dc_offset(str(parameters.get("frequency_element", "Laser_620_freq")), "single",
                                       value("laser_frequency_voltage", default=0.0))
@@ -386,7 +422,15 @@ class SnVQuaRecipe(QmStreamRecipe):
             dataset[name + "_shots"] = (("record", "integration"), shots.reshape(integrations, points).T)
         dataset = dataset.assign_coords(integration=np.arange(integrations))
         raw = {}
-        if context.experiment.execution.save_raw_events:
+        if context.experiment.execution.save_raw_events and context.experiment.execution.acquisition_mode == AcquisitionMode.EXTERNAL_COUNTER:
+            if not hasattr(job, "raw_events"):
+                raise ValueError("External counting requires Swabian raw data, not QM tags")
+            raw = job.raw_events
+            for name, lengths in job.raw_lengths.items():
+                dataset[name + "_tag_lengths"] = (("record", "integration"), lengths)
+            dataset.attrs["raw_time_unit"] = "ps"
+            dataset.attrs["raw_source"] = "Swabian"
+        elif context.experiment.execution.save_raw_events:
             width = int(context.parameters.get("max_time_tags", 4096))
             for name in ("initial", "result", "csr", "optical"):
                 lengths = _fetch_values(job.result_handles.get(name + "_tag_counts")).reshape(integrations, points)
@@ -397,6 +441,8 @@ class SnVQuaRecipe(QmStreamRecipe):
                 raw[name] = [np.concatenate([padded[j, i, :int(lengths[j, i])] for j in range(integrations)]) for i in range(points)]
             dataset.attrs["raw_time_unit"] = "ns"
             dataset.attrs["raw_layout"] = "Tags concatenate integrations per record; split using <channel>_tag_lengths. Times are relative to each readout."
+        dataset.attrs["count_source"] = "Swabian" if context.experiment.execution.acquisition_mode == AcquisitionMode.EXTERNAL_COUNTER else "QM"
+        dataset.attrs["crc_source"] = "QM"
         return AcquisitionResult(MeasurementBatch(dataset, raw))
 
 

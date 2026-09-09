@@ -5,7 +5,9 @@ import numpy as np
 class CounterJob:
     def __init__(self, job, streams):
         self._original = job.result_handles
-        self._streams = streams
+        self._streams = dict(streams)
+        self.raw_events = self._streams.pop("_raw_events", {})
+        self.raw_lengths = self._streams.pop("_raw_lengths", {})
         self.result_handles = self
 
     def wait_for_all_values(self, timeout=None):

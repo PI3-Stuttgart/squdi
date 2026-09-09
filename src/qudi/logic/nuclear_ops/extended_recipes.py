@@ -64,6 +64,9 @@ class SpinPhotonCorrelationRecipe(SnVQuaRecipe):
             return result
         ds = result.batch.dataset
         windows = np.asarray(context.parameters.get("photon_windows_ns", [[0, 1000]]))
+        windows_ns = windows.copy()
+        if ds.attrs.get("raw_time_unit") == "ps":
+            windows = windows * 1000
         lengths = ds.optical_tag_lengths.values
         counts = np.zeros(lengths.shape + (len(windows),), dtype=np.int64)
         for record, tags in enumerate(result.batch.raw_events["optical"]):
@@ -75,8 +78,8 @@ class SpinPhotonCorrelationRecipe(SnVQuaRecipe):
                     counts[record, shot, window] = np.count_nonzero((shot_tags >= start) & (shot_tags < end))
         ds["photon_window_counts"] = (("record", "integration", "photon_window"), counts)
         ds = ds.assign_coords(photon_window=np.arange(len(windows)),
-                              window_start_ns=("photon_window", windows[:, 0]),
-                              window_end_ns=("photon_window", windows[:, 1]))
+                              window_start_ns=("photon_window", windows_ns[:, 0]),
+                              window_end_ns=("photon_window", windows_ns[:, 1]))
         return AcquisitionResult(MeasurementBatch(ds, result.batch.raw_events))
 
     def analyze(self, dataset, experiment, thresholds):
