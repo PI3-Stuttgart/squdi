@@ -339,10 +339,9 @@ class NuclearOpsOPXUtils(LogicBase):
         conversion so that callers pass physical nanoseconds and the conversion
         is applied only once.
         """
-        return duration_ns * u.ns
+        return int(duration_ns / 4)  # * u.ns
 
     def MW_pulse(self, duration_ns, amplitude: float = 1, pulse: str = "x", element: str = "MW"):
-
         if duration_ns > 16:
             play(pulse * amp(amplitude), element, duration=self.duration_ns_to_qua(duration_ns))
 

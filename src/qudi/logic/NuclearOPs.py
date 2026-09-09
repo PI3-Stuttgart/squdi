@@ -45,6 +45,7 @@ from qudi.logic.qudip_enhanced import data_handling, save_qutip_enhanced
 from qudi.logic.qudip_enhanced.data_generation import DataGeneration
 from qudi.logic.qudip_enhanced.util import ret_property_list_element
 from qudi.logic.queue.queue_logic import queue_logic
+from qudi.logic import efficient_trace_store
 
 
 class NuclearOPs(DataGeneration):
@@ -156,6 +157,8 @@ class NuclearOPs(DataGeneration):
         self.last_interferometer_refocus = -10000
         self.interferometer_refocus_interval = 0
         self.save_smartly = False
+        # Opt in before run(): raw traces go to disk; live results stay in RAM.
+        self.save_trace_efficient = False
         self.no_trace = False
         self.delay_ps_list = []
         self.window_ps_list = []
@@ -393,6 +396,16 @@ class NuclearOPs(DataGeneration):
                 break
             QtTest.QTest.qSleep(1000)
 
+    def init_run(self, **kwargs: Any) -> None:
+        if self.save_trace_efficient:
+            if kwargs.get("init_from_file") is not None or kwargs.get("iff") is not None:
+                raise ValueError("Efficient trace storage currently supports new measurements only")
+            if getattr(self, "do_save", True) is False:
+                raise ValueError("save_trace_efficient requires do_save=True")
+            if self.raw_clicks_processing or "trace" not in self.observation_names:
+                raise ValueError("Efficient trace storage requires the standard trace acquisition path")
+        super().init_run(**kwargs)
+
     def run_measurement(self, abort: Any, **kwargs: Any) -> None:
         """Execute the main measurement loop used during normal queue operation."""
 
@@ -530,7 +543,19 @@ class NuclearOPs(DataGeneration):
                         * self.number_of_simultaneous_measurements
                     )
 
-                    if self.save_smartly:  # non zero to the data
+                    if self.save_trace_efficient:
+                        # Publish a lightweight reference only after the full array
+                        # and per-acquisition analysis settings were written.
+                        reference = efficient_trace_store.write_trace(
+                            self.save_dir, self.ana_trace.trace,
+                            {key: getattr(self.ana_trace, key)
+                             for key in efficient_trace_store.ANALYSIS_FIELDS},
+                        )
+                        self.data.set_observations(
+                            [OrderedDict(trace=reference)]
+                            * self.number_of_simultaneous_measurements
+                        )
+                    elif self.save_smartly:  # non zero to the data
                         # FIXME:  TEMP SOLUTION FIXME LATER, Only for HOM , just uncomment this code
                         dd = self.ana_trace.trace
                         idx = np.nonzero(dd)
@@ -1531,7 +1556,22 @@ class NuclearOPs(DataGeneration):
                 "Measurement is running.\nReanalyzation will write to data.df and may interfere with the running measurement doing the same.\nIf you want to reanalyze anyway, pass argument do_while_run=True"
             )
             return
-        import Analysis
+        from qudi.logic import Analysis
+
+        if self.save_trace_efficient:
+            seen = set()
+            for position, reference in enumerate(self.data.df["trace"]):
+                if not isinstance(reference, str) or reference in seen:
+                    continue
+                seen.add(reference)
+                raw, settings = efficient_trace_store.load_trace(self.save_dir, reference)
+                settings.update({key: value for key, value in kwargs.items()
+                                 if key in efficient_trace_store.ANALYSIS_FIELDS})
+                trace = Analysis.Trace(trace=raw, **settings)
+                count = settings["number_of_simultaneous_measurements"]
+                self.analyze(ana_trace=trace, start_idx=position + count - 1)
+            self.pld.new_data_arrived()
+            return
 
         ana_trace = Analysis.Trace()
         for key in [
@@ -1554,13 +1594,25 @@ class NuclearOPs(DataGeneration):
             ana_trace.trace = _I_["trace"]
             self.analyze(ana_trace=ana_trace, start_idx=idx)
 
+    def save_measurement_data(self, notify: bool = False) -> None:
+        if self.save_trace_efficient:
+            efficient_trace_store.save_results(
+                self.save_dir, self.data.df,
+                self.data.parameter_names, self.data.observation_names,
+            )
+        else:
+            super().save_measurement_data(notify=notify)
+
     def save(self) -> None:
         """Persist measurement results and supporting metadata to disk."""
         if len(self.data.df) > 0 and not (hasattr(self, "do_save") and not self.do_save):
-            Thread1 = threading.Thread(target=super().save, kwargs={"notify": False})
-            Thread1.start()
-            # super(NuclearOPs, self).save(notify=False) #### IMPORTANT
-            Thread1.join()
+            if self.save_trace_efficient:
+                # Let disk errors propagate to the measurement loop.
+                super().save(notify=False)
+            else:
+                Thread1 = threading.Thread(target=super().save, kwargs={"notify": False})
+                Thread1.start()
+                Thread1.join()
             try:
                 self.save_sequence_file()
                 self.queue.save_pi3diamond(destination_dir=self.save_dir)
