@@ -53,12 +53,12 @@ def ret_ret_mcas(pdc):
             ou.i_1 = declare(int)
             ou.i_2 = declare(int)
             i = declare(int)
-            ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
-            ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
-            ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
+            # ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
+            # ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
+            # ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
             ou.pause(10_000)
             qua.update_frequency(
-                "NV",
+                "MW",
                 MW_freq,
             )
             with infinite_loop_(), for_each_(ou.i_1, qua_array_1):
@@ -67,7 +67,7 @@ def ret_ret_mcas(pdc):
                     # qua.align()
                     # qua.wait(1_015 // 4, "NV")
                     # with for_(i, 0, i < 1000, i + 1):
-                    qua.play("cw" * qua.amp(1), "NV", duration=20 // 4)
+                    qua.play("x" * qua.amp(MW_amp), "MW", duration=MW_pulse_len * u.ns)
                     # qua.align()
                     # qua.play("active", "Laser_620_det", MW_pulse_len / 4)
                     # qua.wait(1_000)
@@ -86,8 +86,8 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    nuclear.queue.awg._qm.set_digital_delay("NV", "switch", (60) * u.ns + (1_015 - 200 + 15) * u.ns)
-    nuclear.queue.awg._qm.set_digital_buffer("NV", "switch", (80) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("MW", "switch", (1_015 - 200 + 75) * u.ns)
+    nuclear.queue.awg._qm.set_digital_buffer("MW", "switch", (250) * u.ns)
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
     ana_seq = [["result", ">", 1, 1, 0, 1]]
@@ -137,11 +137,11 @@ def settings(pdc={}):
             # ("B_amp", [140]),
             ("sweeps", range(200)),
             ("click_channel", [2]),
-            ("MW_pulse_len", [100_000]),  # MW_pulse_duration_array
+            ("MW_pulse_len", [100]),  # MW_pulse_duration_array
             ("MW_f", [-100 * u.MHz]),
             # ("sweee", [0] * 1000),
             ("MW_amp", [1]),
-            ("cooldown_time", [500_000]),  # 10 ms
+            ("cooldown_time", [1_000_000]),  # 10 ms
         )
     )
     nuclear.number_of_simultaneous_measurements = 1  # len(MW_pulse_duration_array)

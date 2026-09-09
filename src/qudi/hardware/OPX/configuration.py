@@ -41,7 +41,7 @@ octave_config = None
 MW_IQ_DELAY = (1_015 - 200) * u.ns
 MW_SWITCH_TTL_DELAY = MW_IQ_DELAY + 75 * u.ns
 # Buffers
-MW_SWITCH_TTL_BUFFER = 80 * u.ns
+MW_SWITCH_TTL_BUFFER = 150 * u.ns
 # Mixer
 SMIQ_LO_FREQ = 3.9 * u.GHz
 IQ_FREQ = 0 * u.MHz

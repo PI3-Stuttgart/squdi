@@ -63,13 +63,14 @@ def ret_ret_mcas(pdc):
                     ou.pause(1e4)
                     sna.ssr(mcas, state="e1")
                     qua.align()
+                    ou.pause(400)
                     ou.gate_trigger()
                     ou.MW_pulse(duration_ns=2e6, amplitude=MW_amp / 100, element="MW")
                     ou.laser_pulse("Laser_620_det", 2e6)
                     qua.align()
                     ou.memory_trigger()
                     sna.csr(mcas)
-                    ou.pause(1e6)
+                    ou.pause(2e6)
                 # ou.pause(int(10e12))
 
         mcas.program = myprog
@@ -120,9 +121,9 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    f_vec_array = np.arange(start=175 * u.MHz, stop=225 * u.MHz, step=0.5 * u.MHz)
+    f_vec_array = np.arange(start=150 * u.MHz, stop=300 * u.MHz, step=1 * u.MHz)
     # MW_power_array = np.array([1.0, 0.7, 0.5, 0.2, 0.1])
-    nr_repeating_intergration: int = 50
+    nr_repeating_intergration: int = 10
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (

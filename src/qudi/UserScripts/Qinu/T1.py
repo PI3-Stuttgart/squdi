@@ -1,5 +1,3 @@
-# coding=utf-8
-
 import importlib
 import os
 from collections import OrderedDict
@@ -9,17 +7,17 @@ from qm.qua import for_, infinite_loop_
 from qualang_tools.loops import from_array
 from qualang_tools.units import unit
 
-import qudi.hardware.OPX.OPX_utils as OPX_utils
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
-import qudi.UserScripts.helpers.shared as shared
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
 from qudi.logic.qudip_enhanced import *
+from qudi.UserScripts.helpers import shared
 
 importlib.reload(sch)
 importlib.reload(shared)
@@ -48,18 +46,17 @@ def ret_ret_mcas(pdc):
         init_state = current_iterator_df["init_state"].unique()[0]
         SSR_state = current_iterator_df["SSR_state"].unique()[0]
 
-        with qua.program() as myprog:
-            with infinite_loop_():
-                ou.init_program()
-                with for_(*from_array(ou.i_1, qua_array_1)):
-                    with for_(*from_array(ou.i_2, qua_array_2)):
-                        sna.crc(mcas)
-                        sna.electron_init(mcas, init_state)
-                        sna.ssr(mcas, "e2" if init_state == "e1" else "e1")
-                        ou.pause("readout_delay")
-                        sna.ssr(mcas, SSR_state)
-                        # Charge state readout
-                        sna.csr(mcas)
+        with qua.program() as myprog, infinite_loop_():
+            ou.init_program()
+            with for_(*from_array(ou.i_1, qua_array_1)):
+                with for_(*from_array(ou.i_2, qua_array_2)):
+                    sna.crc(mcas)
+                    sna.electron_init(mcas, init_state)
+                    sna.ssr(mcas, "e2" if init_state == "e1" else "e1")
+                    ou.pause("readout_delay")
+                    sna.ssr(mcas, SSR_state)
+                    # Charge state readout
+                    sna.csr(mcas)
 
         mcas.program = myprog
         return mcas
@@ -71,7 +68,7 @@ def settings(pdc={}):
     ana_seq = [
         ["init", "<", 1, 1, 0, 1],
         ["result", ">", 1, 1, 0, 1],
-        ["init", ">", 15, 1, 0, 1],
+        ["init", ">", 8, 1, 0, 1],
     ]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
@@ -97,7 +94,7 @@ def settings(pdc={}):
 
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
-    nuclear.ple_refocus_interval = 30
+    nuclear.ple_refocus_interval = 3 * 60
     nuclear.lock_laser_to_wavemeter = True
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
@@ -106,7 +103,8 @@ def settings(pdc={}):
     nr_repeating_intergration: int = 500
 
     # readout_delay = np.linspace(0, 2_000, 10) * 1e3  # ns -> us
-    readout_delay = np.arange(1_000, 200_000_000, 10_000_000)  # ns -> us
+    # readout_delay = np.arange(1_000, 200_000_000, 10_000_000)  # ns -> us
+    readout_delay = np.unique(np.rint(np.logspace(2, 8, num=50)).astype(int))
     nuclear.parameters = OrderedDict(
         (
             ("sweeps", range(20)),
