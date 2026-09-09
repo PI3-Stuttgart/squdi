@@ -299,12 +299,15 @@ class DataGeneration:
                 with open("{}/meas_code.py".format(self.save_dir), "w") as text_file:
                     text_file.write(self.meas_code)
             t.append(time.time() - t0)
-            self.data.save("{}/data.hdf".format(self.save_dir), notify=notify)
+            self.save_measurement_data(notify=notify)
             t.append(time.time() - t0)
             self.pld.save_plot("{}/plot.png".format(self.save_dir), notify=notify)
             t.append(time.time() - t0)
             if notify:
                 logging.getLogger().info("saved {} to '{} ()".format(name, self.save_dir, " ".join("{:.2f}".format(x) for x in t)))
+
+    def save_measurement_data(self, notify=False):
+        self.data.save("{}/data.hdf".format(self.save_dir), notify=notify)
 
     def remeasure(self, df):
         indices = self.data.df[self.data.df.loc[:, self.data.parameter_names].isin(df).all(axis=1)].index  # get indices in self.df.data to be replaced
