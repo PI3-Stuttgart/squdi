@@ -1,5 +1,3 @@
-# coding=utf-8
-
 import importlib
 import os
 from collections import OrderedDict
@@ -8,17 +6,17 @@ from qm import qua
 from qm.qua import declare, for_each_, infinite_loop_
 from qualang_tools.units import unit
 
-import qudi.hardware.OPX.OPX_utils as OPX_utils
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
-import qudi.UserScripts.helpers.shared as shared
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
 from qudi.logic.qudip_enhanced import *
+from qudi.UserScripts.helpers import shared
 
 importlib.reload(sch)
 importlib.reload(shared)
@@ -45,35 +43,33 @@ def ret_ret_mcas(pdc):
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
         init_state = current_iterator_df["init_state"].unique()[0]
-        SSR_state = current_iterator_df["SSR_state"].unique()[0]
         pi_bool = current_iterator_df["pi_bool"].unique()[0]
+        MW_f = current_iterator_df["MW_f"].unique()[0]
+        MW_amp = current_iterator_df["MW_amp"].unique()[0]
+        MW_pi_len = current_iterator_df["MW_pi_len"].unique()[0]
 
         #
         # qua.update_frequency("NV", new_frequency=sna.ELECTRON_PARAMS.IQ_freq)
-        with qua.program() as myprog:
-            with infinite_loop_():
-                ou.init_program()
-                ou.i_1 = declare(int)
-                sna.set_IQ_freq(mcas)
-                ou.pause(500 // 4)
+        with qua.program() as myprog, infinite_loop_():
+            ou.init_program()
+            ou.i_1 = declare(int)
+            qua.update_frequency("MW", MW_f)
+            ou.pause(500 // 4)
 
-                with for_each_(ou.i_1, qua_array_1):
-                    with for_each_(ou.i_2, qua_array_2):
-                        sna.crc(mcas)
-                        sna.electron_init(
-                            mcas,
-                            init_state,
-                        )
-                        sna.ssr(mcas, state="e1" if init_state == "e2" else "e2")
-                        qua.align()
-                        if pi_bool == "mw_pi":
-                            # qua.wait(500 // 4)
-                            sna.electron_gate(mcas, "pi")
-                        # ou.pause("readout_delay")
-                        # qua.wait(ou.i_1 / 4)
-                        sna.ssr(mcas, state=SSR_state)
-                        # Charge state readout
-                        sna.csr(mcas)
+            with for_each_(ou.i_1, qua_array_1), for_each_(ou.i_2, qua_array_2):
+                sna.crc(mcas)
+                sna.electron_init(
+                    mcas,
+                    init_state,
+                )
+                sna.ssr(mcas, state="e1" if init_state == "e2" else "e2")
+                qua.align()
+                ou.pause(1000)
+                if pi_bool == "mw_pi":
+                    qua.play("x" * qua.amp(MW_amp), "MW", duration=MW_pi_len * u.ns)
+                ou.pause("readout_delay")
+                sna.ssr(mcas, state=init_state)
+                sna.csr(mcas)
 
         mcas.program = myprog
         return mcas
@@ -85,7 +81,7 @@ def settings(pdc={}):
     ana_seq = [
         ["init", "<", 1, 1, 0, 1],
         ["result", ">", 0, 1, 0, 1],
-        ["init", ">", 10, 1, 0, 1],
+        ["init", ">", 8, 1, 0, 1],
     ]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
@@ -117,17 +113,19 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 2000
+    nr_repeating_intergration: int = 500
 
     # readout_delay = np.linspace(0, 2_000, 10) * 1e3  # ns -> us
-    readout_delay = np.arange(16, 1_000_000, 1000)  # ns -> us
+    readout_delay = np.unique(np.rint(np.logspace(2, 8, num=50)).astype(int))
     nuclear.parameters = OrderedDict(
         (
             ("sweeps", range(20)),
-            # ("readout_delay", readout_delay),
+            ("readout_delay", readout_delay),
             ("click_channel", [2]),  # nW
-            ("init_state", ["e1", "e2"]),
-            ("SSR_state", ["e1", "e2"]),
+            ("init_state", ["e1"]),
+            ("MW_f", [sna.ELECTRON_PARAMS().IQ_freq]),
+            ("MW_amp", [1]),
+            ("MW_pi_len", [sna.ELECTRON_PARAMS().electron_rabi_period // 2]),
             ("pi_bool", ["mw_pi", "no_mw_pi"]),
         )
     )

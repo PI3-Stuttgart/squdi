@@ -63,7 +63,7 @@ def ret_ret_mcas(pdc):
                     sna.crc(mcas)
                     sna.electron_init(mcas, init_state)
                     sna.ssr(mcas, state="e2" if init_state == "e1" else "e1")
-
+                    ou.pause(1000)
                     #### Hahn echo ###
                     sna.electron_gate(mcas, "pi/2")
                     qua.align()
@@ -71,7 +71,7 @@ def ret_ret_mcas(pdc):
                     sna.electron_gate(mcas, "pi", axis="y")
                     ou.pause("tau", align_before=True)
                     sna.electron_gate(mcas, "pi/2", axis=last_pulse)
-                    ou.pause(100)
+                    ou.pause(1000)
                     ###
                     sna.ssr(mcas, state=SSR_state)
                     sna.csr(mcas)
@@ -125,24 +125,17 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.average_results = False
 
     # MW_pulse_duration_array = np.arange(start=16, stop=20_200, step=200)
-    tau_array = np.unique(np.rint(np.logspace(2, 6, num=15)).astype(int))
+    tau_array = np.unique(np.rint(np.logspace(2, 6, num=50)).astype(int))
     nr_repeating_intergration: int = 1000
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
-            # ("B_phi", [100]),
-            # ("B_theta", [50]),
-            # ("B_amp", [140]),
             ("sweeps", range(10)),
             ("click_channel", [2]),
             ("init_state", ["e1"]),
             ("SSR_state", ["e1", "e2"]),
             ("last_pulse", ["x", "-x"]),
-            # ("do_pi_half", [False, True]),
             ("tau", tau_array),
-            # ("last_phase", [-0.25, 0.25]),
-            # ("MW_pulse_len", MW_pulse_duration_array),
-            # ("MW_f", [202 * u.MHz]),
             ("cooldown_time", [500_000]),
         )
     )

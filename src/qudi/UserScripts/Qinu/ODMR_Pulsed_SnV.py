@@ -58,7 +58,7 @@ def ret_ret_mcas(pdc):
                 with for_each_(ou.i_2, qua_array_2):
                     _, mw_freq_qua = ou._get_value_from_key("MW_f")
                     qua.update_frequency(
-                        "NV",
+                        "MW",
                         mw_freq_qua,
                     )
                     sna.crc(mcas)
@@ -66,9 +66,10 @@ def ret_ret_mcas(pdc):
                     sna.electron_init(mcas, init_state)
                     sna.ssr(mcas, state="e1" if init_state == "e2" else "e2")
                     qua.align()
-                    qua.play("cw" * qua.amp(1), "NV", duration=MW_pulse_len / 4)
+                    ou.pause(400)
+                    ou.MW_pulse(duration_ns=MW_pulse_len / 4, amplitude=1, element="MW")
                     qua.align()
-                    ou.pause(200)
+                    ou.pause(400)
                     sna.ssr(mcas, state=SSR_state)
                     sna.csr(mcas)
                     ou.pause("cooldown_time")
@@ -86,7 +87,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 7, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -129,9 +130,9 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_freq_array = np.arange(start=215 * u.MHz, stop=245 * u.MHz, step=0.5 * u.MHz)
+    MW_freq_array = np.arange(start=210 * u.MHz, stop=290 * u.MHz, step=0.5 * u.MHz)
     # MW_pulse_duration_array = np.arange(start=400, stop=700, step=50)
-    nr_repeating_intergration: int = 200
+    nr_repeating_intergration: int = 100
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
@@ -141,10 +142,10 @@ def settings(pdc={}):
             ("sweeps", range(50)),
             ("click_channel", [2]),
             # ("MW_amp", [1.0]),
-            ("cooldown_time", [1_000_000]),
+            ("cooldown_time", [2_000_000]),
             ("Init_state", ["e1"]),
             ("SSR_state", ["e2"]),
-            ("MW_pulse_len", [400]),
+            ("MW_pulse_len", [90]),
             ("MW_f", MW_freq_array),
         )
     )

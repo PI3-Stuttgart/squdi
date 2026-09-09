@@ -64,11 +64,12 @@ def ret_ret_mcas(pdc):
                         init_state,
                     )
                     sna.ssr(mcas, state="e2" if init_state == "e1" else "e1")
+                    ou.pause(1000)
                     # #### MW pulse ###
                     qua.align()
                     qua.play("x" * qua.amp(MW_amp / 100), "MW", duration=MW_pulse_len_qua / 4)
                     qua.align()
-                    ou.pause(200)
+                    ou.pause(1000)
                     sna.ssr(mcas, state=SSR_state)
                     sna.csr(mcas)
                     ou.pause("cooldown_time")
@@ -81,7 +82,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 2, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 25, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -119,9 +120,9 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_pulse_duration_array = np.arange(start=20, stop=4000, step=100)
-    f_vec_array = np.arange(start=190 * u.MHz, stop=196 * u.MHz, step=0.5 * u.MHz)
-    nr_repeating_intergration: int = 200
+    MW_pulse_duration_array = np.arange(start=20, stop=1_000, step=10)
+    f_vec_array = np.arange(start=216.5 * u.MHz, stop=220 * u.MHz, step=0.5 * u.MHz)
+    nr_repeating_intergration: int = 100
     # ntegrations_per_point = 500
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
@@ -129,13 +130,13 @@ def settings(pdc={}):
             # ("B_phi", [100]),
             # ("B_theta", [50]),
             # ("B_amp", [140]),
-            ("sweeps", range(5)),
+            ("sweeps", range(2)),
             ("cooldown_time", [5_000_000]),  # 100 us
             ("MW_amp", [100]),
-            ("click_channel", [2]),
+            ("click_channel", [3]),
             ("MW_f", f_vec_array),
             ("init_state", ["e1"]),
-            ("SSR_state", ["e1", "e2"]),
+            ("SSR_state", ["e1"]),
             ("MW_pulse_len", MW_pulse_duration_array),
             # ("integrations_per_point", np.arange(0, integrations_per_point, 1)),
         )
