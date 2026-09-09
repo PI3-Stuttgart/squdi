@@ -538,28 +538,32 @@ class NuclearOpsOPXUtils(LogicBase):
         align_before: bool = True,
         elements: str | list[str] | None = None,
     ) -> None:
+        """Wait for a duration in nanoseconds on the selected elements.
+
+        With no elements specified, align and wait on all elements. Otherwise,
+        only the selected elements participate. Each element's wait follows its
+        preceding operation, including when alignment is disabled.
+
+        Inside strict timing, use ``align_before=False, elements="MW"`` to
+        avoid cross-element synchronization during the coherent sequence.
+        Literal durations and sweep parameters are both converted from ns to
+        OPX clock cycles exactly once. Strict-timing feasibility is checked by
+        the QM compiler.
         """
-        Insert a delay by playing no pulses for the specified duration.
-        align() before is default, so the wait time starts after the pulse before ends.
-        Without an align the waiting time starts with the last align in the code (For example the beginning of the last pulse)"""
 
         _duration_ns, _duration_ns_qua = self._get_value_from_key(duration_ns)
 
-        if elements is None:
-            if align_before:
-                align()
-            wait(
-                self.duration_ns_to_qua(int(_duration_ns))
-                if _duration_ns is not None
-                else _duration_ns_qua / 4
-            )
-        else:
-            wait(
-                self.duration_ns_to_qua(int(_duration_ns))
-                if _duration_ns is not None
-                else _duration_ns_qua,
-                elements=elements,
-            )
+        duration_cycles = (
+            self.duration_ns_to_qua(int(_duration_ns))
+            if _duration_ns is not None
+            else _duration_ns_qua / 4
+        )
+        selected_elements = () if elements is None else (
+            (elements,) if isinstance(elements, str) else tuple(elements)
+        )
+        if align_before:
+            align(*selected_elements)
+        wait(duration_cycles, *selected_elements)
 
     def init_program(self) -> None:
         self.i_1 = declare(self.get_fast_sweep_qua_type(0))

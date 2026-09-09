@@ -60,21 +60,23 @@ def ret_ret_mcas(pdc):
             with infinite_loop_(), for_each_(ou.i_1, qua_array_1):
                 with for_each_(ou.i_2, qua_array_2):
                     ### prepare qubit in charche state and e1 ###
-                    sna.crc(mcas)
-                    sna.electron_init(mcas, init_state)
-                    sna.ssr(mcas, state="e2" if init_state == "e1" else "e1")
-
+                    sna.crc(mcas, set_laser_power=False)
+                    sna.electron_init(mcas, init_state, set_laser_power=False)
+                    sna.ssr(mcas, state="e2" if init_state == "e1" else "e1", set_laser_power=False)
+                    ou.pause(1000)
                     #### Hahn echo ###
-                    sna.electron_gate(mcas, "pi/2")
                     qua.align()
-                    ou.pause("tau", align_before=True)
-                    sna.electron_gate(mcas, "pi", axis="y")
-                    ou.pause("tau", align_before=True)
-                    sna.electron_gate(mcas, "pi/2", axis=last_pulse)
-                    ou.pause(100)
+                    with qua.strict_timing_():
+                        sna.electron_gate(mcas, "pi/2")
+                        ou.pause("tau", align_before=False, elements="MW")
+                        sna.electron_gate(mcas, "pi", axis="y")
+                        ou.pause("tau", align_before=False, elements="MW")
+                        sna.electron_gate(mcas, "pi/2", axis=last_pulse)
+                    # pause() aligns all elements before the readout delay.
+                    ou.pause(1000)
                     ###
-                    sna.ssr(mcas, state=SSR_state)
-                    sna.csr(mcas)
+                    sna.ssr(mcas, state=SSR_state, set_laser_power=False)
+                    sna.csr(mcas, set_laser_power=False)
                     ou.pause("cooldown_time")
                     qua.align()
 
