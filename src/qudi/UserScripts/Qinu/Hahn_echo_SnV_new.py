@@ -88,7 +88,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 25, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -112,7 +112,7 @@ def settings(pdc={}):
     nuclear.analyze_type = "average"  # experimental feature for the fast
     nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
     nuclear.no_trace = False  ##Doesnt save the trace
-
+    nuclear.save_trace_efficient = True
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
     nuclear.lock_laser_to_wavemeter = True
@@ -136,7 +136,7 @@ def settings(pdc={}):
             # ("B_theta", [50]),
             # ("B_amp", [140]),
             ("sweeps", range(10)),
-            ("click_channel", [2]),
+            ("click_channel", [3]),
             ("init_state", ["e1"]),
             ("SSR_state", ["e1", "e2"]),
             ("last_pulse", ["x", "-x"]),

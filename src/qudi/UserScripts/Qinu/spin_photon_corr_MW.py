@@ -3,8 +3,7 @@ import os
 from collections import OrderedDict
 
 from qm import qua
-from qm.qua import for_, infinite_loop_
-from qualang_tools.loops import from_array
+from qm.qua import for_each_, infinite_loop_
 from qualang_tools.units import unit
 
 import qudi.hardware.OPX.program_container as pc
@@ -44,46 +43,61 @@ def ret_ret_mcas(pdc):
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
 
-        # Init_state = current_iterator_df["Init_state"].unique()[0]
-        # SSR_state = current_iterator_df["SSR_state"].unique()[0]
+        # tau = current_iterator_df["tau"].unique()[0]  # ns
+        # MW_freq = current_iterator_df["MW_f"].unique()[0]
+        # MW_amp = current_iterator_df["MW_amp"].unique()[0]
+        last_pulse = current_iterator_df["last_pulse"].unique()[0]
+        init_state = current_iterator_df["init_state"].unique()[0]
+        # do_pi_half = current_iterator_df["do_pi_half"].unique()[0]
+        SSR_state = current_iterator_df["SSR_state"].unique()[0]
         with qua.program() as myprog:
             ou.init_program()
             ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
             ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
             ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
             ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
+            sna.set_IQ_freq(mcas)
             ou.pause(10_000)
-            with infinite_loop_(), for_(*from_array(ou.i_1, qua_array_1)):
-                with for_(*from_array(ou.i_2, qua_array_2)):
+            with infinite_loop_(), for_each_(ou.i_1, qua_array_1):
+                with for_each_(ou.i_2, qua_array_2):
+                    ### prepare qubit in charche state and e1 ###
                     sna.crc(mcas, set_laser_power=False)
-                    sna.electron_init(mcas=mcas, state="e1", set_laser_power=False)
-
-                    ### Init in e1 or e2 ###
-                    sna.electron_init(mcas=mcas, state="e1", set_laser_power=False)
-                    sna.ssr(mcas, state="e2", set_laser_power=False)
-                    # ou.pause(1000)
+                    sna.electron_init(mcas, init_state, set_laser_power=False)
+                    sna.ssr(mcas, state="e2" if init_state == "e1" else "e1", set_laser_power=False)
+                    ou.pause(1000)
+                    #### Spin photon correlation ###
+                    qua.align()
+                    sna.electron_gate(mcas, "pi/2")
+                    ou.pause("pause_after_MW", align_before=True)
                     sna.optical_pi_pulse(
                         mcas,
                         couting_duration=50,
                         set_laser_power=False,
                     )
-                    ou.pause(100)
+                    ou.pause("pause_after_optical_pi", align_before=True)
+                    sna.electron_gate(mcas, "pi")
+                    sna.optical_pi_pulse(
+                        mcas,
+                        couting_duration=50,
+                        set_laser_power=False,
+                    )
+                    ou.pause(1000)
+                    ###
+                    sna.ssr(mcas, state=SSR_state, set_laser_power=False)
                     sna.csr(mcas, set_laser_power=False)
+                    ou.pause("cooldown_time")
+                    qua.align()
+
         mcas.program = myprog
-        # mcas.qm.set_digital_delay("Laser_620_pi", "ppg", (560) * u.ns)
-        # mcas.qm.set_digital_delay("Laser_620_pi", "AOM_620_pi", (0) * u.ns)
-        # mcas.qm.set_digital_delay("Gate_Trigger", "trigger", (817) * u.ns)
-        # mcas.qm.set_digital_delay("Memory_Trigger", "trigger", (817) * u.ns)
-        # mcas.qm.set_digital_delay("Laser_620_det", "marker", 1230 * u.ns)
-        # mcas.qm.set_digital_delay("Laser_620", "marker", 1130 * u.ns)
         return mcas
 
     return ret_mcas
 
 
 def settings(pdc={}):
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 30, 1, 0, 1]]
-    # ana_seq = [["result", ">", 0, 1, 0, 1]]
+    # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 25, 1, 0, 1]]
+    # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
@@ -92,14 +106,6 @@ def settings(pdc={}):
     # ana_seq[3]: "nlp_per_point", number of laser pulses per point. N of repetitions.
     # ana_seq[4]: set to 100 --> no counts measured; set to 7 --> counts can be measured; --> delta - exclusion zone. n > threshold +delta, or n< threhold - delta.
     # ana_seq[5]: "number of results" --> ssr = cnot1 + laser1 + cnot2 + laser2, -> n=2, etc.. laser2-laser1,  histograms are centered around 0,
-
-    nuclear.queue.awg._qm.set_digital_delay("Gate_Trigger", "trigger", 805 * u.ns)  # 770
-    nuclear.queue.awg._qm.set_digital_delay("Memory_Trigger", "trigger", 805 * u.ns)  # 770
-    nuclear.queue.awg._qm.set_digital_delay("Laser_620_det", "marker", (248 + 100) * u.ns)
-    nuclear.queue.awg._qm.set_digital_delay("Laser_620", "marker", (150 + 100) * u.ns)
-    nuclear.queue.awg._qm.set_digital_delay("Laser_520", "AOM", (235 + 100) * u.ns)
-    nuclear.queue.awg._qm.set_digital_delay("Laser_520", "Laser", (235 + 100) * u.ns)
-    nuclear.queue.awg._qm.set_digital_delay("Laser_450", "Laser", (580 + 100) * u.ns)
 
     sch.settings(
         nuclear=nuclear,
@@ -115,43 +121,50 @@ def settings(pdc={}):
     nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
     nuclear.no_trace = False  ##Doesnt save the trace
     nuclear.save_trace_efficient = True
-
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
     nuclear.lock_laser_to_wavemeter = True
-    nuclear.ple_refocus_interval = 3 * 60
+    nuclear.ple_refocus_interval = 2 * 60
+
+    # Confocal refocus
+    nuclear.do_confocal_refocus_red = False
+    nuclear.do_confocal_refocus_green = False
+    nuclear.confocal_refocus_interval = 10 * 60
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 10_000
-
-    # B_amp = np.arange(200, 300, 5)  # mT
-    pi_pulse_laser_power = np.linspace(20, 200, 50) ** 2  # nW
-    # pi_pulse_laser_power = np.linspace(1000, 200_000, 30)  # nW
+    # MW_pulse_duration_array = np.arange(start=16, stop=20_200, step=200)
+    tau_array = np.unique(np.rint(np.logspace(2, 6, num=15)).astype(int))
+    nr_repeating_intergration: int = 1000
+    # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
-            # ("B_phi", [0]),
-            # ("B_theta", [0]),
-            # ("B_amp", B_amp),
-            ("sweeps", range(100)),
-            ("click_channel", [2]),
-            # ("Init_state", ["e1", "e2"]),
-            # ("SSR_state", ["e1", "e2"]),
-            ("pulse_shape_ppg", ["gaussian"]),
-            ("pulse_width_ppg", [2]),
-            ("pulse_delay_ppg", [0]),  # ns
-            ("Laser_620_pi_power", pi_pulse_laser_power),
-            # ("wait_between_SSR", [100]),  # ns
+            # ("B_phi", [100]),
+            # ("B_theta", [50]),
+            # ("B_amp", [140]),
+            ("sweeps", range(10)),
+            ("click_channel", [3]),
+            ("init_state", ["e1"]),
+            ("SSR_state", ["e1", "e2"]),
+            ("last_pulse", ["x", "-x"]),
+            # ("do_pi_half", [False, True]),
+            ("tau", tau_array),
+            # ("last_phase", [-0.25, 0.25]),
+            # ("MW_pulse_len", MW_pulse_duration_array),
+            # ("MW_f", [202 * u.MHz]),
+            ("cooldown_time", [500_000]),
         )
     )
-    nuclear.number_of_simultaneous_measurements = 1
+    nuclear.number_of_simultaneous_measurements = len(tau_array)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,
-        n_values=nuclear.number_of_simultaneous_measurements
-        * nr_repeating_intergration
-        * len(ana_seq),
+        n_values=(
+            nuclear.number_of_simultaneous_measurements * nr_repeating_intergration * len(ana_seq)
+            # * sum(step[3] for step in ana_seq)
+            # * nr_repeating_intergration
+        ),
     )
 
 

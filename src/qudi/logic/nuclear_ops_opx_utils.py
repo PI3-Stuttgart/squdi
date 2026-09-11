@@ -341,9 +341,67 @@ class NuclearOpsOPXUtils(LogicBase):
         """
         return int(duration_ns / 4)  # * u.ns
 
-    def MW_pulse(self, duration_ns, amplitude: float = 1, pulse: str = "x", element: str = "MW"):
-        if duration_ns > 16:
-            play(pulse * amp(amplitude), element, duration=self.duration_ns_to_qua(duration_ns))
+    def _get_python_number_or_qua_value(
+        self, value: object, value_name: str
+    ) -> tuple[Real | None, object | None]:
+        """Resolve a literal/scan-key value while preserving QUA expressions."""
+        if value is None:
+            return None, None
+
+        if isinstance(value, str):
+            python_value, qua_value = self._get_value_from_key(value)
+            if qua_value is not None:
+                return None, qua_value
+            if isinstance(python_value, Real):
+                return python_value, None
+            raise TypeError(
+                f"{value_name} scan parameter '{value}' must resolve to a number, "
+                f"got {python_value!r}"
+            )
+
+        if isinstance(value, Real):
+            return value, None
+
+        return None, value
+
+    def MW_pulse(
+        self,
+        duration_ns: object,
+        amplitude: object = 1,
+        pulse: str = "x",
+        element: str = "MW",
+    ) -> None:
+        """Play a microwave pulse with literal, scan-key, or QUA dynamic values.
+
+        ``power`` is accepted as an alias for ``amplitude``. For microwave
+        pulses this value is the QUA amplitude scale used in ``amp(...)``.
+        """
+
+        duration_ns, duration_ns_qua = self._get_python_number_or_qua_value(
+            duration_ns, "MW pulse duration_ns"
+        )
+        amplitude, amplitude_qua = self._get_python_number_or_qua_value(
+            amplitude, "MW pulse amplitude"
+        )
+
+        pulse_amplitude = amplitude if amplitude is not None else amplitude_qua
+        if pulse_amplitude is None:
+            raise TypeError("MW pulse amplitude must not be None")
+        pulse_expression = pulse * amp(pulse_amplitude)
+
+        if duration_ns is not None:
+            if duration_ns > 16:
+                play(
+                    pulse_expression,
+                    element,
+                    duration=self.duration_ns_to_qua(duration_ns),
+                )
+            return
+
+        if duration_ns_qua is None:
+            raise TypeError("MW pulse duration_ns must not be None")
+
+        play(pulse_expression, element, duration=duration_ns_qua / 4)
 
     def play_chunked(self, pulse: object, laser_name: str, duration_ns: float) -> None:
         """Play a single-laser pulse, splitting long durations into chunks.
@@ -359,6 +417,16 @@ class NuclearOpsOPXUtils(LogicBase):
             laser_name: OPX element name to play on.
             duration_ns: Total requested pulse duration in nanoseconds.
         """
+        duration_ns, duration_ns_qua = self._get_python_number_or_qua_value(
+            duration_ns, "pulse duration_ns"
+        )
+
+        if duration_ns is None:
+            if duration_ns_qua is None:
+                raise TypeError("pulse duration_ns must not be None")
+            play(pulse, laser_name, duration=duration_ns_qua / 4)
+            return
+
         if duration_ns <= self.LONG_PULSE_THRESHOLD_NS:
             play(pulse, laser_name, duration=self.duration_ns_to_qua(duration_ns))
             return
@@ -388,8 +456,12 @@ class NuclearOpsOPXUtils(LogicBase):
                 digital-only trigger without calibrated analog amplitude.
         """
 
-        duration_ns, duration_ns_qua = self._get_value_from_key(duration_ns)
-        power_nw, power_v_qua = self._get_value_from_key(power_nw)
+        duration_ns, duration_ns_qua = self._get_python_number_or_qua_value(
+            duration_ns, "laser pulse duration_ns"
+        )
+        power_nw, power_v_qua = self._get_python_number_or_qua_value(
+            power_nw, "laser pulse power_nw"
+        )
 
         if power_nw is not None:
             pulse = "pulse" * amp(self.laser_power_to_amp(laser_name, power_nw))
@@ -426,7 +498,9 @@ class NuclearOpsOPXUtils(LogicBase):
                 ``laser_names``.
         """
         pulses = []
-        duration_ns, duration_ns_qua = self._get_value_from_key(duration_ns)
+        duration_ns, duration_ns_qua = self._get_python_number_or_qua_value(
+            duration_ns, "laser pulse duration_ns"
+        )
 
         if powers_nw is not None:
             if len(powers_nw) != len(laser_names):
@@ -435,7 +509,9 @@ class NuclearOpsOPXUtils(LogicBase):
                 )
 
             for laser_name, power_nw in zip(laser_names, powers_nw):
-                power_nw, power_v_qua = self._get_value_from_key(power_nw)
+                power_nw, power_v_qua = self._get_python_number_or_qua_value(
+                    power_nw, "laser pulse power_nw"
+                )
 
                 if power_nw is not None:
                     pulse = "pulse" * amp(self.laser_power_to_amp(laser_name, power_nw))
@@ -448,6 +524,13 @@ class NuclearOpsOPXUtils(LogicBase):
             pulses = ["active"] * len(laser_names)
 
         duration_ns_general = duration_ns if duration_ns is not None else duration_ns_qua
+
+        if duration_ns is None:
+            if duration_ns_general is None:
+                raise TypeError("laser pulse duration_ns must not be None")
+            for laser_name, pulse in zip(laser_names, pulses):
+                play(pulse, laser_name, duration=duration_ns_general / 4)
+            return
 
         if duration_ns_general <= self.LONG_PULSE_THRESHOLD_NS:
             for laser_name, pulse in zip(laser_names, pulses):
@@ -485,7 +568,7 @@ class NuclearOpsOPXUtils(LogicBase):
                 input layout.
         """
 
-        power_nw, power_v_qua = self._get_value_from_key(power_nw)
+        power_nw, power_v_qua = self._get_python_number_or_qua_value(power_nw, "laser power_nw")
         self.set_laser_voltage(
             laser_name,
             self.laser_power_to_voltage(laser_name, power_nw)
@@ -507,7 +590,9 @@ class NuclearOpsOPXUtils(LogicBase):
         preconverted to voltages before entering the QUA loop.
         """
 
-        frequency_mhz, frequency_v_qua = self._get_value_from_key(frequency_mhz)
+        frequency_mhz, frequency_v_qua = self._get_python_number_or_qua_value(
+            frequency_mhz, "laser frequency_mhz"
+        )
 
         self.set_laser_voltage(
             laser_name,
@@ -551,15 +636,19 @@ class NuclearOpsOPXUtils(LogicBase):
         the QM compiler.
         """
 
-        _duration_ns, _duration_ns_qua = self._get_value_from_key(duration_ns)
+        _duration_ns, _duration_ns_qua = self._get_python_number_or_qua_value(
+            duration_ns, "pause duration_ns"
+        )
 
         duration_cycles = (
             self.duration_ns_to_qua(int(_duration_ns))
             if _duration_ns is not None
             else _duration_ns_qua / 4
         )
-        selected_elements = () if elements is None else (
-            (elements,) if isinstance(elements, str) else tuple(elements)
+        selected_elements = (
+            ()
+            if elements is None
+            else ((elements,) if isinstance(elements, str) else tuple(elements))
         )
         if align_before:
             align(*selected_elements)

@@ -52,8 +52,8 @@ class UpdateableDataclass:
 __pause_lp__: int = 1_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 5  # nW # det
-GENERAL_POWER_B2 = 5  # nW
+GENERAL_POWER_A1 = 8  # nW # det
+GENERAL_POWER_B2 = 8  # nW
 
 
 @dataclass
@@ -70,8 +70,8 @@ class SMIQ_PARAMS(UpdateableDataclass):
 class ELECTRON_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
-    electron_rabi_period: int = 190  # ns
-    IQ_freq: int = int((219.5) * 1e6)
+    electron_rabi_period: int = 205  # ns
+    IQ_freq: int = int((218.5) * 1e6)
 
 
 @dataclass
@@ -83,7 +83,7 @@ class CRC_PARAMS(UpdateableDataclass):
     laser_power_repump: float | str = 50_000  # nW
     probe_len: int | str = int(1e6)  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
-    threshold: int | str = 8  # cts
+    threshold: int | str = 30  # cts
     threshold_repump: int | str = 2  # cts
     wait_before_repump: int | str = int(50e3)  # ns
     wait_after_repump: int | str = int(50e3)  # ns

@@ -68,6 +68,7 @@ def ret_ret_mcas(pdc):
                     # #### MW pulse ###
                     qua.align()
                     qua.play("x" * qua.amp(MW_amp / 100), "MW", duration=MW_pulse_len_qua / 4)
+                    # ou.MW_pulse(duration_ns="MW_pulse_len")
                     qua.align()
                     ou.pause(1000)
                     sna.ssr(mcas, state=SSR_state)
@@ -106,6 +107,7 @@ def settings(pdc={}):
     nuclear.analyze_type = "average"  # experimental feature for the fast
     nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
     nuclear.no_trace = False  ##Doesnt save the trace
+    nuclear.save_trace_efficient = True
 
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
@@ -121,8 +123,8 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.average_results = False
 
     MW_pulse_duration_array = np.arange(start=20, stop=1_000, step=10)
-    f_vec_array = np.arange(start=216.5 * u.MHz, stop=220 * u.MHz, step=0.5 * u.MHz)
-    nr_repeating_intergration: int = 100
+    f_vec_array = np.arange(start=216 * u.MHz, stop=221 * u.MHz, step=0.5 * u.MHz)
+    nr_repeating_intergration: int = 200
     # ntegrations_per_point = 500
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
@@ -133,7 +135,7 @@ def settings(pdc={}):
             ("sweeps", range(2)),
             ("cooldown_time", [5_000_000]),  # 100 us
             ("MW_amp", [100]),
-            ("click_channel", [3]),
+            ("click_channel", [2]),
             ("MW_f", f_vec_array),
             ("init_state", ["e1"]),
             ("SSR_state", ["e1"]),

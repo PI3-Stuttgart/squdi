@@ -19,7 +19,6 @@ from qm.qua import (
     wait,
     while_,
 )
-
 from qudi.hardware.OPX.analog_output_OPX import AnalogOutputOPX
 from qudi.hardware.OPX.configuration import *
 
@@ -100,8 +99,8 @@ def qm_scan_program(aoOPX: AnalogOutputOPX):
             ### Backscan ###
             align()
             set_dc_offset("Laser_620_freq", "single", min_ls_volt)
-            # with for_(i, 0, i < 10_000, i + 1):
-            #     play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10_000)
+            with for_(i, 0, i < 10_000, i + 1):
+                play("pulse" * amp(volt_520 * 2), "Laser_520", duration=3 * u.s / 10_000)
 
             wait(2 * u.s)
 

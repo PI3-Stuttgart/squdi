@@ -354,6 +354,17 @@ class Data:
 
         for i,trace in enumerate(df.trace):
             try:
+                if (
+                    isinstance(trace, str)
+                    and (
+                        trace.startswith("traces/")
+                        or trace.startswith("traces\\")
+                        or trace.endswith(".npy")
+                        or trace.endswith(".hdf")
+                        or trace.endswith(".h5")
+                    )
+                ):
+                    continue
                 liste=list(map(int, re.findall(r'\d+', trace)))
                 df.trace[i]=np.array(liste,dtype=np.int16)
             except Exception as e:

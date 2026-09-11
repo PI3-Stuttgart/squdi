@@ -1596,12 +1596,26 @@ class NuclearOPs(DataGeneration):
 
     def save_measurement_data(self, notify: bool = False) -> None:
         if self.save_trace_efficient:
+            if "trace" in self.data.df:
+                raw_trace_index = next(
+                    (
+                        index
+                        for index, trace in self.data.df["trace"].items()
+                        if isinstance(trace, np.ndarray)
+                    ),
+                    None,
+                )
+                if raw_trace_index is not None:
+                    raise RuntimeError(
+                        "save_trace_efficient expected trace references before "
+                        f"saving data.hdf, but row {raw_trace_index} still holds "
+                        "a raw numpy trace array."
+                    )
             efficient_trace_store.save_results(
                 self.save_dir, self.data.df,
                 self.data.parameter_names, self.data.observation_names,
             )
-        else:
-            super().save_measurement_data(notify=notify)
+        super().save_measurement_data(notify=notify)
 
     def save(self) -> None:
         """Persist measurement results and supporting metadata to disk."""

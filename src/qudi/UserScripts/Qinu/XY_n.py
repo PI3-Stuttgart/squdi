@@ -33,6 +33,48 @@ with open(os.path.abspath(__file__).split(".")[0] + ".py", "r") as f:
     meas_code = f.read()
 
 
+def inverted_axis(axis: str) -> str:
+    return axis[1:] if axis.startswith("-") else f"-{axis}"
+
+
+XY8_AXES = ("x", "y", "x", "y", "y", "x", "y", "x")
+XY16_AXES = XY8_AXES + tuple(inverted_axis(axis) for axis in XY8_AXES)
+XY32_AXES = XY16_AXES + tuple(inverted_axis(axis) for axis in XY16_AXES)
+
+XY_PHASE_SEQUENCES = {
+    2: ("x", "y"),
+    4: ("x", "y", "x", "y"),
+    8: XY8_AXES,
+    16: XY16_AXES,
+    32: XY32_AXES,
+}
+
+
+def xy_phase_sequence(order: int) -> tuple[str, ...]:
+    if order in XY_PHASE_SEQUENCES:
+        return XY_PHASE_SEQUENCES[order]
+    if order <= 0 or order % 2:
+        raise ValueError(f"XY order must be a positive even number, got {order}")
+    return ("x", "y") * (order // 2)
+
+
+def add_total_tau_to_iterator(nuclear: NuclearOPs) -> None:
+    if not hasattr(nuclear, "_xy_n_base_set_iterator_df"):
+        nuclear._xy_n_base_set_iterator_df = nuclear.set_iterator_df
+    base_set_iterator_df = nuclear._xy_n_base_set_iterator_df
+
+    def set_iterator_df_with_total_tau() -> None:
+        base_set_iterator_df()
+        nuclear.iterator_df["tau"] = (
+            2
+            * nuclear.iterator_df["order"].astype(int)
+            * nuclear.iterator_df["tau_half"].astype(float)
+        )
+        nuclear.iterator_df = nuclear.iterator_df.loc[:, list(nuclear.parameters.keys())]
+
+    nuclear.set_iterator_df = set_iterator_df_with_total_tau
+
+
 def ret_ret_mcas(pdc):
     def ret_mcas(self, current_iterator_df, sequence_name=None):
         """This function creates the sequence for the current itterator and returns the mcas object with the sequence programmed in it."""
@@ -48,6 +90,7 @@ def ret_ret_mcas(pdc):
         # MW_amp = current_iterator_df["MW_amp"].unique()[0]
         init_state = current_iterator_df["init_state"].unique()[0]
         SSR_state = current_iterator_df["SSR_state"].unique()[0]
+        last_pulse = current_iterator_df["last_pulse"].unique()[0]
         order = int(current_iterator_df["order"].unique()[0])
         with qua.program() as myprog:
             ou.init_program()
@@ -63,18 +106,19 @@ def ret_ret_mcas(pdc):
                     sna.electron_init(mcas, init_state)
                     sna.ssr(mcas, state="e2" if init_state == "e1" else "e1")
                     ou.pause(400)
-                    #### Hahn echo ###
-                    ou.pause("tau_half", align_before=True)
-                    for i in range(order // 2):
-                        sna.electron_gate(mcas, "pi", axis="x")
-                        ou.pause("tau_half", align_before=True)
-                        ou.pause("tau_half", align_before=True)
-
-                        sna.electron_gate(mcas, "pi", axis="y")
-                        if i != order // 2 - 1:
-                            ou.pause("tau_half", align_before=True)
-                            ou.pause("tau_half", align_before=True)
-                    ou.pause("tau_half", align_before=True)
+                    #### XY decoupling ###
+                    qua.align()
+                    with qua.strict_timing_():
+                        sna.electron_gate(mcas, "pi/2")
+                        ou.pause("tau_half", align_before=False, elements="MW")
+                        xy_axes = xy_phase_sequence(order)
+                        for i, axis in enumerate(xy_axes):
+                            sna.electron_gate(mcas, "pi", axis=axis)
+                            if i != len(xy_axes) - 1:
+                                ou.pause("tau_half", align_before=False, elements="MW")
+                                ou.pause("tau_half", align_before=False, elements="MW")
+                        ou.pause("tau_half", align_before=False, elements="MW")
+                        sna.electron_gate(mcas, "pi/2", axis=last_pulse)
                     ou.pause(400)
                     ###
                     sna.ssr(mcas, state=SSR_state)
@@ -109,7 +153,7 @@ def settings(pdc={}):
         meas_code=meas_code,
     )
 
-    # nuclear.x_axis_title = "Freq [MHz]"
+    nuclear.x_axis_title = "tau [ns]"
     # nuclear.analyze_type = 'consecutive'
     nuclear.analyze_type = "average"  # experimental feature for the fast
     nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
@@ -138,11 +182,14 @@ def settings(pdc={}):
             ("click_channel", [2]),
             ("init_state", ["e1"]),
             ("SSR_state", ["e1"]),
+            ("last_pulse", (["x"], "slow")),
+            ("tau", ([0.0], "slow")),
             ("tau_half", tau_array),
             ("cooldown_time", [500_000]),
-            ("order", ["2", "4", "6", "8"]),
+            ("order", (["2", "4", "6", "8", "16", "32"], "slow")),
         )
     )
+    add_total_tau_to_iterator(nuclear)
     nuclear.number_of_simultaneous_measurements = len(tau_array)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,

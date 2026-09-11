@@ -20,7 +20,7 @@ spec.loader.exec_module(store)
 
 
 class EfficientTraceStorageTests(unittest.TestCase):
-    def test_opt_in_routes_only_efficient_saves_to_new_format(self):
+    def test_opt_in_writes_efficient_store_and_compatibility_hdf(self):
         # Extract the actual method to exercise routing without importing Qt/hardware.
         source = ast.parse((MODULE.parent / 'NuclearOPs.py').read_text())
         nuclear = next(node for node in source.body
@@ -32,7 +32,7 @@ class EfficientTraceStorageTests(unittest.TestCase):
                                keywords=[], body=[method], decorator_list=[])
         tree = ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[]))
         backend = Mock()
-        namespace = {'Base': base, 'efficient_trace_store': backend, 'Any': Any}
+        namespace = {'Base': base, 'efficient_trace_store': backend, 'Any': Any, 'np': np}
         exec(compile(tree, 'save-routing', 'exec'), namespace)
         runner = namespace['Runner']()
         runner.save_trace_efficient = False
@@ -46,7 +46,12 @@ class EfficientTraceStorageTests(unittest.TestCase):
         runner.save_measurement_data()
         backend.save_results.assert_called_once_with(
             'measurement', runner.data.df, [], ['trace'])
-        self.assertEqual(base.save_measurement_data.call_count, 1)
+        self.assertEqual(base.save_measurement_data.call_count, 2)
+
+        runner.data = Mock(df=pd.DataFrame({'trace': [np.arange(4)]}),
+                           parameter_names=[], observation_names=['trace'])
+        with self.assertRaises(RuntimeError):
+            runner.save_measurement_data()
 
     def test_roundtrip_and_moved_folder(self):
         with tempfile.TemporaryDirectory() as root:
