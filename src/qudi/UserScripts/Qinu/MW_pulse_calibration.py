@@ -2,6 +2,7 @@ import importlib
 import os
 from collections import OrderedDict
 
+import numpy as np
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 import qudi.UserScripts.helpers.shared as ush
@@ -41,30 +42,39 @@ def ret_ret_mcas(pdc):
 
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
-        init_state = current_iterator_df["second_init_state"].unique()[0]
-        SSR_state = current_iterator_df["SSR_state"].unique()[0]
 
-        with qua.program() as myprog, infinite_loop_():
+        # MW_freq = current_iterator_df["MW_f"].unique()[0]
+        gate = current_iterator_df["gate"].unique()[0]
+        axis = current_iterator_df["axis"].unique()[0]
+        init_state = current_iterator_df["init_state"].unique()[0]
+        SSR_state = current_iterator_df["SSR_state"].unique()[0]
+        with qua.program() as myprog:
             ou.init_program()
-            # ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
+            MW_amp, MW_amp_qua = ou._get_value_from_key("MW_amp")
+            if MW_amp_qua is not None:
+                MW_amp = MW_amp_qua
             ou.set_laser_power("Laser_620_det", sna.GENERAL_POWER_A1)
             ou.set_laser_power("Laser_620", sna.GENERAL_POWER_B2)
             ou.set_laser_power("Laser_520", sna.CRC_PARAMS.laser_power_repump)
-            with for_each_(ou.i_1, qua_array_1), for_each_(ou.i_2, qua_array_2):
-                sna.crc(mcas, set_laser_power=False)
-
-                sna.electron_init(
-                    mcas,
-                    "e1" if init_state == "e2" else "e2",
-                    duration="first_init_duration", set_laser_power=False,
-                )
-                sna.ssr(mcas, state=init_state, set_laser_power=False)
-                sna.electron_init(mcas, init_state, duration="second_init_duration", set_laser_power=False)
-
-                sna.ssr(mcas, SSR_state, set_laser_power=False)
-
-                # Charge state readout
-                sna.csr(mcas, set_laser_power=False)
+            sna.set_IQ_freq(mcas)
+            ou.pause(10_000)
+            with infinite_loop_():
+                with for_each_(ou.i_1, qua_array_1):
+                    with for_each_(ou.i_2, qua_array_2):
+                        ### prepare qubit in charche state and e1 ###
+                        sna.crc(mcas, set_laser_power=False)
+                        sna.electron_init(mcas, init_state, set_laser_power=False)
+                        sna.ssr(mcas, state="e2" if init_state == "e1" else "e1", set_laser_power=False)
+                        ou.pause(1000)
+                        #### pulse ###
+                        qua.align()
+                        sna.electron_gate(mcas, gate=gate, axis=axis, electron_rabi_opx_amp=MW_amp)
+                        ou.pause(500)
+                        ###
+                        sna.ssr(mcas, state=SSR_state, set_laser_power=False)
+                        sna.csr(mcas, set_laser_power=False)
+                        ou.pause("cooldown_time")
+                        qua.align()
 
         mcas.program = myprog
         return mcas
@@ -73,7 +83,10 @@ def ret_ret_mcas(pdc):
 
 
 def settings(pdc={}):
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
+    # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 7, 1, 0, 1]]
+    # ana_seq = [["result", ">", 1, 1, 0, 1]]
+    # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
     # ana_seq[0]: ? 'result' or 'init', init - for postselection
     # ana_seq[1]: ? > or <
@@ -90,37 +103,51 @@ def settings(pdc={}):
         meas_code=meas_code,
     )
 
+    # nuclear.x_axis_title = "Freq [MHz]"
     # nuclear.analyze_type = 'consecutive'
     nuclear.analyze_type = "average"  # experimental feature for the fast
     nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
     nuclear.no_trace = False  ##Doesnt save the trace
-
+    nuclear.save_trace_efficient = True
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
-    nuclear.ple_refocus_interval = 2 * 60  # in seconds
     nuclear.lock_laser_to_wavemeter = True
+    nuclear.ple_refocus_interval = 2 * 60
+
+    # Confocal refocus
+    nuclear.do_confocal_refocus_red = False
+    nuclear.do_confocal_refocus_green = False
+    nuclear.confocal_refocus_interval = 10 * 60
 
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    nr_repeating_intergration: int = 3000
-
-    e2_init_duration = np.linspace(1, 1_000, 10) * 1e3  # ns
+    MW_amps = np.linspace(5, 60, 20)
+    nr_repeating_intergration: int = 1000
+    # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
+    # Keep each slow-parameter combination fixed during the MW amplitude sweep.
     nuclear.parameters = OrderedDict(
         (
-            ("sweeps", range(2)),
-            ("first_init_duration", [3e6]),
-            ("second_init_duration", e2_init_duration),
-            ("click_channel", [2]),
-            ("second_init_state", (["e1", "e2"], "slow")),
-            ("SSR_state", (["e1", "e2"], "slow")),
+            ("sweeps", (range(10), "slow")),
+            ("click_channel", ([2], "slow")),
+            ("init_state", (["e1", "e2"], "slow")),
+            ("SSR_state", (["e1"], "slow")),
+            ("gate", (["pi", "pi/2"], "slow")),
+            ("axis", (["x"], "slow")),
+            ("MW_amp", (MW_amps, "fast")),
+            # ("MW_f", ([202 * u.MHz], "slow")),
+            ("cooldown_time", ([500], "slow")),
         )
     )
-    nuclear.number_of_simultaneous_measurements = 1
+    nuclear.number_of_simultaneous_measurements = len(nuclear.parameters["MW_amp"])
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,
-        n_values=nuclear.number_of_simultaneous_measurements * nr_repeating_intergration,
+        n_values=(
+            nuclear.number_of_simultaneous_measurements * nr_repeating_intergration * len(ana_seq)
+            # * sum(step[3] for step in ana_seq)
+            # * nr_repeating_intergration
+        ),
     )
 
 

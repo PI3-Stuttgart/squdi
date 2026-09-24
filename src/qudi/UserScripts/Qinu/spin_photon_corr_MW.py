@@ -2,16 +2,15 @@ import importlib
 import os
 from collections import OrderedDict
 
-from qm import qua
-from qm.qua import for_each_, infinite_loop_
-from qualang_tools.units import unit
-
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qm import qua
+from qm.qua import for_each_, infinite_loop_
+from qualang_tools.units import unit
 from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
@@ -43,13 +42,9 @@ def ret_ret_mcas(pdc):
         qua_array_1 = ou.get_fast_sweep_qua_array(0)
         qua_array_2 = ou.get_fast_sweep_qua_array(1)
 
-        # tau = current_iterator_df["tau"].unique()[0]  # ns
-        # MW_freq = current_iterator_df["MW_f"].unique()[0]
-        # MW_amp = current_iterator_df["MW_amp"].unique()[0]
-        last_pulse = current_iterator_df["last_pulse"].unique()[0]
         init_state = current_iterator_df["init_state"].unique()[0]
-        # do_pi_half = current_iterator_df["do_pi_half"].unique()[0]
         SSR_state = current_iterator_df["SSR_state"].unique()[0]
+
         with qua.program() as myprog:
             ou.init_program()
             ou.set_laser_power("Laser_620_pi", "Laser_620_pi_power")
@@ -64,24 +59,27 @@ def ret_ret_mcas(pdc):
                     sna.crc(mcas, set_laser_power=False)
                     sna.electron_init(mcas, init_state, set_laser_power=False)
                     sna.ssr(mcas, state="e2" if init_state == "e1" else "e1", set_laser_power=False)
-                    ou.pause(1000)
+                    ou.pause(100)
                     #### Spin photon correlation ###
                     qua.align()
                     sna.electron_gate(mcas, "pi/2")
-                    ou.pause("pause_after_MW", align_before=True)
+                    ou.pause(500, align_before=True)
                     sna.optical_pi_pulse(
                         mcas,
-                        couting_duration=50,
+                        couting_duration=20,
                         set_laser_power=False,
                     )
-                    ou.pause("pause_after_optical_pi", align_before=True)
+                    qua.align()
+                    ou.pause(100)
                     sna.electron_gate(mcas, "pi")
+                    ou.pause(500, align_before=True)
                     sna.optical_pi_pulse(
                         mcas,
-                        couting_duration=50,
+                        couting_duration=20,
                         set_laser_power=False,
                     )
-                    ou.pause(1000)
+                    qua.align()
+                    ou.pause(100)
                     ###
                     sna.ssr(mcas, state=SSR_state, set_laser_power=False)
                     sna.csr(mcas, set_laser_power=False)
@@ -96,7 +94,14 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 25, 1, 0, 1]]
+    ana_seq = [
+                ["init", "<", 1, 1, 0, 1],
+                ["init", ">", 0, 1, 0, 1, 3], 
+                ["init", ">", 0, 1, 0, 1, 3],
+                ["result", ">", 2, 1, 0, 1], 
+                ["init", ">", 10, 1, 0, 1]]
+    # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 25, 1, 0, 1]]
+
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -106,7 +111,14 @@ def settings(pdc={}):
     # ana_seq[3]: "nlp_per_point", number of laser pulses per point. N of repetitions.
     # ana_seq[4]: set to 100 --> no counts measured; set to 7 --> counts can be measured; --> delta - exclusion zone. n > threshold +delta, or n< threhold - delta.
     # ana_seq[5]: "number of results" --> ssr = cnot1 + laser1 + cnot2 + laser2, -> n=2, etc.. laser2-laser1,  histograms are centered around 0,
-
+    nuclear.queue.awg._qm.set_digital_delay("Gate_Trigger", "trigger", 823 * u.ns)  # 805
+    nuclear.queue.awg._qm.set_digital_delay("Memory_Trigger", "trigger", 823 * u.ns)  # 805
+    nuclear.queue.awg._qm.set_digital_delay("Laser_620_det", "marker", (248 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_620", "marker", (150 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_520", "AOM", (235 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_520", "Laser", (235 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_450", "Laser", (580 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_620_pi", "ppg", 570 * u.ns)
     sch.settings(
         nuclear=nuclear,
         ret_mcas=ret_ret_mcas(pdc),
@@ -136,27 +148,28 @@ def settings(pdc={}):
 
     # MW_pulse_duration_array = np.arange(start=16, stop=20_200, step=200)
     tau_array = np.unique(np.rint(np.logspace(2, 6, num=15)).astype(int))
-    nr_repeating_intergration: int = 1000
+    nr_repeating_intergration: int = 100_000
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
     nuclear.parameters = OrderedDict(
         (
             # ("B_phi", [100]),
             # ("B_theta", [50]),
             # ("B_amp", [140]),
-            ("sweeps", range(10)),
-            ("click_channel", [3]),
+            ("sweeps", range(50)),
+            ("click_channel", [2]),
             ("init_state", ["e1"]),
             ("SSR_state", ["e1", "e2"]),
-            ("last_pulse", ["x", "-x"]),
+            ("Laser_620_pi_power", [60_000]),
+            # ("last_pulse", ["x", "-x"]),
             # ("do_pi_half", [False, True]),
-            ("tau", tau_array),
+            # ("tau", tau_array),
             # ("last_phase", [-0.25, 0.25]),
             # ("MW_pulse_len", MW_pulse_duration_array),
             # ("MW_f", [202 * u.MHz]),
-            ("cooldown_time", [500_000]),
+            ("cooldown_time", [500]),
         )
     )
-    nuclear.number_of_simultaneous_measurements = len(tau_array)
+    nuclear.number_of_simultaneous_measurements = 1# len(tau_array)
     nuclear.queue.gated_counter.set_n_values(
         mcas=None,
         sm=1,

@@ -2,16 +2,15 @@ import importlib
 import os
 from collections import OrderedDict
 
-from qm import qua
-from qm.qua import declare, for_each_, infinite_loop_
-from qualang_tools.units import unit
-
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qm import qua
+from qm.qua import declare, for_each_, infinite_loop_
+from qualang_tools.units import unit
 from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
@@ -66,10 +65,10 @@ def ret_ret_mcas(pdc):
                     sna.electron_init(mcas, init_state)
                     sna.ssr(mcas, state="e1" if init_state == "e2" else "e2")
                     qua.align()
-                    ou.pause(400)
+                    ou.pause(200)
                     ou.MW_pulse(duration_ns=MW_pulse_len / 4, amplitude=1, element="MW")
                     qua.align()
-                    ou.pause(400)
+                    ou.pause(100)
                     sna.ssr(mcas, state=SSR_state)
                     sna.csr(mcas)
                     ou.pause("cooldown_time")
@@ -87,7 +86,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 7, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 1, 1, 0, 1], ["init", ">", 5, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -97,6 +96,15 @@ def settings(pdc={}):
     # ana_seq[3]: "nlp_per_point", number of laser pulses per point. N of repetitions.
     # ana_seq[4]: set to 100 --> no counts measured; set to 7 --> counts can be measured; --> delta - exclusion zone. n > threshold +delta, or n< threhold - delta.
     # ana_seq[5]: "number of results" --> ssr = cnot1 + laser1 + cnot2 + laser2, -> n=2, etc.. laser2-laser1,  histograms are centered around 0,
+    nuclear.queue.awg._qm.set_digital_delay("Gate_Trigger", "trigger", 820 * u.ns)  # 805
+    nuclear.queue.awg._qm.set_digital_delay("Memory_Trigger", "trigger", 820 * u.ns)  # 805
+    nuclear.queue.awg._qm.set_digital_delay("Laser_620_det", "marker", (248 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_620", "marker", (150 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_520", "AOM", (235 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_520", "Laser", (235 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_450", "Laser", (580 + 100) * u.ns)
+    nuclear.queue.awg._qm.set_digital_delay("Laser_620_pi", "ppg", 570 * u.ns)
+
 
     # mcas.qm.set_digital_delay("NV", "switch", (800) * u.ns + (1_015 - 200) * u.ns)
     # nuclear.queue.awg._qm.set_digital_delay("NV", "switch", (60) * u.ns + (1_015 - 200) * u.ns)
@@ -116,6 +124,7 @@ def settings(pdc={}):
     nuclear.analyze_type = "average"  # experimental feature for the fast
     nuclear.save_smartly = False  ## Doesnt save 0 in the trace only.
     nuclear.no_trace = False  ##Doesnt save the trace
+    nuclear.save_trace_efficient = True
 
     # PLE refocus
     nuclear.do_ple_refocus_A1 = True
@@ -130,7 +139,7 @@ def settings(pdc={}):
     nuclear.queue.gated_counter.trace.consecutive_valid_result_numbers = [0]
     nuclear.queue.gated_counter.trace.average_results = False
 
-    MW_freq_array = np.arange(start=210 * u.MHz, stop=290 * u.MHz, step=0.5 * u.MHz)
+    MW_freq_array = np.arange(start=175 * u.MHz, stop=250 * u.MHz, step=0.3 * u.MHz)
     # MW_pulse_duration_array = np.arange(start=400, stop=700, step=50)
     nr_repeating_intergration: int = 100
     # pi_pulse_laser_power = np.linspace(27, 400, 40) ** 2  # nW
@@ -145,7 +154,7 @@ def settings(pdc={}):
             ("cooldown_time", [2_000_000]),
             ("Init_state", ["e1"]),
             ("SSR_state", ["e2"]),
-            ("MW_pulse_len", [90]),
+            ("MW_pulse_len", [510]),
             ("MW_f", MW_freq_array),
         )
     )

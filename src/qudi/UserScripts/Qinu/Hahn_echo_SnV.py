@@ -3,16 +3,15 @@ import os
 from collections import OrderedDict
 from pickle import TRUE
 
-from qm import qua
-from qm.qua import for_each_, infinite_loop_
-from qualang_tools.units import unit
-
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qm import qua
+from qm.qua import for_each_, infinite_loop_
+from qualang_tools.units import unit
 from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
@@ -67,14 +66,14 @@ def ret_ret_mcas(pdc):
 
                     #### Hahn echo ###
                     sna.electron_gate(mcas, "pi_half")
-                    qua.align()
-                    qua.frame_rotation_2pi(0.25, "NV")
-                    ou.pause("tau", align_before=True)
-                    sna.electron_gate(mcas, "pi")
-                    qua.frame_rotation_2pi(last_phase, "NV")
-                    ou.pause("tau", align_before=TRUE)
-                    sna.electron_gate(mcas, "pi_half")
-                    ou.pause(100)
+                    # qua.align()
+                    # qua.frame_rotation_2pi(0.25, "NV")
+                    # ou.pause("tau", align_before=True)
+                    # sna.electron_gate(mcas, "pi")
+                    # qua.frame_rotation_2pi(last_phase, "NV")
+                    # ou.pause("tau", align_before=TRUE)
+                    # sna.electron_gate(mcas, "pi_half")
+                    # ou.pause(100)
                     ###
                     sna.ssr(mcas, state=SSR_state)
                     sna.csr(mcas)

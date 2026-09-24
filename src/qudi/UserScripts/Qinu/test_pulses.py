@@ -2,17 +2,16 @@ import importlib
 import os
 from collections import OrderedDict
 
-from qm import qua
-from qm.qua import declare, for_, for_each_, infinite_loop_
-from qualang_tools.loops import from_array
-from qualang_tools.units import unit
-
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qm import qua
+from qm.qua import declare, for_, for_each_, infinite_loop_
+from qualang_tools.loops import from_array
+from qualang_tools.units import unit
 from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
@@ -72,15 +71,15 @@ def ret_ret_mcas(pdc):
                     #     # qua.align()
                     #     # qua.play("active", "Laser_620_det", MW_pulse_len / 4)
                     #     qua.wait(250)
-                    sna.optical_pi_pulse(
-                        mcas,
-                        couting_duration=50,
-                        set_laser_power=False,
-                    )
-                    # ou.gate_trigger()
-                    # ou.laser_pulse("Laser_620_det", duration_ns=300)
-                    # qua.align()
-                    # ou.memory_trigger()
+                    # sna.optical_pi_pulse(
+                    #     mcas,
+                    #     couting_duration=50,
+                    #     set_laser_power=False,
+                    # )
+                    ou.gate_trigger()
+                    ou.laser_pulse("Laser_620_det", duration_ns=300)
+                    qua.align()
+                    ou.memory_trigger()
                     # qua.align()
                     ou.pause(10_000)
                     ###

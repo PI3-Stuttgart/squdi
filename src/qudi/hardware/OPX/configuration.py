@@ -38,7 +38,7 @@ octave_config = None
 
 ### Microwave ###
 # Delays
-MW_IQ_DELAY = (1_015 - 200) * u.ns
+MW_IQ_DELAY = (1_015 - 200 - 350) * u.ns
 MW_SWITCH_TTL_DELAY = MW_IQ_DELAY + 75 * u.ns
 # Buffers
 MW_SWITCH_TTL_BUFFER = 150 * u.ns

@@ -3,11 +3,20 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-# from attr import dataclass
-from qm.qua import align, assign, if_, measure, save, time_tagging, update_frequency, while_
-
 import qudi.hardware.Keysight_AWG_M8190.pym8190a as MCAS
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
+
+# from attr import dataclass
+from qm.qua import (
+    align,
+    assign,
+    if_,
+    measure,
+    save,
+    time_tagging,
+    update_frequency,
+    while_,
+)
 from qudi.hardware.OPX.configuration import *
 from qudi.hardware.OPX.program_container import MultiChSeq
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
@@ -52,8 +61,8 @@ class UpdateableDataclass:
 __pause_lp__: int = 1_000  # 10us #pause after laser power update
 __tt_trigg_len__: int = 20  # ns
 
-GENERAL_POWER_A1 = 8  # nW # det
-GENERAL_POWER_B2 = 8  # nW
+GENERAL_POWER_A1 = 25  # nW # det
+GENERAL_POWER_B2 = 25  # nW
 
 
 @dataclass
@@ -70,8 +79,10 @@ class SMIQ_PARAMS(UpdateableDataclass):
 class ELECTRON_PARAMS(UpdateableDataclass):
     """Default parameters for charge-state readout (CSR) helper calls."""
 
-    electron_rabi_period: int = 205  # ns
-    IQ_freq: int = int((218.5) * 1e6)
+    electron_rabi_period: int = 208  # ns
+    electron_rabi_opx_amp: int = 100 # %
+    IQ_freq: int = int((221.1) * 1e6)
+
 
 
 @dataclass
@@ -80,13 +91,13 @@ class CRC_PARAMS(UpdateableDataclass):
 
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW
-    laser_power_repump: float | str = 50_000  # nW
-    probe_len: int | str = int(1e6)  # ns # TODO: max 1ms otherwise parallel issues with counting
+    laser_power_repump: float | str = 100_000  # nW
+    probe_len: int | str = int(200_000)  # ns # TODO: max 1ms otherwise parallel issues with counting
     repump_len: int | str = 100_000  # ns
-    threshold: int | str = 30  # cts
+    threshold: int | str = 7  # cts
     threshold_repump: int | str = 2  # cts
-    wait_before_repump: int | str = int(50e3)  # ns
-    wait_after_repump: int | str = int(50e3)  # ns
+    wait_before_repump: int | str = int(200)  # ns
+    wait_after_repump: int | str = int(200)  # ns
     max_attempts: int = 1000  # not used right now
     SPCM_channel: str = "SPCM1"
 
@@ -98,6 +109,7 @@ class CSR_PARAMS(UpdateableDataclass):
     duration: int | str = CRC_PARAMS.probe_len  # ns
     laser_power_A1: float | str = CRC_PARAMS.laser_power_A1  # nW
     laser_power_B2: float | str = CRC_PARAMS.laser_power_B2  # nW
+    csr_threshold: int | str = CRC_PARAMS.threshold  # cts
 
 
 @dataclass
@@ -105,7 +117,7 @@ class SSR_PARAMS(UpdateableDataclass):
     """Default parameters for single-shot readout (SSR) helper calls."""
 
     state: QubitState | str = QubitState.e1
-    duration: int | str = 300_000  # 50_000  # ns
+    duration: int | str = 400_000  # 50_000  # ns
     laser_power_A1: float | str = GENERAL_POWER_A1  # 7  # nW # 620_det
     laser_power_B2: float | str = GENERAL_POWER_B2  # 7  # nW # 620
 
@@ -115,14 +127,14 @@ class ELECTRON_INIT_PARAMS(UpdateableDataclass):
     """Default parameters for resonant electron-state initialization."""
 
     state: QubitState = QubitState.e1
-    duration: int = int(3e6)  # ns (1000 us)
+    duration: int = 600_000  # ns (1000 us)
     laser_power_A1: float = GENERAL_POWER_A1  # 7  # nW # det
     laser_power_B2: float = GENERAL_POWER_B2  # 7  # nW
 
 
 @dataclass
 class PLE_REFOCUS_PARAMS(UpdateableDataclass):
-    use_gui_powers: bool = True
+    use_gui_powers: bool = False
     do_green_repump: bool = True
     laser_power_A1: float = GENERAL_POWER_A1  # 7 # nW
     laser_power_B2: float = GENERAL_POWER_B2  # 7 # nW
@@ -132,7 +144,6 @@ class PLE_REFOCUS_PARAMS(UpdateableDataclass):
 @dataclass
 class OPTICAL_PI_PULSE_PARAMS(UpdateableDataclass):
     """Default parameters for optical pi pulse."""
-
     couting_duration: int = 30  # ns
     laser_power: float = 50  # nW
 
@@ -442,9 +453,10 @@ def electron_gate(
     gate: str | Gate,
     axis: str | QubitAxis = QubitAxis.x,
     electron_rabi_period: int | None = None,
+    electron_rabi_opx_amp: int | None = None
 ):
     params = ELECTRON_PARAMS()
-    params.update(electron_rabi_period=electron_rabi_period)
+    params.update(electron_rabi_period=electron_rabi_period, electron_rabi_opx_amp=electron_rabi_opx_amp)
     ou: NuclearOpsOPXUtils = mcas.ou
 
     match gate:
@@ -454,8 +466,10 @@ def electron_gate(
             pulse_duration = params.electron_rabi_period / 4
 
     pulse = axis.value if isinstance(axis, QubitAxis) else axis
-    ou.MW_pulse(duration_ns=pulse_duration, pulse=pulse)
-
+    
+    align()
+    ou.MW_pulse(duration_ns=pulse_duration, pulse=pulse, amplitude=params.electron_rabi_opx_amp/100)
+    align()
 
 def set_IQ_freq(mcas, IQ_freq: int | None = None):
     params = ELECTRON_PARAMS()

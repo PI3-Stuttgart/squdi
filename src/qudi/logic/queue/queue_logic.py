@@ -516,9 +516,8 @@ class queue_logic(GenericLogic):
                 stop_request.is_set(),
             )
         )
-        # Reuse the module imported when the script was queued unless its source
-        # changed in the meantime. This keeps Queue GUI startup responsive while
-        # still picking up edits before a pending measurement begins.
+        # Refresh pulse helpers at execution time without recreating the GUI
+        # that an unchanged userscript already constructed when queued.
         module = self.reload_user_script(self.current_script)
         module.run_fun(stop_request, queue=self, **self.current_script["pd"])  ## Creates a nuclear and runs it.!!!
         print("entering waiting loop in queue...")
@@ -805,7 +804,7 @@ class queue_logic(GenericLogic):
         return os.path.abspath(os.path.join(folder, "{}.py".format(name)))
 
     def reload_user_script(self, script: Dict[str, Any]) -> Any:
-        """Return a queued userscript module, reloading it only after source edits."""
+        """Refresh OPX helpers; reload the whole userscript only after source edits."""
         module_name = script["module_name"]
         script_path = script.get("script_path")
         if script_path is None:
@@ -824,6 +823,15 @@ class queue_logic(GenericLogic):
         if module is not None and (
             queued_mtime_ns is None or queued_mtime_ns == current_mtime_ns
         ):
+            # Importing the whole script again calls create_nuclear(gui=True)
+            # inside the queue timer and constructs a second plot window.
+            # Reload just the imported OPX helper module in place: references
+            # such as script.sna then see fresh calibrations without a GUI reset.
+            helper = sys.modules.get("qudi.UserScripts.helpers.snippets_awg_OPX")
+            if helper is not None and any(value is helper for value in vars(module).values()):
+                importlib.invalidate_caches()
+                importlib.reload(helper)
+                self.log.info("Refreshed OPX pulse helpers for queued userscript: {}".format(script_path))
             return module
 
         if module is not None:

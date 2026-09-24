@@ -39,13 +39,12 @@ from collections import OrderedDict
 from collections.abc import Sequence
 from typing import Any
 
-from qudi.util.mutex import Mutex
-
+from qudi.logic import efficient_trace_store
 from qudi.logic.qudip_enhanced import data_handling, save_qutip_enhanced
 from qudi.logic.qudip_enhanced.data_generation import DataGeneration
 from qudi.logic.qudip_enhanced.util import ret_property_list_element
 from qudi.logic.queue.queue_logic import queue_logic
-from qudi.logic import efficient_trace_store
+from qudi.util.mutex import Mutex
 
 
 class NuclearOPs(DataGeneration):
@@ -137,6 +136,7 @@ class NuclearOPs(DataGeneration):
 
         self.manual_pause = False
         self.hashed = False
+        self._rf_sequence_names_this_run: set[str] = set()
         self.start_pause_time = 1.75
         self.end_pause_time = 6.25
 
@@ -359,6 +359,9 @@ class NuclearOPs(DataGeneration):
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         """Start either the normal measurement thread or the debug sequence."""
+        # Rebuild each parameter-specific program once per script start. Older
+        # programs stay registered, but are not eligible for reuse in this run.
+        self._rf_sequence_names_this_run = set()
         self._md = self.queue.awg.mcas_dict
         if getattr(self, "debug_mode", False):
             # self.run_debug_sequence(*args, **kwargs)
@@ -871,10 +874,11 @@ class NuclearOPs(DataGeneration):
         return bool(self.current_iterator_df_changes[parameter_name].any())
 
     def rf_sequence_iterator_df(self, current_iterator_df: pd.DataFrame) -> pd.DataFrame:
-        """Return only iterator columns that can affect the OPX/QUA sequence."""
+        """Return iterator columns that can affect the OPX/QUA sequence cache."""
         slow_parameters = [
             parameter_name
-            for parameter_name in self.slow_changing_parameters
+            for parameter_name in self.default_slow_changing_parameters
+            if parameter_name in self.slow_changing_parameters
             if parameter_name in current_iterator_df.columns
         ]
         if slow_parameters:
@@ -1082,7 +1086,7 @@ class NuclearOPs(DataGeneration):
 
     def _run_confocal_sequence_red(self, abort) -> bool:
         """Execute the SnV PLE refocus sequence."""
-        REPUMP_TIME_S = 2
+        REPUMP_TIME_S = 5
         OPTIMIZER_POLL_S = 0.1
         AFTER_OPTIMIZER_WAIT_S = 0.5
         LOCK_SETTLE_TIME_S = 2.0
@@ -1439,7 +1443,7 @@ class NuclearOPs(DataGeneration):
         self.queue.log.info("cun:get_trace:measurement finished")
 
     def setup_rf(self, current_iterator_df: pd.DataFrame, hashed: bool = False) -> None:
-        """Build and register the RF/QUA sequence for the current iterator row."""
+        """Build RF/QUA programs afresh per script run, then reuse matching rows."""
 
         rf_iterator_df = self.rf_sequence_iterator_df(current_iterator_df)
 
@@ -1462,11 +1466,14 @@ class NuclearOPs(DataGeneration):
         self.sequence_name = f"nuclear_op_hash_{hash}"
         self._rf_sequence_reused = False
 
-        if self.sequence_name in self.queue.awg.mcas_dict:
+        if (
+            self.sequence_name in self._rf_sequence_names_this_run
+            and self.sequence_name in self.queue.awg.mcas_dict
+        ):
             self.mcas = self.queue.awg.mcas_dict[self.sequence_name]
             self._rf_sequence_reused = True
             self.queue.log.info(
-                "cun:setup_rf: Reusing cached RF sequence; only slow parameters changed."
+                "cun:setup_rf: Reusing RF sequence built during this script run."
             )
             self.performedRefocus = False
             return
@@ -1475,7 +1482,7 @@ class NuclearOPs(DataGeneration):
         # self.queue._awg.mcas_dict.stop_awgs()
         # In the normal path the sequence is rebuilt for the current iterator
         # row and stored in the AWG/OPX dictionary under its generated name.
-        self.queue.log.info("cun:setup_rf:This time is the qua writing...")
+        self.queue.log.info("cun:setup_rf: Building fresh QUA program for this script run.")
         self.queue.awg.stop_awgs()
         self.queue.nuclear_ops_opx_utils.slow_changing_parameters = (
             self.slow_changing_parameters
@@ -1492,6 +1499,7 @@ class NuclearOPs(DataGeneration):
         # self.sequence_name = self.mcas.name
         self.queue.awg.mcas_dict[self.mcas.name] = self.mcas
         self.queue.awg.mcas_dict[self.sequence_name] = self.mcas
+        self._rf_sequence_names_this_run.add(self.sequence_name)
         self._last_rf_sequence_name = self.sequence_name
 
         self.performedRefocus = False

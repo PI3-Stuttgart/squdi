@@ -2,16 +2,15 @@ import importlib
 import os
 from collections import OrderedDict
 
-from qm import qua
-from qm.qua import for_each_, infinite_loop_
-from qualang_tools.units import unit
-
 import qudi.hardware.OPX.program_container as pc
 import qudi.UserScripts.helpers.sequence_creation_helpers as sch
 import qudi.UserScripts.helpers.shared as ush
 
 # import qudi.UserScripts.helpers.snippets_awg as sna
 import qudi.UserScripts.helpers.snippets_awg_OPX as sna
+from qm import qua
+from qm.qua import for_each_, infinite_loop_
+from qualang_tools.units import unit
 from qudi.hardware.OPX import OPX_utils
 from qudi.logic.nuclear_ops_opx_utils import NuclearOpsOPXUtils
 from qudi.logic.NuclearOPs import NuclearOPs
@@ -72,7 +71,7 @@ def ret_ret_mcas(pdc):
                         sna.electron_gate(mcas, "pi", axis="y")
                         ou.pause("tau", align_before=False, elements="MW")
                         sna.electron_gate(mcas, "pi/2", axis=last_pulse)
-                    # pause() aligns all elements before the readout delay.
+                    #pause() aligns all elements before the readout delay.
                     ou.pause(1000)
                     ###
                     sna.ssr(mcas, state=SSR_state, set_laser_power=False)
@@ -88,7 +87,7 @@ def ret_ret_mcas(pdc):
 
 def settings(pdc={}):
     # ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 0, 1, 0, 1], ["init", ">", 3, 1, 0, 1]]
-    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 25, 1, 0, 1]]
+    ana_seq = [["init", "<", 1, 1, 0, 1], ["result", ">", 2, 1, 0, 1], ["init", ">", 10, 1, 0, 1]]
     # ana_seq = [["result", ">", 1, 1, 0, 1]]
     # [["init", "<", 1, 1, 0, 1], ["result", ">", 3, 1, 0, 1], ["init", ">", 20, 1, 0, 1]]
     # what does each entry do?
@@ -136,16 +135,16 @@ def settings(pdc={}):
             # ("B_theta", [50]),
             # ("B_amp", [140]),
             ("sweeps", range(10)),
-            ("click_channel", [3]),
-            ("init_state", ["e1"]),
-            ("SSR_state", ["e1", "e2"]),
+            ("click_channel", [2]),
+            ("init_state", ["e1", "e2"]),
+            ("SSR_state", ["e1"]),
             ("last_pulse", ["x", "-x"]),
             # ("do_pi_half", [False, True]),
             ("tau", tau_array),
             # ("last_phase", [-0.25, 0.25]),
             # ("MW_pulse_len", MW_pulse_duration_array),
             # ("MW_f", [202 * u.MHz]),
-            ("cooldown_time", [500_000]),
+            ("cooldown_time", [500]),
         )
     )
     nuclear.number_of_simultaneous_measurements = len(tau_array)
