@@ -15,6 +15,8 @@ class MPC320(Base):
     _serial = ConfigOption('serial', default=None, missing='nothing')
     _polling_interval_ms = ConfigOption('polling_interval_ms', default=250)
     _move_timeout_s = ConfigOption('move_timeout_s', default=20.0)
+    _position_tolerance_deg = ConfigOption('position_tolerance_deg', default=0.2)
+    _settling_time_s = ConfigOption('settling_time_s', default=0.1)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -84,7 +86,17 @@ class MPC320(Base):
     def position(self, paddle):
         """Return one paddle position in degrees."""
         self._require_device()
-        return float(str(self._device.Status(self._paddle(paddle)).Position).replace(',', '.'))
+        # Polarizer.Status(...).Position can expose a raw/scaled status value
+        # on the MPC320 (for example 730 for 73.0 degrees). The dedicated
+        # Position(...) API returns the calibrated angle and is also the API
+        # used by the working notebook driver.
+        value = float(str(self._device.Position(self._paddle(paddle))).replace(',', '.'))
+        if not 0.0 <= value <= 160.0:
+            raise RuntimeError(
+                f'MPC320 returned an invalid calibrated position for paddle '
+                f'{paddle}: {value!r} degrees'
+            )
+        return value
 
     def positions(self):
         """Return all paddle positions in degrees as ``[p1, p2, p3]``."""
@@ -96,14 +108,31 @@ class MPC320(Base):
         self._require_device()
         return bool(self._device.Status(self._paddle(paddle)).IsMoving)
 
-    def wait(self, paddle, timeout=None):
-        """Wait for one paddle, with a deadline to prevent a stuck motion."""
+    def wait(self, paddle, target=None, timeout=None):
+        """Wait until motion stopped and the requested position was reached."""
         timeout = self._move_timeout_s if timeout is None else float(timeout)
         deadline = time.monotonic() + timeout
-        while self.is_moving(paddle):
+        poll_s = max(0.02, float(self._polling_interval_ms) / 1000.0)
+        tolerance = float(self._position_tolerance_deg)
+
+        # Kinesis status is polling based. Give it one polling cycle to report
+        # motion before trusting a false IsMoving flag.
+        time.sleep(poll_s)
+        while True:
             if time.monotonic() >= deadline:
-                raise TimeoutError(f'MPC320 paddle {paddle} did not finish within {timeout:g} s')
-            time.sleep(0.1)
+                actual = self.position(paddle)
+                raise TimeoutError(
+                    f'MPC320 paddle {paddle} did not reach {target!r}° within '
+                    f'{timeout:g} s (reported {actual:.2f}°)'
+                )
+            self._device.RequestPositions()
+            moving = self.is_moving(paddle)
+            actual = self.position(paddle)
+            on_target = target is None or abs(actual - float(target)) <= tolerance
+            if not moving and on_target:
+                time.sleep(max(0.0, float(self._settling_time_s)))
+                return
+            time.sleep(poll_s)
 
     def move(self, paddle, angle, timeout=None):
         """Move one paddle to an absolute angle in the 0–160 degree range."""
@@ -111,8 +140,11 @@ class MPC320(Base):
         if not 0.0 <= angle <= 160.0:
             raise ValueError('MPC320 paddle angles must be between 0 and 160 degrees')
         self._require_device()
+        if (not self.is_moving(paddle) and
+                abs(self.position(paddle) - angle) <= float(self._position_tolerance_deg)):
+            return
         self._device.MoveTo(self._decimal(angle), self._paddle(paddle), None)
-        self.wait(paddle, timeout=timeout)
+        self.wait(paddle, target=angle, timeout=timeout)
 
     def set_angles(self, angle1, angle2, angle3, timeout=None):
         """Move the three paddles sequentially and wait for each move to finish."""
