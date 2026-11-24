@@ -42,6 +42,7 @@ class PowerRabiMainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle('qudi: Power Rabi (Bluefors)')
         self.resize(1200, 800)
         self.setDockNestingEnabled(True)
+        self.w = {}   # setting key -> widget
 
         menu = self.menuBar()
         file_menu = menu.addMenu('&File')
@@ -74,6 +75,7 @@ class PowerRabiMainWindow(QtWidgets.QMainWindow):
         tb.addWidget(self.progress_label)
 
         # ---------------- plots ----------------
+        self.tabs = QtWidgets.QTabWidget()
         central = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(central)
 
@@ -107,7 +109,9 @@ class PowerRabiMainWindow(QtWidgets.QMainWindow):
         self.roi_region = pg.LinearRegionItem(values=(0, 200), brush=(255, 255, 255, 30))
         self.hist_plot.addItem(self.roi_region)
         vbox.addWidget(self.hist_plot, stretch=2)
-        self.setCentralWidget(central)
+        self.tabs.addTab(central, 'Power Rabi')
+        self.tabs.addTab(self._build_calibration_tab(), 'Power calibration')
+        self.setCentralWidget(self.tabs)
 
         # ---------------- settings dock ----------------
         self.settings_dock = QtWidgets.QDockWidget('Settings', self)
@@ -120,7 +124,6 @@ class PowerRabiMainWindow(QtWidgets.QMainWindow):
         lay = QtWidgets.QVBoxLayout(contents)
 
         # sequence
-        self.w = {}
         seq_box = QtWidgets.QGroupBox('Pulse Streamer sequence')
         grid = QtWidgets.QGridLayout(seq_box)
         grid.addWidget(QtWidgets.QLabel('Period'), 0, 0)
@@ -188,6 +191,69 @@ class PowerRabiMainWindow(QtWidgets.QMainWindow):
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.settings_dock)
 
 
+    def _build_calibration_tab(self):
+        tab = QtWidgets.QWidget()
+        hbox = QtWidgets.QHBoxLayout(tab)
+
+        box = QtWidgets.QGroupBox('Calibration sweep (power meter in front of the cryostat)')
+        form = QtWidgets.QFormLayout(box)
+        self.w['cal_v_start'] = _spin(0, 1, 0, 0.01, ' V', 4)
+        self.w['cal_v_stop'] = _spin(0, 1, 1, 0.01, ' V', 4)
+        self.w['cal_n_points'] = _spin(2, 1000, 41)
+        self.cal_mode_combo = QtWidgets.QComboBox()
+        self.cal_mode_combo.addItem('Rabi sequence (AOM + EOM pulsed)', 'sequence')
+        self.cal_mode_combo.addItem('AOM CW (gate open, PPG off)', 'aom_cw')
+        self.cal_mode_combo.setToolTip(
+            'Rabi sequence: measures the average power of the actual pulse train -> correct x axis.\n'
+            'AOM CW: only for characterising the AOM; ignores the EOM gating.')
+        self.w['cal_settle_s'] = _spin(0, 60, 0.5, 0.1, ' s', 2)
+        self.w['cal_n_avg'] = _spin(1, 1000, 10)
+        self.w['cal_subtract_dark'] = QtWidgets.QCheckBox('subtract dark reading (all outputs off)')
+        form.addRow('Start voltage:', self.w['cal_v_start'])
+        form.addRow('Stop voltage:', self.w['cal_v_stop'])
+        form.addRow('Points:', self.w['cal_n_points'])
+        form.addRow('Mode:', self.cal_mode_combo)
+        form.addRow('Settle time:', self.w['cal_settle_s'])
+        form.addRow('Readings / point:', self.w['cal_n_avg'])
+        form.addRow('', self.w['cal_subtract_dark'])
+
+        btns = QtWidgets.QGridLayout()
+        self.cal_start_button = QtWidgets.QPushButton('Start calibration')
+        self.cal_stop_button = QtWidgets.QPushButton('Stop')
+        self.cal_save_button = QtWidgets.QPushButton('Save')
+        self.cal_load_button = QtWidgets.QPushButton('Load file...')
+        self.cal_clear_button = QtWidgets.QPushButton('Clear')
+        self.cal_clear_button.setToolTip('Forget the active calibration (sqrt(P) axis disabled).')
+        btns.addWidget(self.cal_start_button, 0, 0)
+        btns.addWidget(self.cal_stop_button, 0, 1)
+        btns.addWidget(self.cal_save_button, 1, 0)
+        btns.addWidget(self.cal_load_button, 1, 1)
+        btns.addWidget(self.cal_clear_button, 2, 0)
+        form.addRow(btns)
+        self.cal_progress_label = QtWidgets.QLabel('')
+        form.addRow('Progress:', self.cal_progress_label)
+        self.cal_info_label = QtWidgets.QLabel('no calibration active')
+        self.cal_info_label.setWordWrap(True)
+        form.addRow('Active:', self.cal_info_label)
+        box.setMaximumWidth(420)
+        hbox.addWidget(box)
+
+        self.cal_plot = pg.PlotWidget()
+        self.cal_plot.setLabel('bottom', 'analog voltage', units='V')
+        self.cal_plot.setLabel('left', 'average power', units='W')
+        self.cal_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.cal_plot.addLegend()
+        self.cal_active_curve = self.cal_plot.plot(pen=pg.mkPen((255, 140, 0), width=2),
+                                                   name='active calibration')
+        self.cal_run_curve = self.cal_plot.plot(pen=None, symbol='o', symbolSize=6,
+                                                symbolBrush=(80, 160, 255), name='measurement')
+        self.cal_errbars = pg.ErrorBarItem(x=np.array([]), y=np.array([]), height=np.array([]),
+                                           pen=pg.mkPen((80, 160, 255)))
+        self.cal_plot.addItem(self.cal_errbars)
+        hbox.addWidget(self.cal_plot, stretch=1)
+        return tab
+
+
 class PowerRabiGui(GuiBase):
     """ qudi GUI for the optical power-Rabi measurement. """
 
@@ -200,6 +266,9 @@ class PowerRabiGui(GuiBase):
     sigRoi = QtCore.Signal(float, float)
     sigFit = QtCore.Signal()
     sigSave = QtCore.Signal(str)
+    sigStartCalibration = QtCore.Signal()
+    sigSaveCalibration = QtCore.Signal(str)
+    sigClearCalibration = QtCore.Signal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -221,6 +290,9 @@ class PowerRabiGui(GuiBase):
         self.sigRoi.connect(self._logic.recalculate_roi, q)
         self.sigFit.connect(self._logic.do_fit, q)
         self.sigSave.connect(self._logic.save_data, q)
+        self.sigStartCalibration.connect(self._logic.start_calibration, q)
+        self.sigSaveCalibration.connect(self._logic.save_calibration, q)
+        self.sigClearCalibration.connect(self._logic.clear_calibration, q)
 
         self._logic.sigDataUpdated.connect(self._update_data, q)
         self._logic.sigHistogramUpdated.connect(self._update_histogram, q)
@@ -228,6 +300,8 @@ class PowerRabiGui(GuiBase):
         self._logic.sigProgress.connect(self._update_progress, q)
         self._logic.sigSettingsUpdated.connect(self._update_settings, q)
         self._logic.sigFitUpdated.connect(self._update_fit, q)
+        self._logic.sigCalibrationUpdated.connect(self._update_calibration, q)
+        self._logic.sigCalProgress.connect(self._update_cal_progress, q)
 
         mw = self._mw
         mw.start_button.clicked.connect(self._start_clicked)
@@ -240,6 +314,13 @@ class PowerRabiGui(GuiBase):
         mw.x_axis_combo.currentIndexChanged.connect(self._replot)
         mw.normalize_checkbox.toggled.connect(self._replot)
         mw.roi_region.sigRegionChangeFinished.connect(self._roi_dragged)
+        mw.cal_start_button.clicked.connect(self._cal_start_clicked)
+        mw.cal_stop_button.clicked.connect(self._stop_clicked)
+        mw.cal_save_button.clicked.connect(
+            lambda: self.sigSaveCalibration.emit(mw.name_tag.text().strip()))
+        mw.cal_load_button.clicked.connect(self._load_calibration)
+        mw.cal_clear_button.clicked.connect(self.sigClearCalibration.emit)
+        mw.cal_mode_combo.currentIndexChanged.connect(self._settings_edited)
 
         for key, widget in mw.w.items():
             if key in ('roi_start_ns', 'roi_stop_ns'):
@@ -251,12 +332,14 @@ class PowerRabiGui(GuiBase):
 
         self._update_settings(self._logic.settings)
         self._update_state(self._logic.state)
+        self._logic.request_calibration_update()
         self.show()
 
     def on_deactivate(self):
         self._save_window_geometry(self._mw)
         for sig in (self.sigStart, self.sigStartPreview, self.sigStopPreview, self.sigSettings,
-                    self.sigRoi, self.sigFit, self.sigSave):
+                    self.sigRoi, self.sigFit, self.sigSave, self.sigStartCalibration,
+                    self.sigSaveCalibration, self.sigClearCalibration):
             try:
                 sig.disconnect()
             except RuntimeError:
@@ -266,7 +349,9 @@ class PowerRabiGui(GuiBase):
                           (self._logic.sigStateChanged, self._update_state),
                           (self._logic.sigProgress, self._update_progress),
                           (self._logic.sigSettingsUpdated, self._update_settings),
-                          (self._logic.sigFitUpdated, self._update_fit)):
+                          (self._logic.sigFitUpdated, self._update_fit),
+                          (self._logic.sigCalibrationUpdated, self._update_calibration),
+                          (self._logic.sigCalProgress, self._update_cal_progress)):
             try:
                 sig.disconnect(slot)
             except RuntimeError:
@@ -284,6 +369,7 @@ class PowerRabiGui(GuiBase):
         out = {}
         for key, widget in self._mw.w.items():
             out[key] = widget.isChecked() if isinstance(widget, QtWidgets.QCheckBox) else widget.value()
+        out['cal_mode'] = self._mw.cal_mode_combo.currentData()
         return out
 
     def _settings_edited(self, *_):
@@ -316,6 +402,48 @@ class PowerRabiGui(GuiBase):
         if path:
             self._logic.load_power_calibration(path)
 
+    def _cal_start_clicked(self):
+        answer = QtWidgets.QMessageBox.question(
+            self._mw, 'Power calibration',
+            'Is the power meter in the beam in front of the cryostat?\n\n'
+            'The sequence will be streamed continuously at each voltage.',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel)
+        if answer != QtWidgets.QMessageBox.Yes:
+            return
+        self.sigSettings.emit(self._collect_settings())
+        self.sigStartCalibration.emit()
+
+    @QtCore.Slot(int, int)
+    def _update_cal_progress(self, point, n_points):
+        self._mw.cal_progress_label.setText(f'{point}/{n_points}')
+
+    @QtCore.Slot(object)
+    def _update_calibration(self, cal):
+        mw = self._mw
+        if cal['active_voltage'] is not None:
+            mw.cal_active_curve.setData(cal['active_voltage'], cal['active_power'])
+            info = cal.get('active_info') or {}
+            text = f'{info.get("mode", "?")}, {info.get("timestamp", "")}'
+            if info.get('source_file'):
+                text += f'\n{info["source_file"]}'
+            text += f'\nmax {np.nanmax(cal["active_power"]) * 1e6:.3f} µW'
+            mw.cal_info_label.setText(text)
+        else:
+            mw.cal_active_curve.setData([], [])
+            mw.cal_info_label.setText('no calibration active')
+        run = cal.get('run')
+        if run is not None:
+            ok = np.isfinite(run['power'])
+            x, y, e = run['voltage'][ok], run['power'][ok], run['power_std'][ok]
+            mw.cal_run_curve.setData(x, y)
+            mw.cal_errbars.setData(x=x, y=y, height=2 * np.nan_to_num(e))
+            if run.get('finished'):
+                mw.cal_progress_label.setText(
+                    f'done (dark {run["dark"] * 1e9:.2f} nW subtracted)' if run['dark'] else 'done')
+        else:
+            mw.cal_run_curve.setData([], [])
+            mw.cal_errbars.setData(x=np.array([]), y=np.array([]), height=np.array([]))
+
     def _roi_dragged(self):
         lo, hi = self._mw.roi_region.getRegion()
         for key, val in (('roi_start_ns', max(lo, 0)), ('roi_stop_ns', max(hi, 0))):
@@ -344,6 +472,11 @@ class PowerRabiGui(GuiBase):
             else:
                 widget.setValue(settings[key])
             widget.blockSignals(False)
+        if 'cal_mode' in settings:
+            idx = self._mw.cal_mode_combo.findData(settings['cal_mode'])
+            self._mw.cal_mode_combo.blockSignals(True)
+            self._mw.cal_mode_combo.setCurrentIndex(max(idx, 0))
+            self._mw.cal_mode_combo.blockSignals(False)
         self._mw.roi_region.blockSignals(True)
         self._mw.roi_region.setRegion((settings['roi_start_ns'], settings['roi_stop_ns']))
         self._mw.roi_region.blockSignals(False)
@@ -358,11 +491,17 @@ class PowerRabiGui(GuiBase):
     @QtCore.Slot(str)
     def _update_state(self, state):
         mw = self._mw
-        running = state == 'running'
+        calibrating = state == 'calibrating'
+        running = state == 'running' or calibrating
         preview = state == 'preview'
         mw.start_button.setEnabled(state == 'idle')
         mw.stop_button.setEnabled(running or preview)
         mw.preview_button.setEnabled(not running)
+        mw.cal_start_button.setEnabled(state == 'idle')
+        mw.cal_stop_button.setEnabled(calibrating)
+        mw.cal_load_button.setEnabled(not running)
+        mw.cal_clear_button.setEnabled(not running)
+        mw.cal_mode_combo.setEnabled(not running)
         mw.preview_button.blockSignals(True)
         mw.preview_button.setChecked(preview)
         mw.preview_button.blockSignals(False)
@@ -371,7 +510,7 @@ class PowerRabiGui(GuiBase):
         for key, widget in mw.w.items():
             if key not in ('roi_start_ns', 'roi_stop_ns'):
                 widget.setEnabled(not running)
-        if not running:
+        if state != 'running':
             mw.progress_label.setText(state)
 
     @QtCore.Slot(int, int, int, int)
@@ -419,7 +558,7 @@ class PowerRabiGui(GuiBase):
             if hi > lo:
                 y = (y - lo) / (hi - lo)
         mw.rabi_curve.setData(x[valid], y[valid])
-        mw.rabi_plot.setLabel('bottom', 'sqrt(P) (sqrt(W))' if use_p else 'sqrt(V)')
+        mw.rabi_plot.setLabel('bottom', 'sqrt(P_avg) (sqrt(W))' if use_p else 'sqrt(V)')
         mw.rabi_plot.setLabel('left', 'normalised population' if mw.normalize_checkbox.isChecked()
                               else 'counts per trigger')
 
